@@ -227,23 +227,23 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Define evaluation data model.
-* [ ] Establish ground-truth mapping.
-* [ ] Implement prediction comparison.
-* [ ] Implement accuracy calculation.
-* [ ] Implement precision calculation.
-* [ ] Implement recall calculation.
-* [ ] Implement F1-score calculation.
-* [ ] Implement confusion matrix.
-* [ ] Implement false-positive rate.
-* [ ] Implement false-negative rate.
+* [x] Define evaluation data model.
+* [x] Establish ground-truth mapping.
+* [x] Implement prediction comparison.
+* [x] Implement accuracy calculation.
+* [x] Implement precision calculation.
+* [x] Implement recall calculation.
+* [x] Implement F1-score calculation.
+* [x] Implement confusion matrix.
+* [x] Implement false-positive rate.
+* [x] Implement false-negative rate.
 * [ ] Implement severity evaluation where labels permit.
-* [ ] Handle missing ground truth.
+* [x] Handle missing ground truth.
 * [ ] Handle unavailable AI predictions.
 * [ ] Store evaluation results.
 * [ ] Implement reproducible evaluation.
-* [ ] Write unit tests using known expected outcomes.
-* [ ] Verify metric calculations.
+* [x] Write unit tests using known expected outcomes.
+* [x] Verify metric calculations.
 
 ### Completion Criteria
 
