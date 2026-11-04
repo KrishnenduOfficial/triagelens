@@ -160,17 +160,17 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Define event correlation data model.
-* [ ] Implement timestamp-based ordering.
-* [ ] Identify relevant event identifiers.
-* [ ] Implement deterministic correlation rules.
-* [ ] Group potentially related events.
-* [ ] Generate chronological timelines.
-* [ ] Preserve individual event references.
+* [x] Define event correlation data model.
+* [x] Implement timestamp-based ordering.
+* [x] Identify relevant event identifiers.
+* [x] Implement deterministic correlation rules.
+* [x] Group potentially related events.
+* [x] Generate chronological timelines.
+* [x] Preserve individual event references.
 * [ ] Distinguish confirmed and potential correlations.
-* [ ] Handle missing timestamps.
-* [ ] Write unit tests.
-* [ ] Verify timeline generation.
+* [x] Handle missing timestamps.
+* [x] Write unit tests.
+* [x] Verify timeline generation.
 
 ### Completion Criteria
 
