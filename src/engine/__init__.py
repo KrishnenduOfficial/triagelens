@@ -1,5 +1,6 @@
 """Processing engines for TriageLens."""
 
+from src.engine.database import DatabaseManager
 from src.engine.enrichment import (
     AbuseIPDBProvider,
     EnrichmentEngine,
@@ -22,5 +23,6 @@ __all__ = [
     "TimelineBuilder",
     "GeminiTriageEngine",
     "AccuracyTracker",
+    "DatabaseManager",
 ]
 

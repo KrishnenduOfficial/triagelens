@@ -240,7 +240,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [ ] Implement severity evaluation where labels permit.
 * [x] Handle missing ground truth.
 * [ ] Handle unavailable AI predictions.
-* [ ] Store evaluation results.
+* [x] Store evaluation results.
 * [ ] Implement reproducible evaluation.
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
@@ -264,16 +264,16 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Finalize database schema.
-* [ ] Configure SQLite.
-* [ ] Implement database connection management.
-* [ ] Implement alert persistence.
+* [x] Finalize database schema.
+* [x] Configure SQLite.
+* [x] Implement database connection management.
+* [x] Implement alert persistence.
 * [ ] Implement indicator persistence.
-* [ ] Implement enrichment persistence.
+* [x] Implement enrichment persistence.
 * [ ] Implement incident persistence.
-* [ ] Implement timeline persistence.
-* [ ] Implement AI assessment persistence.
-* [ ] Implement evaluation persistence.
+* [x] Implement timeline persistence.
+* [x] Implement AI assessment persistence.
+* [x] Implement evaluation persistence.
 * [ ] Configure FastAPI application.
 * [ ] Implement alert API endpoints.
 * [ ] Implement enrichment API endpoints.
