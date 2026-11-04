@@ -268,20 +268,20 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Configure SQLite.
 * [x] Implement database connection management.
 * [x] Implement alert persistence.
-* [ ] Implement indicator persistence.
+* [x] Implement indicator persistence.
 * [x] Implement enrichment persistence.
-* [ ] Implement incident persistence.
+* [x] Implement incident persistence.
 * [x] Implement timeline persistence.
 * [x] Implement AI assessment persistence.
 * [x] Implement evaluation persistence.
-* [ ] Configure FastAPI application.
-* [ ] Implement alert API endpoints.
-* [ ] Implement enrichment API endpoints.
-* [ ] Implement timeline API endpoints.
-* [ ] Implement AI assessment API endpoints.
-* [ ] Implement evaluation API endpoints.
-* [ ] Implement API error handling.
-* [ ] Test API endpoints.
+* [x] Configure FastAPI application.
+* [x] Implement alert API endpoints.
+* [x] Implement enrichment API endpoints.
+* [x] Implement timeline API endpoints.
+* [x] Implement AI assessment API endpoints.
+* [x] Implement evaluation API endpoints.
+* [x] Implement API error handling.
+* [x] Test API endpoints.
 
 ### Completion Criteria
 

@@ -1,0 +1,176 @@
+"""FastAPI application for TriageLens.
+
+Provides REST endpoints for metrics, timelines, alerts, and triage verdicts
+with CORS middleware, strict input validation, and thread-safe persistence.
+"""
+
+import os
+from typing import Any, Dict, List, Optional
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.engine.database import DatabaseManager
+from src.engine.evaluation import AccuracyTracker
+
+
+def get_db(request: Request) -> DatabaseManager:
+    """Dependency provider for DatabaseManager."""
+    return request.app.state.db
+
+
+def get_tracker(request: Request) -> AccuracyTracker:
+    """Dependency provider for AccuracyTracker."""
+    return request.app.state.tracker
+
+
+def create_app(
+    db: Optional[DatabaseManager] = None,
+    tracker: Optional[AccuracyTracker] = None,
+) -> FastAPI:
+    """Factory creating and configuring the FastAPI application.
+
+    Args:
+        db: Optional custom DatabaseManager instance (e.g. for testing).
+        tracker: Optional custom AccuracyTracker instance.
+
+    Returns:
+        Configured FastAPI application instance.
+    """
+    app = FastAPI(
+        title="TriageLens API",
+        description="AI-powered SOC alert triage and accuracy evaluation platform.",
+        version="0.1.0",
+    )
+
+    # 1. Configure CORS middleware for local frontend communication
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # 2. Attach DatabaseManager and AccuracyTracker to app state
+    if db is None:
+        db_path = os.getenv("DATABASE_PATH", ":memory:")
+        db = DatabaseManager(db_path=db_path, check_same_thread=False)
+        db.init_db()
+
+    app.state.db = db
+    app.state.tracker = tracker or AccuracyTracker()
+
+    # 3. Health check endpoint
+    @app.get("/health", tags=["System"])
+    def health_check() -> Dict[str, str]:
+        """Health check endpoint."""
+        return {"status": "ok", "service": "triagelens-api"}
+
+    # 4. Accuracy and Metrics Endpoint
+    @app.get(
+        "/api/metrics",
+        tags=["Metrics"],
+        summary="Retrieve AI triage accuracy and performance metrics",
+    )
+    def get_metrics(
+        tracker: AccuracyTracker = Depends(get_tracker),
+    ) -> Dict[str, Any]:
+        """Returns the current confusion matrix and statistical evaluation metrics:
+
+        TP, TN, FP, FN, Precision, Recall, Accuracy, and F1-Score.
+        """
+        return tracker.get_metrics()
+
+    # 5. Timelines List Endpoint (with strict pagination validation)
+    @app.get(
+        "/api/timelines",
+        tags=["Timelines"],
+        summary="Retrieve paginated threat timelines",
+    )
+    def list_timelines(
+        skip: int = Query(
+            default=0,
+            ge=0,
+            description="Number of records to skip (offset)",
+        ),
+        limit: int = Query(
+            default=50,
+            ge=1,
+            le=1000,
+            description="Maximum number of records to return (1-1000)",
+        ),
+        db: DatabaseManager = Depends(get_db),
+    ) -> List[Dict[str, Any]]:
+        """Returns a paginated list of correlated threat timelines.
+
+        Rejects negative offsets and excessive limits (> 1000) with HTTP 422.
+        """
+        return db.get_timelines(skip=skip, limit=limit)
+
+    # 6. Timeline Detail Endpoint
+    @app.get(
+        "/api/timelines/{timeline_id}",
+        tags=["Timelines"],
+        summary="Retrieve detailed threat timeline with alerts and LLM verdict",
+    )
+    def get_timeline_detail(
+        timeline_id: str,
+        db: DatabaseManager = Depends(get_db),
+    ) -> Dict[str, Any]:
+        """Returns a specific timeline, its associated security alerts,
+
+        and its AI-generated triage verdict.
+        """
+        timeline = db.get_timeline(timeline_id)
+        if not timeline:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Timeline '{timeline_id}' not found.",
+            )
+
+        alerts = db.get_alerts_for_timeline(timeline_id)
+        verdict = db.get_verdict_for_timeline(timeline_id)
+
+        response_data = dict(timeline)
+        response_data["alerts"] = alerts
+        response_data["verdict"] = verdict
+        response_data["timeline"] = timeline
+        return response_data
+
+    # 7. Alert Detail Endpoint
+    @app.get(
+        "/api/alerts/{alert_id}",
+        tags=["Alerts"],
+        summary="Retrieve normalized security alert by ID",
+    )
+    def get_alert_detail(
+        alert_id: str,
+        db: DatabaseManager = Depends(get_db),
+    ) -> Dict[str, Any]:
+        """Returns normalized alert telemetry by alert internal_id."""
+        alert = db.get_alert(alert_id)
+        if not alert:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Alert '{alert_id}' not found.",
+            )
+        return alert
+
+    # 8. Indicator Enrichment Endpoint
+    @app.get(
+        "/api/enrichments/{indicator}",
+        tags=["Enrichment"],
+        summary="Retrieve threat intelligence lookups for an indicator",
+    )
+    def get_indicator_enrichment(
+        indicator: str,
+        db: DatabaseManager = Depends(get_db),
+    ) -> List[Dict[str, Any]]:
+        """Returns all cached/recorded threat intelligence lookups for an indicator."""
+        return db.get_enrichments(indicator)
+
+    return app
+
+
+# Default application instance for ASGI servers (e.g. uvicorn src.api.main:app)
+app = create_app()

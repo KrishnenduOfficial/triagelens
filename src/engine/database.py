@@ -331,6 +331,50 @@ class DatabaseManager:
             data["alert_ids"] = [r[0] for r in alert_cursor.fetchall()]
             return data
 
+    def get_timelines(self, skip: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieves a paginated list of timelines ordered by creation time descending."""
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute(
+                "SELECT * FROM timelines ORDER BY created_at DESC LIMIT ? OFFSET ?;",
+                (limit, skip),
+            )
+            results = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                alert_cursor = conn.execute(
+                    "SELECT id FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC;",
+                    (data["id"],),
+                )
+                data["alert_ids"] = [r[0] for r in alert_cursor.fetchall()]
+                results.append(data)
+            return results
+
+    def count_timelines(self) -> int:
+        """Returns the total number of timelines stored."""
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute("SELECT COUNT(*) FROM timelines;")
+            return cursor.fetchone()[0]
+
+    def get_alerts_for_timeline(
+        self, timeline_id: Union[UUID, str]
+    ) -> List[Dict[str, Any]]:
+        """Retrieves all full alerts associated with a specific timeline."""
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute(
+                "SELECT * FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC;",
+                (str(timeline_id),),
+            )
+            results = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                data["original_record"] = json.loads(data["original_record"])
+                data["extracted_indicators"] = json.loads(data["extracted_indicators"])
+                results.append(data)
+            return results
+
     # =====================================================================
     # Enrichment Persistence
     # =====================================================================
