@@ -125,22 +125,22 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Design indicator extraction logic.
-* [ ] Implement IP address extraction.
-* [ ] Implement domain extraction.
-* [ ] Implement file hash extraction.
-* [ ] Implement URL extraction where applicable.
-* [ ] Design provider-independent enrichment interface.
-* [ ] Integrate VirusTotal.
-* [ ] Integrate AbuseIPDB.
-* [ ] Integrate URLhaus.
-* [ ] Implement API timeouts.
-* [ ] Implement rate-limit handling.
-* [ ] Implement caching.
-* [ ] Implement enrichment error handling.
-* [ ] Preserve lookup timestamps.
-* [ ] Write unit tests using mocked API responses.
-* [ ] Verify enrichment results.
+* [x] Design indicator extraction logic.
+* [x] Implement IP address extraction.
+* [x] Implement domain extraction.
+* [x] Implement file hash extraction.
+* [x] Implement URL extraction where applicable.
+* [x] Design provider-independent enrichment interface.
+* [x] Integrate VirusTotal.
+* [x] Integrate AbuseIPDB.
+* [x] Integrate URLhaus.
+* [x] Implement API timeouts.
+* [x] Implement rate-limit handling.
+* [x] Implement caching.
+* [x] Implement enrichment error handling.
+* [x] Preserve lookup timestamps.
+* [x] Write unit tests using mocked API responses.
+* [x] Verify enrichment results.
 
 ### Completion Criteria
 
