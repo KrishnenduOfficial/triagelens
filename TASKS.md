@@ -190,23 +190,23 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Configure Gemini API credentials.
-* [ ] Implement secure environment configuration.
+* [x] Configure Gemini API credentials.
+* [x] Implement secure environment configuration.
 * [ ] Design provider-independent LLM interface.
-* [ ] Implement Gemini provider.
-* [ ] Design structured triage prompt.
-* [ ] Define expected AI response schema.
-* [ ] Implement response validation.
-* [ ] Implement alert summarization.
-* [ ] Implement suggested severity assessment.
-* [ ] Implement evidence extraction.
-* [ ] Implement investigation recommendations.
+* [x] Implement Gemini provider.
+* [x] Design structured triage prompt.
+* [x] Define expected AI response schema.
+* [x] Implement response validation.
+* [x] Implement alert summarization.
+* [x] Implement suggested severity assessment.
+* [x] Implement evidence extraction.
+* [x] Implement investigation recommendations.
 * [ ] Implement uncertainty reporting.
-* [ ] Implement sensitive-data masking.
-* [ ] Implement API timeout and error handling.
+* [x] Implement sensitive-data masking.
+* [x] Implement API timeout and error handling.
 * [ ] Implement response caching where appropriate.
-* [ ] Write mocked integration tests.
-* [ ] Verify structured triage results.
+* [x] Write mocked integration tests.
+* [x] Verify structured triage results.
 
 ### Completion Criteria
 
