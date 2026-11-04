@@ -89,22 +89,22 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Research suitable public security datasets.
-* [ ] Select initial dataset.
-* [ ] Define normalized alert data model.
-* [ ] Implement JSON ingestion.
-* [ ] Implement CSV ingestion.
-* [ ] Implement input validation.
-* [ ] Implement field normalization.
-* [ ] Implement timestamp normalization.
-* [ ] Preserve original source information.
-* [ ] Preserve ground-truth labels independently.
-* [ ] Implement batch processing.
-* [ ] Add structured logging.
-* [ ] Write unit tests.
-* [ ] Test malformed records.
-* [ ] Test missing fields.
-* [ ] Verify ingestion results.
+* [x] Research suitable public security datasets.
+* [x] Select initial dataset.
+* [x] Define normalized alert data model.
+* [x] Implement JSON ingestion.
+* [x] Implement CSV ingestion.
+* [x] Implement input validation.
+* [x] Implement field normalization.
+* [x] Implement timestamp normalization.
+* [x] Preserve original source information.
+* [x] Preserve ground-truth labels independently.
+* [x] Implement batch processing.
+* [x] Add structured logging.
+* [x] Write unit tests.
+* [x] Test malformed records.
+* [x] Test missing fields.
+* [x] Verify ingestion results.
 
 ### Completion Criteria
 

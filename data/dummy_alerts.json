@@ -1,0 +1,36 @@
+[
+  {
+    "event_id": 1,
+    "event_type": "Sysmon Process Creation",
+    "timestamp": "2026-11-05T01:15:30Z",
+    "dataset_source": "EVTX-ATTACK-SAMPLES",
+    "mitre_technique": "T1059.001",
+    "host": "WORKSTATION-01",
+    "user": "SYSTEM",
+    "process_name": "powershell.exe",
+    "command_line": "powershell.exe -NoP -NonI -W Hidden -Enc SQBFAFgA...",
+    "parent_process": "cmd.exe",
+    "file_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "indicators": [
+      "198.51.100.45",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ],
+    "ground_truth_label": "malicious"
+  },
+  {
+    "event_id": 4624,
+    "event_type": "Suspicious Logon",
+    "timestamp": "2026-11-05T01:22:10Z",
+    "dataset_source": "EVTX-ATTACK-SAMPLES",
+    "mitre_technique": "T1078.003",
+    "host": "DC-PRIMARY",
+    "user": "Administrator",
+    "logon_type": 10,
+    "source_ip": "203.0.113.88",
+    "indicators": [
+      "203.0.113.88"
+    ],
+    "ground_truth_label": "suspicious"
+  }
+]
+
