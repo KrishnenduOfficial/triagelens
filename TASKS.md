@@ -238,12 +238,12 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement confusion matrix.
 * [x] Implement false-positive rate.
 * [x] Implement false-negative rate.
-* [ ] Implement severity evaluation where labels permit.
+* [x] Implement severity evaluation where labels permit (ADR-022).
 * [x] Handle missing ground truth.
-* [ ] Handle unavailable AI predictions.
+* [x] Handle unavailable AI predictions (ADR-022).
 * [x] Store evaluation results.
 * [x] Ground-truth independence verification: Automated regression tests verify zero label or provenance leakage into LLM prompts (ADR-008, ADR-017).
-* [ ] Implement reproducible evaluation.
+* [x] Implement reproducible evaluation (ADR-022).
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
 

@@ -387,3 +387,211 @@ def test_tracker_reset_and_history():
     assert tracker.fn == 0
     assert tracker.unknown_count == 0
     assert tracker.total_evaluated == 0
+
+
+# =====================================================================
+# 7. Hand-Computed Metrics, Class Balance, and Availability (Task F5 & F8)
+# =====================================================================
+
+
+def test_hand_computed_balanced_metrics():
+    """Verify get_metrics() against hand-computed values: TP=40, FP=10, FN=5, TN=45."""
+    tracker = AccuracyTracker()
+    tracker.tp = 40
+    tracker.fp = 10
+    tracker.fn = 5
+    tracker.tn = 45
+
+    metrics = tracker.get_metrics()
+
+    # Hand-computed reference:
+    # Total = 100
+    # Accuracy = (40 + 45) / 100 = 0.85 (85.0%)
+    # Precision = 40 / 50 = 0.80 (80.0%)
+    # Recall = 40 / 45 = 8/9 = 0.888888...
+    # Specificity = 45 / 55 = 9/11 = 0.818181...
+    # FPR = 10 / 55 = 2/11 = 0.181818...
+    # FNR = 5 / 45 = 1/9 = 0.111111...
+    # F1 = 2 * (0.80 * 8/9) / (0.80 + 8/9) = 16/19 = 0.842105...
+    assert metrics["accuracy"] == 0.85
+    assert metrics["precision"] == 0.80
+    assert metrics["recall"] == pytest.approx(40 / 45, abs=1e-3)
+    assert metrics["specificity"] == pytest.approx(45 / 55, abs=1e-3)
+    assert metrics["false_positive_rate"] == pytest.approx(10 / 55, abs=1e-3)
+    assert metrics["false_negative_rate"] == pytest.approx(5 / 45, abs=1e-3)
+    assert metrics["f1_score"] == pytest.approx(16 / 19, abs=1e-3)
+
+
+    # Class balance reporting
+    assert metrics["positive_samples"] == 45
+    assert metrics["negative_samples"] == 55
+    assert metrics["positive_ratio"] == 0.45
+    assert metrics["negative_ratio"] == 0.55
+    assert metrics["is_imbalanced"] is False
+    assert metrics["fpr_valid"] is True
+    assert metrics["specificity_valid"] is True
+
+
+def test_hand_computed_zero_benign_metrics():
+    """Verify get_metrics() in zero-benign scenario (TP=10, FN=2, FP=0, TN=0).
+
+    In zero-benign attack datasets:
+    - Specificity is undefined (None / invalid) because negative_samples = 0
+    - FPR is flagged as invalid (cannot measure false positives without negatives)
+    - Class balance shows 100% positive, 0% negative (extreme imbalance)
+    """
+    tracker = AccuracyTracker()
+    tracker.tp = 10
+    tracker.fn = 2
+    tracker.fp = 0
+    tracker.tn = 0
+
+    metrics = tracker.get_metrics()
+
+    assert pytest.approx(metrics["accuracy"], 0.0001) == 0.8333
+    assert metrics["precision"] == 1.0
+    assert pytest.approx(metrics["recall"], 0.0001) == 0.8333
+    assert pytest.approx(metrics["f1_score"], 0.0001) == 0.9091
+
+    # Specificity and FPR validity flags
+    assert metrics["specificity"] is None
+    assert metrics["specificity_valid"] is False
+    assert metrics["fpr_valid"] is False
+    assert "undefined" in metrics.get("fpr_note", "").lower()
+
+    # Class balance reporting
+    assert metrics["positive_samples"] == 12
+    assert metrics["negative_samples"] == 0
+    assert metrics["positive_ratio"] == 1.0
+    assert metrics["negative_ratio"] == 0.0
+    assert metrics["is_imbalanced"] is True
+
+
+def test_unavailable_ai_prediction_handled_safely():
+    """Verify evaluate(None, timeline) handles unavailable predictions safely without crashing."""
+    tracker = AccuracyTracker()
+    alert = NormalizedAlert(
+        source_dataset="test",
+        source_file="test.json",
+        event_type="test",
+        original_record={},
+        ground_truth_label="malicious",
+    )
+    timeline = create_timeline([alert])
+
+    # Passing None verdict (e.g., API timeout, quota exhausted, offline run)
+    result = tracker.evaluate(None, timeline)
+
+    assert result.category == "Unavailable"
+    assert result.llm_prediction is None
+    assert result.is_correct is None
+    assert result.verdict_id is None
+    assert result.ground_truth is True
+
+    # Confusion matrix counters must NOT be incremented
+    assert tracker.tp == 0
+    assert tracker.tn == 0
+    assert tracker.fp == 0
+    assert tracker.fn == 0
+    assert tracker.unavailable_count == 1
+
+    metrics = tracker.get_metrics()
+    assert metrics["unavailable"] == 1
+    assert "availability_rate" in metrics
+
+
+def test_severity_evaluation_where_labels_permit():
+    """Verify evaluation tracks suggested severity matching against ground-truth severity."""
+    tracker = AccuracyTracker()
+
+    alert1 = NormalizedAlert(
+        source_dataset="test",
+        source_file="test1.json",
+        event_type="test",
+        original_record={"severity": "HIGH", "is_malicious": True},
+        ground_truth_label="malicious",
+    )
+    timeline1 = create_timeline([alert1])
+    verdict1 = create_verdict(severity="HIGH")
+
+    # Correct binary (TP) and correct severity (HIGH == HIGH)
+    res1 = tracker.evaluate(verdict1, timeline1)
+    assert res1.severity_correct is True
+    assert res1.severity_ground_truth == "HIGH"
+
+    alert2 = NormalizedAlert(
+        source_dataset="test",
+        source_file="test2.json",
+        event_type="test",
+        original_record={"severity": "CRITICAL", "is_malicious": True},
+        ground_truth_label="malicious",
+    )
+    timeline2 = create_timeline([alert2])
+    verdict2 = create_verdict(severity="LOW")
+
+    # Incorrect binary (FN) and incorrect severity (LOW != CRITICAL)
+    res2 = tracker.evaluate(verdict2, timeline2)
+    assert res2.severity_correct is False
+    assert res2.severity_ground_truth == "CRITICAL"
+
+    metrics = tracker.get_metrics()
+    assert metrics["severity_evaluated"] == 2
+    assert metrics["severity_matches"] == 1
+    assert metrics["severity_accuracy"] == 0.5
+
+
+def test_explicit_dataset_ground_truth_mapping():
+    """Verify explicit dataset configs do not treat 'suspicious' as confirmed malicious."""
+    tracker = AccuracyTracker()
+
+    # Raw log has 'status': 'suspicious' (triage flag, not confirmed ground truth)
+    alert = NormalizedAlert(
+        source_dataset="suricata",
+        source_file="eve.json",
+        event_type="Alert",
+        original_record={"status": "suspicious"},
+    )
+    timeline = create_timeline([alert])
+    verdict = create_verdict(severity="MEDIUM")
+
+    # With explicit dataset mapping, 'suspicious' is unconfirmed -> ground_truth is None (Unknown)
+    res = tracker.evaluate(verdict, timeline)
+    assert res.ground_truth is None
+    assert res.category == "Unknown"
+
+
+def test_benign_timeline_generation():
+    """Verify benign timeline generator creates realistic baseline data with negative ground truth."""
+    from src.engine.evaluation import generate_benign_timeline
+
+    tl = generate_benign_timeline(num_events=5, host="FIN-WS-09", user="clerk")
+    assert tl.total_events == 5
+    assert tl.grouping_key == "FIN-WS-09:clerk"
+    assert all(a.ground_truth_label == "benign" for a in tl.alerts)
+
+    tracker = AccuracyTracker()
+    verdict_low = create_verdict(severity="INFORMATIONAL")
+    res = tracker.evaluate(verdict_low, tl)
+    assert res.ground_truth is False
+    assert res.llm_prediction is False
+    assert res.category == "True Negative"
+
+
+def test_reproducible_evaluation_report():
+    """Verify generate_reproducible_report() outputs deterministic metrics with cryptographic digest."""
+    tracker = AccuracyTracker()
+    tracker.tp = 5
+    tracker.tn = 5
+    tracker.fp = 1
+    tracker.fn = 1
+
+    report1 = tracker.generate_reproducible_report(seed=42)
+    report2 = tracker.generate_reproducible_report(seed=42)
+
+    assert "integrity_hash" in report1
+    assert report1["integrity_hash"] == report2["integrity_hash"]
+    assert report1["metrics"]["accuracy"] == pytest.approx(10 / 12, 0.0001)
+    assert report1["class_balance"]["positive_samples"] == 6
+    assert report1["class_balance"]["negative_samples"] == 6
+
+

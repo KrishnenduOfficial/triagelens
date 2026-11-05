@@ -522,6 +522,43 @@ Defaulting to dataset-level grouping (`group_by="source_dataset"`) collapsed mon
 
 ---
 
+### ADR-022: Explicit Dataset Ground-Truth Mapping, Severity Evaluation, and Reproducible Metrics
+
+**Status:** Accepted
+
+**Decision:**
+
+To ensure scientific evaluation rigor, prevent metric distortions, and document all validation rules:
+1. **Explicit Dataset Label Mapping (`DatasetGroundTruthConfig`):**
+   - Ground-truth label extraction is configured explicitly per dataset.
+   - Ambiguous heuristic strings such as `"suspicious"` are strictly excluded from default malicious ground truth. In DFIR and SOC operations, "suspicious" denotes an alert triage classification or investigation tier, not confirmed adversary activity.
+2. **Timeline Maliciousness Propagation & Conflict Resolution:**
+   - Within a correlated timeline, if *any* constituent alert has verified malicious ground truth (`True`), the entire timeline is evaluated as malicious.
+   - If no alerts are malicious, but at least one alert has verified benign ground truth (`False`), the timeline is evaluated as benign.
+   - If no alerts carry ground-truth labels, the timeline is evaluated as `"Unknown"` and strictly excluded from confusion matrix metrics.
+3. **Severity Evaluation Independence:**
+   - In accordance with ADR-008 and architecture requirements, binary classification performance and suggested severity assessment are evaluated separately.
+   - Suggested severities (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`) are matched against ground-truth severity when available in telemetry. Binary prediction maps `CRITICAL`/`HIGH`/`MEDIUM` to positive (`True`) and `LOW`/`INFORMATIONAL` to negative (`False`).
+4. **Safe Handling of Unavailable AI Predictions:**
+   - When an AI verdict is unavailable (due to API timeout, quota exhaustion, network error, or offline operation), the evaluation record is classified as `"Unavailable"`. It does not crash with `AttributeError` and is excluded from binary confusion matrix metrics while tracked via `availability_rate`.
+5. **Class Balance & Specificity Enforcement:**
+   - `get_metrics()` must output `positive_samples`, `negative_samples`, `positive_ratio`, `negative_ratio`, and `is_imbalanced` alongside all confusion matrix counts.
+   - Specificity (`TN / (TN + FP)`) is calculated. If negative samples equal 0 (zero-benign attack datasets), specificity is marked `None` (`specificity_valid=False`) and False Positive Rate is flagged as undefined (`fpr_valid=False`), preventing misleading `0.0` FPR claims.
+6. **Reproducible Evaluation Reports:**
+   - `AccuracyTracker.generate_reproducible_report()` produces deterministic metadata, class balance metrics, and a cryptographic SHA-256 integrity digest to verify evaluation reproducibility.
+
+**Rationale:**
+
+Evaluating attack-only datasets without benign data produces artificially zero false-positive rates and hides extreme class imbalance. Undocumented heuristics and unhandled missing predictions corrupt benchmark integrity and cause pipeline crashes.
+
+**Consequences:**
+
+* False-positive rate and specificity are never misrepresented on imbalanced datasets.
+* SOC analysts and researchers can audit exact dataset ground-truth mappings and verify evaluation reproducibility.
+* LLM outages and offline execution are handled gracefully without pipeline interruption.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.

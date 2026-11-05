@@ -3,10 +3,23 @@
 Compares AI-generated triage verdicts against independent ground truth,
 tracks confusion matrix metrics (TP, TN, FP, FN), and calculates robust statistical
 performance indicators with division-by-zero protection.
+
+Assumptions & Design Rules (ADR-008, ADR-022):
+1. Ground Truth Independence: AI predictions never evaluate or influence ground truth.
+2. Label Extraction: Documented and explicit per dataset (removing ambiguous strings like 'suspicious').
+3. Multi-Alert Timeline Conflict Resolution: If any alert is malicious, the timeline is malicious.
+4. Unavailable Predictions: Handled safely without crashes, categorized as 'Unavailable'.
+5. Specificity & Class Balance: Specificity is explicitly calculated; class balance is reported.
+6. Severity Evaluation: Evaluates suggested severity against ground truth where labels permit.
 """
 
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
+from uuid import uuid4
 
 from src.models.alert import NormalizedAlert
 from src.models.evaluation import EvaluationCategory, EvaluationResult
@@ -14,6 +27,104 @@ from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DatasetGroundTruthConfig:
+    """Explicit ground-truth extraction mapping configuration per dataset."""
+
+    name: str
+    malicious_labels: Set[str] = field(
+        default_factory=lambda: {
+            "malicious",
+            "true",
+            "1",
+            "attack",
+            "threat",
+            "evil",
+            "bad",
+            "compromised",
+        }
+    )
+    benign_labels: Set[str] = field(
+        default_factory=lambda: {
+            "benign",
+            "false",
+            "0",
+            "clean",
+            "normal",
+            "safe",
+            "harmless",
+            "legitimate",
+        }
+    )
+    technique_keys: Tuple[str, ...] = (
+        "mitre_technique",
+        "technique",
+        "mitre",
+        "attack_technique",
+    )
+    label_keys: Tuple[str, ...] = (
+        "is_malicious",
+        "malicious",
+        "ground_truth",
+        "label",
+        "verdict",
+    )
+    severity_keys: Tuple[str, ...] = (
+        "severity",
+        "alert_severity",
+        "priority",
+        "threat_level",
+    )
+
+
+def generate_benign_timeline(
+    num_events: int = 5,
+    host: str = "WORKSTATION-01",
+    user: str = "corp_user",
+    source_dataset: str = "benign_baseline",
+) -> ThreatTimeline:
+    """Generates a realistic, deterministic baseline benign timeline for balanced benchmarking.
+
+    Produces standard enterprise telemetry (e.g., Logon EventID 4624, Process Explorer,
+    routine DNS lookups) with verified benign ground truth labels.
+    """
+    base_time = datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
+    sample_events = [
+        ("UserLogon", {"action": "Logon", "logon_type": 2, "user": user, "host": host}),
+        ("ProcessStart", {"image": "explorer.exe", "command_line": "explorer.exe", "user": user, "host": host}),
+        ("NetworkDNS", {"query": "portal.internal.corp", "record_type": "A", "user": user, "host": host}),
+        ("FileAccess", {"path": "C:\\Users\\user\\Documents\\report.docx", "access": "read", "user": user, "host": host}),
+        ("ScheduledTask", {"task_name": "GoogleUpdate", "action": "check", "user": "SYSTEM", "host": host}),
+    ]
+
+    alerts: List[NormalizedAlert] = []
+    for i in range(num_events):
+        ev_type, rec = sample_events[i % len(sample_events)]
+        rec_copy = dict(rec)
+        rec_copy["is_malicious"] = False
+        rec_copy["severity"] = "INFORMATIONAL"
+
+        alert = NormalizedAlert(
+            source_dataset=source_dataset,
+            source_file="benign_audit.log",
+            event_type=ev_type,
+            original_record=rec_copy,
+            ground_truth_label="benign",
+            timestamp=base_time + timedelta(minutes=i * 2),
+        )
+        alerts.append(alert)
+
+    return ThreatTimeline(
+        grouping_key=f"{host}:{user}",
+        alerts=alerts,
+        start_time=alerts[0].timestamp if alerts else None,
+        end_time=alerts[-1].timestamp if alerts else None,
+        total_events=len(alerts),
+        correlation_type="confirmed",
+        correlation_reason="benign_baseline_session",
+    )
 
 
 class AccuracyTracker:
@@ -25,42 +136,25 @@ class AccuracyTracker:
     - False Positives (FP): Benign ground truth, LLM predicted malicious
     - False Negatives (FN): Malicious ground truth, LLM predicted benign
     - Unknown: Missing ground truth, excluded from confusion matrix metrics
+    - Unavailable: AI prediction missing/failed, excluded from confusion matrix metrics
     """
 
-    # Malicious string indicators (case-insensitive)
-    MALICIOUS_LABELS = {
-        "malicious",
-        "true",
-        "1",
-        "attack",
-        "threat",
-        "evil",
-        "bad",
-        "compromised",
-        "suspicious",
-    }
-
-    # Benign string indicators (case-insensitive)
-    BENIGN_LABELS = {
-        "benign",
-        "false",
-        "0",
-        "clean",
-        "normal",
-        "safe",
-        "harmless",
-        "legitimate",
-    }
+    SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL")
 
     def __init__(self) -> None:
-        """Initializes the running confusion matrix counters."""
+        """Initializes the running confusion matrix counters and configuration registry."""
         self.true_positives: int = 0
         self.true_negatives: int = 0
         self.false_positives: int = 0
         self.false_negatives: int = 0
         self.unknown_count: int = 0
+        self.unavailable_count: int = 0
         self.total_evaluated: int = 0
+        self.severity_evaluated: int = 0
+        self.severity_matches: int = 0
         self.history: List[EvaluationResult] = []
+        self.dataset_configs: Dict[str, DatasetGroundTruthConfig] = {}
+        self._default_config = DatasetGroundTruthConfig(name="default")
 
     @property
     def tp(self) -> int:
@@ -94,6 +188,16 @@ class AccuracyTracker:
     def fn(self, val: int) -> None:
         self.false_negatives = val
 
+    def register_dataset_config(self, config: DatasetGroundTruthConfig) -> None:
+        """Registers an explicit ground-truth extraction mapping for a specific dataset."""
+        self.dataset_configs[config.name.lower()] = config
+
+    def _get_config(self, dataset_name: Optional[str]) -> DatasetGroundTruthConfig:
+        """Retrieves explicit dataset configuration or falls back to default."""
+        if not dataset_name:
+            return self._default_config
+        return self.dataset_configs.get(dataset_name.strip().lower(), self._default_config)
+
     def reset(self) -> None:
         """Resets all running counters and history."""
         self.true_positives = 0
@@ -101,37 +205,42 @@ class AccuracyTracker:
         self.false_positives = 0
         self.false_negatives = 0
         self.unknown_count = 0
+        self.unavailable_count = 0
         self.total_evaluated = 0
+        self.severity_evaluated = 0
+        self.severity_matches = 0
         self.history.clear()
 
     def _classify_alert_label(self, alert: NormalizedAlert) -> Optional[bool]:
-        """Classifies an individual alert's ground truth.
+        """Classifies an individual alert's ground truth using dataset-specific rules.
 
         Returns:
             True: Confirmed malicious.
             False: Confirmed benign.
             None: Unlabeled / unknown.
         """
+        cfg = self._get_config(alert.source_dataset)
+
         # 1. Check explicit ground_truth_label field
         if alert.ground_truth_label is not None:
             raw_label = str(alert.ground_truth_label).strip().lower()
-            if raw_label in self.MALICIOUS_LABELS or raw_label.startswith(("mitre", "t1", "t0")):
+            if raw_label in cfg.malicious_labels or raw_label.startswith(("mitre", "t1", "t0")):
                 return True
-            if raw_label in self.BENIGN_LABELS:
+            if raw_label in cfg.benign_labels:
                 return False
 
         # 2. Check original_record fields
         rec = alert.original_record
         if isinstance(rec, dict):
             # Check MITRE technique indicators
-            for tech_key in ("mitre_technique", "technique", "mitre", "attack_technique"):
+            for tech_key in cfg.technique_keys:
                 if tech_key in rec and rec[tech_key]:
                     val = str(rec[tech_key]).strip().lower()
                     if val not in ("none", "n/a", "null", "false", "0", ""):
                         return True
 
             # Check explicit malicious boolean or string flags
-            for mal_key in ("is_malicious", "malicious", "ground_truth", "label", "verdict"):
+            for mal_key in cfg.label_keys:
                 if mal_key in rec:
                     val = rec[mal_key]
                     if isinstance(val, bool):
@@ -140,12 +249,36 @@ class AccuracyTracker:
                         return bool(val)
                     if isinstance(val, str):
                         clean_str = val.strip().lower()
-                        if clean_str in self.MALICIOUS_LABELS or clean_str.startswith(("mitre", "t1", "t0")):
+                        if clean_str in cfg.malicious_labels or clean_str.startswith(("mitre", "t1", "t0")):
                             return True
-                        if clean_str in self.BENIGN_LABELS:
+                        if clean_str in cfg.benign_labels:
                             return False
 
         return None
+
+    def _extract_ground_truth_severity(self, timeline: ThreatTimeline) -> Optional[str]:
+        """Extracts deterministic ground-truth severity from timeline alerts.
+
+        Standardizes to: CRITICAL, HIGH, MEDIUM, LOW, INFORMATIONAL.
+        Precedence follows severity rank: CRITICAL > HIGH > MEDIUM > LOW > INFORMATIONAL.
+        """
+        highest_rank = len(self.SEVERITY_ORDER) + 1
+        highest_sev: Optional[str] = None
+
+        for alert in timeline.alerts:
+            cfg = self._get_config(alert.source_dataset)
+            rec = alert.original_record if isinstance(alert.original_record, dict) else {}
+
+            for sev_key in cfg.severity_keys:
+                if sev_key in rec and rec[sev_key]:
+                    val_str = str(rec[sev_key]).strip().upper()
+                    if val_str in self.SEVERITY_ORDER:
+                        rank = self.SEVERITY_ORDER.index(val_str)
+                        if rank < highest_rank:
+                            highest_rank = rank
+                            highest_sev = val_str
+
+        return highest_sev
 
     def _extract_ground_truth(self, timeline: ThreatTimeline) -> Optional[bool]:
         """Extracts deterministic ground truth from a timeline.
@@ -175,25 +308,42 @@ class AccuracyTracker:
         return None
 
     def evaluate(
-        self, verdict: TriageVerdict, timeline: ThreatTimeline
+        self, verdict: Optional[TriageVerdict], timeline: ThreatTimeline
     ) -> EvaluationResult:
         """Evaluates an AI triage verdict against the deterministic ground truth of a timeline.
 
         Args:
-            verdict: The AI-generated TriageVerdict.
+            verdict: The AI-generated TriageVerdict (or None if unavailable/timed out).
             timeline: The underlying ThreatTimeline.
 
         Returns:
-            EvaluationResult containing the classification and verification status.
+            EvaluationResult containing the classification, verification status, and severity accuracy.
         """
+        ground_truth = self._extract_ground_truth(timeline)
+        gt_severity = self._extract_ground_truth_severity(timeline)
+
+        # Handle unavailable AI predictions safely without crashing
+        if verdict is None:
+            self.unavailable_count += 1
+            result = EvaluationResult(
+                timeline_id=timeline.timeline_id,
+                verdict_id=None,
+                ground_truth=ground_truth,
+                llm_prediction=None,
+                is_correct=None,
+                category="Unavailable",
+                severity_ground_truth=gt_severity,
+                severity_prediction=None,
+                severity_correct=None,
+            )
+            self.history.append(result)
+            return result
+
         # 1. Determine LLM prediction (True if Critical/High/Medium, False if Low/Informational)
         sev = str(verdict.severity).strip().upper()
         llm_prediction = sev in ("CRITICAL", "HIGH", "MEDIUM")
 
-        # 2. Extract deterministic ground truth
-        ground_truth = self._extract_ground_truth(timeline)
-
-        # 3. Categorize against ground truth
+        # 2. Categorize against ground truth
         category: EvaluationCategory
         is_correct: Optional[bool]
 
@@ -222,6 +372,14 @@ class AccuracyTracker:
             self.false_negatives += 1
             self.total_evaluated += 1
 
+        # 3. Evaluate severity accuracy where ground truth permits
+        severity_correct: Optional[bool] = None
+        if gt_severity is not None:
+            severity_correct = (sev == gt_severity)
+            self.severity_evaluated += 1
+            if severity_correct:
+                self.severity_matches += 1
+
         result = EvaluationResult(
             timeline_id=timeline.timeline_id,
             verdict_id=verdict.verdict_id,
@@ -229,22 +387,36 @@ class AccuracyTracker:
             llm_prediction=llm_prediction,
             is_correct=is_correct,
             category=category,
+            severity_ground_truth=gt_severity,
+            severity_prediction=sev,
+            severity_correct=severity_correct,
         )
         self.history.append(result)
         return result
 
-    def get_metrics(self) -> Dict[str, float]:
-        """Calculates statistical performance metrics with division-by-zero defense.
+    def get_metrics(self) -> Dict[str, Any]:
+        """Calculates statistical performance metrics with division-by-zero defense and class balance.
 
         Returns:
-            Dictionary containing Accuracy, Precision, Recall, F1-Score,
-            False Positive Rate, False Negative Rate, and confusion matrix counts.
+            Dictionary containing Accuracy, Precision, Recall, Specificity, F1-Score,
+            False Positive Rate, False Negative Rate, class balance metrics, and severity evaluation.
         """
         tp = self.true_positives
         tn = self.true_negatives
         fp = self.false_positives
         fn = self.false_negatives
         total = tp + tn + fp + fn
+
+        # Class balance calculations
+        positive_samples = tp + fn
+        negative_samples = tn + fp
+        positive_ratio = (positive_samples / total) if total > 0 else 0.0
+        negative_ratio = (negative_samples / total) if total > 0 else 0.0
+        is_imbalanced = (
+            positive_samples == 0
+            or negative_samples == 0
+            or (max(positive_samples, negative_samples) / max(1, min(positive_samples, negative_samples))) > 10.0
+        ) if total > 0 else False
 
         # 1. Accuracy: (TP + TN) / Total
         accuracy = (tp + tn) / total if total > 0 else 0.0
@@ -255,14 +427,32 @@ class AccuracyTracker:
         # 3. Recall: TP / (TP + FN)
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
-        # 4. F1-Score: 2 * (Precision * Recall) / (Precision + Recall)
+        # 4. Specificity: TN / (TN + FP) (undefined when zero negative samples exist)
+        specificity_valid = negative_samples > 0
+        specificity = (tn / negative_samples) if specificity_valid else None
+
+        # 5. F1-Score: 2 * (Precision * Recall) / (Precision + Recall)
         f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
-        # 5. False Positive Rate: FP / (FP + TN)
-        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        # 6. False Positive Rate: FP / (FP + TN) (undefined when zero negative samples exist)
+        fpr_valid = negative_samples > 0
+        fpr = (fp / negative_samples) if fpr_valid else 0.0
+        fpr_note = "Valid" if fpr_valid else "Undefined: zero negative samples in evaluation set"
 
-        # 6. False Negative Rate: FN / (TP + FN)
-        fnr = fn / (tp + fn) if (tp + fn) > 0 else 0.0
+        # 7. False Negative Rate: FN / (TP + FN)
+        fnr_valid = positive_samples > 0
+        fnr = (fn / positive_samples) if fnr_valid else 0.0
+
+        # 8. Availability Rate: Evaluated / (Evaluated + Unavailable)
+        total_eval_stream = total + self.unknown_count + self.unavailable_count
+        availability_rate = (
+            (total + self.unknown_count) / total_eval_stream if total_eval_stream > 0 else 1.0
+        )
+
+        # 9. Severity Performance
+        severity_accuracy = (
+            self.severity_matches / self.severity_evaluated if self.severity_evaluated > 0 else 0.0
+        )
 
         return {
             "accuracy": accuracy,
@@ -272,12 +462,19 @@ class AccuracyTracker:
             "Precision": precision,
             "recall": recall,
             "Recall": recall,
+            "specificity": specificity,
+            "Specificity": specificity,
+            "specificity_valid": specificity_valid,
+            "specificity_pct": round(specificity * 100, 2) if specificity is not None else None,
             "f1_score": f1,
             "F1-Score": f1,
             "f1": f1,
             "F1": f1,
             "false_positive_rate": fpr,
+            "fpr_valid": fpr_valid,
+            "fpr_note": fpr_note,
             "false_negative_rate": fnr,
+            "fnr_valid": fnr_valid,
             "true_positives": tp,
             "true_negatives": tn,
             "false_positives": fp,
@@ -288,5 +485,46 @@ class AccuracyTracker:
             "fn": fn,
             "total": total,
             "unknown": self.unknown_count,
+            "unavailable": self.unavailable_count,
+            "availability_rate": availability_rate,
+            "positive_samples": positive_samples,
+            "negative_samples": negative_samples,
+            "positive_ratio": positive_ratio,
+            "negative_ratio": negative_ratio,
+            "is_imbalanced": is_imbalanced,
+            "severity_evaluated": self.severity_evaluated,
+            "severity_matches": self.severity_matches,
+            "severity_accuracy": severity_accuracy,
         }
 
+    def generate_reproducible_report(self, seed: Optional[int] = None) -> Dict[str, Any]:
+        """Generates a deterministic evaluation report with a cryptographic SHA-256 integrity hash."""
+        metrics = self.get_metrics()
+        report = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "seed": seed,
+            "total_timelines_evaluated": self.total_evaluated,
+            "confusion_matrix": {
+                "true_positives": self.true_positives,
+                "true_negatives": self.true_negatives,
+                "false_positives": self.false_positives,
+                "false_negatives": self.false_negatives,
+                "unknown": self.unknown_count,
+                "unavailable": self.unavailable_count,
+            },
+            "class_balance": {
+                "positive_samples": metrics["positive_samples"],
+                "negative_samples": metrics["negative_samples"],
+                "positive_ratio": metrics["positive_ratio"],
+                "negative_ratio": metrics["negative_ratio"],
+                "is_imbalanced": metrics["is_imbalanced"],
+            },
+            "metrics": metrics,
+        }
+
+        # Deterministic integrity hash over confusion matrix and key metrics
+        digest_str = json.dumps(report["confusion_matrix"], sort_keys=True) + json.dumps(
+            {k: str(v) for k, v in metrics.items()}, sort_keys=True
+        )
+        report["integrity_hash"] = hashlib.sha256(digest_str.encode("utf-8")).hexdigest()
+        return report
