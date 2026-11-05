@@ -58,6 +58,9 @@ class ThreatHuntingEngine:
 
     FIELD_NAME_REGEX = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
 
+    DEFAULT_LIMIT = 500
+    MAX_LIMIT = 1000
+
     def __init__(self, db: DatabaseManager) -> None:
         """Initializes ThreatHuntingEngine with a DatabaseManager instance."""
         self.db = db
@@ -81,7 +84,9 @@ class ThreatHuntingEngine:
         if in_quote is not None:
             raise KQLParseError(f"Unterminated {in_quote} quote literal in KQL query.")
 
-    def translate_kql_to_sql(self, kql_query: str) -> Tuple[str, List[Any]]:
+    def translate_kql_to_sql(
+        self, kql_query: str, limit: Optional[int] = None
+    ) -> Tuple[str, List[Any]]:
         """Parses a KQL query into a secure, parameterized SQLite query.
 
         Args:
@@ -205,19 +210,27 @@ class ThreatHuntingEngine:
                     raise KQLParseError(f"Trailing conjunction '{conj}' at end of query.")
 
         where_clause = " ".join(clauses)
-        sql = f"SELECT * FROM alerts WHERE {where_clause} ORDER BY timestamp ASC;"
+        effective_limit = min(
+            limit if limit is not None and limit > 0 else self.DEFAULT_LIMIT,
+            self.MAX_LIMIT,
+        )
+        sql = f"SELECT * FROM alerts WHERE {where_clause} ORDER BY timestamp ASC LIMIT ?;"
+        params.append(effective_limit)
         return sql, params
 
-    def execute_hunt(self, kql_query: str) -> List[NormalizedAlert]:
+    def execute_hunt(
+        self, kql_query: str, limit: Optional[int] = None
+    ) -> List[NormalizedAlert]:
         """Translates and executes a KQL hunting query against the alerts table.
 
         Args:
             kql_query: KQL search string.
+            limit: Optional maximum number of matching alerts to return (default 500, max 1000).
 
         Returns:
             List of matching NormalizedAlert instances.
         """
-        sql, params = self.translate_kql_to_sql(kql_query)
+        sql, params = self.translate_kql_to_sql(kql_query, limit=limit)
 
         with self.db._lock:
             conn = self.db.connect()

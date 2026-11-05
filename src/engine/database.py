@@ -65,6 +65,9 @@ class DatabaseManager:
                 # Set busy timeout in milliseconds to prevent database is locked
                 busy_timeout_ms = int(self.timeout * 1000)
                 self._conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms};")
+                # Enable Write-Ahead Logging (WAL) for disk-backed database concurrency
+                if self.db_path != ":memory:":
+                    self._conn.execute("PRAGMA journal_mode = WAL;")
             return self._conn
 
     @property

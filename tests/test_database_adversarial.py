@@ -325,3 +325,19 @@ def test_deep_json_data_preservation(in_memory_db):
     assert retrieved["original_record"] == complex_record
     assert retrieved["extracted_indicators"] == ["10.0.0.1", "198.51.100.1"]
 
+
+# =====================================================================
+# 7. WAL Mode Verification
+# =====================================================================
+
+
+def test_sqlite_wal_mode_enabled_on_disk(tmp_path):
+    """Verify DatabaseManager enables PRAGMA journal_mode = WAL on disk databases."""
+    db_file = str(tmp_path / "wal_concurrency.db")
+    db = DatabaseManager(db_path=db_file)
+    conn = db.connect()
+    cursor = conn.execute("PRAGMA journal_mode;")
+    mode = cursor.fetchone()[0]
+    db.close()
+    assert str(mode).lower() == "wal"
+

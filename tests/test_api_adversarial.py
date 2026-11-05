@@ -140,7 +140,7 @@ def test_malformed_path_traversal(test_setup):
 
 
 def test_cors_preflight_options_accepted(test_setup):
-    """Verify cross-origin OPTIONS preflight requests receive HTTP 200 and CORS headers."""
+    """Verify cross-origin OPTIONS preflight requests receive HTTP 200 and explicit CORS headers."""
     client = test_setup["client"]
     response = client.options(
         "/api/metrics",
@@ -151,18 +151,29 @@ def test_cors_preflight_options_accepted(test_setup):
         },
     )
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "*"
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
 
 def test_cors_get_origin_header_reflected(test_setup):
-    """Verify standard GET requests include the CORS allow-origin header."""
+    """Verify standard GET requests from allowed origin reflect specific origin header."""
     client = test_setup["client"]
     response = client.get(
         "/api/metrics",
         headers={"Origin": "http://localhost:3000"},
     )
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "*"
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_cors_untrusted_origin_rejected(test_setup):
+    """Verify unauthorized external origins do NOT receive access-control-allow-origin header."""
+    client = test_setup["client"]
+    response = client.get(
+        "/api/metrics",
+        headers={"Origin": "http://evil-attacker.com"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") is None
 
 
 # =====================================================================

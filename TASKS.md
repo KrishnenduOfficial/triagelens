@@ -283,6 +283,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement AI assessment API endpoints.
 * [x] Implement evaluation API endpoints.
 * [x] Implement API error handling.
+* [x] Implement API security and concurrency hardening (restricted CORS, SQLite WAL mode, KQL row limits; ADR-019).
 * [x] Test API endpoints.
 
 ### Completion Criteria
@@ -341,6 +342,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement ThreatHuntingEngine with KQL-to-SQL parameterized translation.
 * [x] Support deep JSON attribute extraction (e.g., `Network.DestinationIp`).
 * [x] Add `POST /api/hunt` endpoint with input validation and error handling.
+* [x] Enforce parameterized row limits on KQL SQL queries to prevent resource exhaustion (ADR-019).
 * [x] Validate against adversarial SQL injection and syntax corruption attack vectors.
 
 ### YARA Integration

@@ -442,6 +442,29 @@ Naive regex matching destroyed legitimate operational telemetry (16-digit event 
 
 ---
 
+### ADR-019: API Security Hardening and Concurrency Optimization (CORS, KQL LIMIT, WAL Mode)
+
+**Status:** Accepted
+
+**Decision:**
+
+The FastAPI backend and persistence engine implement the following security and concurrency controls:
+1. **Restricted CORS Policy:** `CORSMiddleware` explicitly restricts `allow_origins` to known local development origins (`http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:3000`, `http://127.0.0.1:3000`) and configurable environment origins. Wildcard `allow_origins=["*"]` is strictly barred.
+2. **KQL Query Row Limits:** All KQL-to-SQLite translated queries enforce a parameterized `LIMIT ?` clause (default 500, capped at 1000). The API `/api/hunt` endpoint caps queries exceeding the upper limit to prevent full-table-scan memory exhaustion.
+3. **SQLite WAL Mode:** Non-in-memory SQLite connections automatically execute `PRAGMA journal_mode = WAL;` on initialization, enabling concurrent readers and writers without database locking.
+
+**Rationale:**
+
+Audit API-1 to API-10 revealed that wildcard CORS exposed endpoints to cross-origin exploitation, unbounded KQL queries allowed denial-of-service via memory exhaustion, and default rollback journals caused lock contention during concurrent pipeline writes.
+
+**Consequences:**
+
+* Cross-origin requests from arbitrary external websites are rejected by the browser.
+* Threat hunting queries cannot exhaust server memory or lock the database during large searches.
+* Concurrent dashboard reads and pipeline ingestion writes run without SQLite lock errors.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.

@@ -103,7 +103,7 @@ def test_sql_injection_in_string_value(hunting_setup):
     sql, params = engine.translate_kql_to_sql(query)
 
     assert "DROP TABLE" not in sql
-    assert params == ["'; DROP TABLE alerts; --"]
+    assert params == ["'; DROP TABLE alerts; --", 500]
     assert "event_type = ?" in sql
 
     # Execute the hunt and verify the database is not dropped
@@ -123,7 +123,8 @@ def test_sql_injection_in_contains_value(hunting_setup):
     sql, params = engine.translate_kql_to_sql(query)
 
     assert "UNION SELECT" not in sql
-    assert params == ["%'; DROP TABLE alerts; --%" if "DROP" in query else "%' UNION SELECT * FROM alerts; --%"]
+    expected_like = "%' UNION SELECT * FROM alerts; --%"
+    assert params == [expected_like, 500]
     assert "LIKE ?" in sql
 
 
@@ -213,7 +214,7 @@ def test_deep_json_hunting_nested_path(hunting_setup):
     sql, params = engine.translate_kql_to_sql(query)
 
     assert "json_extract(original_record, '$.Network.DestinationIp') = ?" in sql
-    assert params == ["198.51.100.55"]
+    assert params == ["198.51.100.55", 500]
 
     results = engine.execute_hunt(query)
     assert len(results) == 1
@@ -309,4 +310,37 @@ def test_api_hunt_endpoint_injection_payload_handled_safely(hunting_setup):
     )
     assert response.status_code == 200
     assert response.json() == []
+
+
+# =====================================================================
+# 5. KQL Row Limit & Query Hardening Tests
+# =====================================================================
+
+
+def test_kql_sql_translation_enforces_default_limit(hunting_setup):
+    """Verify translate_kql_to_sql appends parameterized LIMIT clause with default 500."""
+    engine = hunting_setup["engine"]
+    sql, params = engine.translate_kql_to_sql('event_type == "ProcessCreate"')
+    assert "LIMIT ?" in sql
+    assert 500 in params
+
+
+def test_kql_custom_limit_enforced_and_capped(hunting_setup):
+    """Verify custom limit argument is respected in translation and capped at 1000."""
+    engine = hunting_setup["engine"]
+    sql, params = engine.translate_kql_to_sql('event_type == "ProcessCreate"', limit=2)
+    assert "LIMIT ?" in sql
+    assert 2 in params
+
+    # Exceeding MAX_LIMIT is capped
+    sql_max, params_max = engine.translate_kql_to_sql('event_type == "ProcessCreate"', limit=50000)
+    assert 1000 in params_max
+
+
+def test_kql_execution_respects_limit(hunting_setup):
+    """Verify execute_hunt truncates returned results at the limit."""
+    engine = hunting_setup["engine"]
+    # hunting_setup has 3 alerts, limit=1 must return exactly 1
+    results = engine.execute_hunt('event_type != "NonExistent"', limit=1)
+    assert len(results) == 1
 
