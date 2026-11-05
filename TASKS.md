@@ -195,6 +195,9 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [ ] Design provider-independent LLM interface.
 * [x] Implement Gemini provider.
 * [x] Design structured triage prompt.
+* [x] Implement prompt injection defense and untrusted evidence delimiters (<FORENSIC_EVIDENCE>) (ADR-023).
+* [x] Implement verified model configuration and graceful candidate fallback (gemini-3.8-flash, gemini-3.5-flash-lite, gemini-2.5-flash) (ADR-023).
+* [x] Record responding model name on triage verdicts in memory and SQLite (ADR-023).
 * [x] Define expected AI response schema.
 * [x] Implement response validation.
 * [x] Implement alert summarization.

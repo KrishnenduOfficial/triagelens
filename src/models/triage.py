@@ -1,6 +1,6 @@
 """Data models for AI-assisted alert triage and analysis."""
 
-from typing import List, Literal
+from typing import List, Literal, Optional
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator
 
@@ -29,6 +29,11 @@ class TriageVerdict(BaseModel):
     reasoning: List[str]
     recommended_actions: List[str]
     raw_llm_response: str
+    model_name: Optional[str] = Field(
+        default=None,
+        description="The Gemini model identifier that generated this triage assessment",
+    )
+
 
     @field_validator("severity", mode="before")
     @classmethod

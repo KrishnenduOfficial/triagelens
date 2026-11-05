@@ -341,3 +341,73 @@ def test_sqlite_wal_mode_enabled_on_disk(tmp_path):
     db.close()
     assert str(mode).lower() == "wal"
 
+
+# =====================================================================
+# 8. Verdict Model Name Persistence & Migration
+# =====================================================================
+
+
+def test_verdict_model_name_persistence_and_retrieval(in_memory_db):
+    """Verify model_name is persisted and retrieved with TriageVerdict."""
+    timeline = ThreatTimeline(grouping_key="host_verdict_test", alerts=[], total_events=0)
+    in_memory_db.insert_timeline(timeline)
+
+    verdict = TriageVerdict(
+        timeline_id=timeline.timeline_id,
+        severity="HIGH",
+        confidence_score=0.91,
+        summary="C2 beacon detected",
+        reasoning=["Repeated outbound beaconing"],
+        recommended_actions=["Isolate host"],
+        raw_llm_response='{"severity": "HIGH"}',
+        model_name="gemini-3.8-flash",
+    )
+    v_id = in_memory_db.insert_verdict(verdict)
+    retrieved = in_memory_db.get_verdict(v_id)
+
+    assert retrieved is not None
+    assert retrieved["model_name"] == "gemini-3.8-flash"
+    assert retrieved["summary"] == "C2 beacon detected"
+
+
+def test_verdict_table_model_name_migration(tmp_path):
+    """Verify init_db automatically migrates verdicts table if model_name column is missing."""
+    db_file = str(tmp_path / "legacy_verdicts.db")
+    # Create legacy table without model_name
+    conn = sqlite3.connect(db_file)
+    conn.execute("""
+        CREATE TABLE timelines (
+            id TEXT PRIMARY KEY,
+            grouping_key TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            total_events INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+    """)
+    conn.execute("""
+        CREATE TABLE verdicts (
+            id TEXT PRIMARY KEY,
+            timeline_id TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            confidence_score REAL NOT NULL,
+            summary TEXT NOT NULL,
+            reasoning TEXT NOT NULL,
+            recommended_actions TEXT NOT NULL,
+            raw_llm_response TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    # Now open with DatabaseManager and initialize schema, running migrations
+    db = DatabaseManager(db_path=db_file)
+    db.init_db()
+    db_conn = db.connect()
+    cursor = db_conn.execute("PRAGMA table_info(verdicts);")
+    columns = {row[1] for row in cursor.fetchall()}
+    db.close()
+
+    assert "model_name" in columns
+

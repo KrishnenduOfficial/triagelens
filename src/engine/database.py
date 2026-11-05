@@ -172,9 +172,17 @@ class DatabaseManager:
                     recommended_actions TEXT NOT NULL,
                     raw_llm_response TEXT NOT NULL,
                     created_at TEXT NOT NULL,
+                    model_name TEXT,
                     FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE CASCADE
                 );
             """)
+
+            # Migration: ensure model_name column exists in verdicts table
+            cursor.execute("PRAGMA table_info(verdicts);")
+            existing_verdict_cols = {row["name"] for row in cursor.fetchall()}
+            if "model_name" not in existing_verdict_cols:
+                cursor.execute("ALTER TABLE verdicts ADD COLUMN model_name TEXT;")
+
 
             # 5. Evaluations Table
             cursor.execute("""
@@ -474,13 +482,15 @@ class DatabaseManager:
 
             reasoning_json = json.dumps(verdict.reasoning)
             actions_json = json.dumps(verdict.recommended_actions)
+            model_name = getattr(verdict, "model_name", None)
 
             conn.execute(
                 """
                 INSERT INTO verdicts (
                     id, timeline_id, severity, confidence_score, summary,
-                    reasoning, recommended_actions, raw_llm_response, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    reasoning, recommended_actions, raw_llm_response, created_at,
+                    model_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     verdict_id_str,
@@ -492,6 +502,7 @@ class DatabaseManager:
                     actions_json,
                     verdict.raw_llm_response,
                     now_str,
+                    model_name,
                 ),
             )
             conn.commit()
