@@ -312,7 +312,10 @@ class GeminiTriageEngine:
 
         # 1. Build sanitized allow-list payload (ADR-008, prevents ground-truth leakage)
         sanitized_payload = self._build_sanitized_triage_payload(timeline)
-        timeline_clean_json = json.dumps(sanitized_payload, indent=2, default=str)
+        # Deep structural scrubbing of secrets before serialization
+        structurally_scrubbed_payload = self.scrubber.scrub_dict(sanitized_payload)
+        timeline_clean_json = json.dumps(structurally_scrubbed_payload, indent=2, default=str)
+        # String-level regex scrubbing as second defensive layer
         sanitized_timeline_json = self.scrubber.scrub(timeline_clean_json)
 
         # 2. Construct API request payload

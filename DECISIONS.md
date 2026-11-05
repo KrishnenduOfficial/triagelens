@@ -419,6 +419,29 @@ Direct serialization of internal objects (e.g., `timeline.model_dump_json()`) le
 
 ---
 
+### ADR-018: Defense-in-Depth Secret Masking (JSON-Aware KV Regex & Luhn Check Validation)
+
+**Status:** Accepted
+
+**Decision:**
+
+PII and credential scrubbing (`PIIScrubber`) must operate as a defense-in-depth pipeline consisting of recursive structural dictionary sanitization (`scrub_dict`) prior to serialization, followed by string-level regular expression redaction on serialized payloads (`scrub`).
+
+1. **JSON & Prefixed Key Support:** Key-value secret redaction must support JSON-quoted keys (`"password":`), single-quoted keys (`'password':`), escaped quotes inside string-encoded JSON (`\"password\":`), unquoted keys with `:` or `=` delimiters, and prefixed key variants (`db_password`, `user_password`, `admin_api_key`).
+2. **Luhn Algorithm Check:** Credit card redaction on 16-digit numbers must enforce the ISO/IEC 7812 Luhn algorithm checksum (`is_luhn_valid`) and major card issuer identification (MII 3, 4, 5, 6) prior to redaction, preventing false-positive redaction of Windows `EventRecordID`s (e.g. `1234567890123456`), microsecond timestamps, or large file identifiers.
+3. **Recursive Structural Redaction:** Structured payloads undergo recursive dictionary traversal (`scrub_dict`) redacting secret values, tokens, and lists under sensitive key names before JSON serialization.
+
+**Rationale:**
+
+Naive regex matching destroyed legitimate operational telemetry (16-digit event IDs and timestamps) while failing to redact credentials serialized within JSON objects or behind key prefixes.
+
+**Consequences:**
+
+* Security log numbers, event record IDs, and timestamps remain preserved for analyst timeline queries.
+* Cloud credentials, passwords, and tokens are reliably masked across both structured dictionaries and unstructured log strings.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.

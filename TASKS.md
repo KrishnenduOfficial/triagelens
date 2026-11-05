@@ -202,7 +202,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement evidence extraction.
 * [x] Implement investigation recommendations.
 * [ ] Implement uncertainty reporting.
-* [x] Implement sensitive-data masking.
+* [x] Implement sensitive-data masking (enhanced with JSON-aware KV regex, recursive scrub_dict, and Luhn credit-card validation; ADR-018).
 * [x] Implement ground-truth and provenance isolation via allow-list serialization (ADR-017).
 * [x] Implement API timeout and error handling.
 * [ ] Implement response caching where appropriate.

@@ -438,11 +438,11 @@ def test_pii_scrubber_adversarial_patterns():
     assert scrubber.scrub("user+tag.123@sub-domain.co.uk") == "[EMAIL_REDACTED]"
     assert scrubber.scrub("Contact <admin@test.org> immediately") == "Contact <[EMAIL_REDACTED]> immediately"
 
-    # Credit Cards
-    assert scrubber.scrub("Visa: 4111-2222-3333-4444") == "Visa: [CC_REDACTED]"
+    # Credit Cards (valid Luhn format)
+    assert scrubber.scrub("Visa: 4111-1111-1111-1111") == "Visa: [CC_REDACTED]"
     assert scrubber.scrub("Mastercard: 5500 0000 0000 0004") == "Mastercard: [CC_REDACTED]"
     assert scrubber.scrub("Amex: 3782-822463-10005") == "Amex: [CC_REDACTED]"
-    assert scrubber.scrub("Raw digits: 4111222233334444") == "Raw digits: [CC_REDACTED]"
+    assert scrubber.scrub("Raw digits: 4111111111111111") == "Raw digits: [CC_REDACTED]"
 
     # AWS & GCP Secrets
     assert scrubber.scrub("Key AKIA1234567890ABCDEF in log") == "Key [SECRET_REDACTED] in log"
@@ -544,5 +544,102 @@ def test_no_ground_truth_or_provenance_leakage_in_prompt():
     # 3. Assert provenance names and dataset indicators are neutralized
     assert "attack_apt29_samples" not in sent_prompt, "Prompt leaked source_dataset / grouping_key"
     assert "attack_lsass_dump.json" not in sent_prompt, "Prompt leaked source_file"
+
+
+# =====================================================================
+# 7. Masking Hardening Tests (F2 & F3)
+# =====================================================================
+
+
+def test_f2_json_style_secrets_masking():
+    """Verify PIIScrubber masks JSON-style quoted keys, unquoted keys, prefixes, and nested structures."""
+    scrubber = PIIScrubber()
+
+    # 1. Quoted key with colon (standard JSON)
+    json_simple = '{"password": "SuperSecretPassword123"}'
+    scrubbed = scrubber.scrub(json_simple)
+    assert "SuperSecretPassword123" not in scrubbed
+    assert "[SECRET_REDACTED]" in scrubbed
+
+    # 2. Prefixed keys (db_password, user_password, admin_api_key)
+    json_prefixed = '{"db_password": "DatabaseSecretPass999", "admin_api_key": "AdminKeySecret888"}'
+    scrubbed = scrubber.scrub(json_prefixed)
+    assert "DatabaseSecretPass999" not in scrubbed
+    assert "AdminKeySecret888" not in scrubbed
+    assert "[SECRET_REDACTED]" in scrubbed
+
+    # 3. Separators (: and =) with and without quotes
+    kv_unquoted_colon = 'password: PlainSecretPassword123'
+    kv_unquoted_equals = 'password=PlainSecretPassword123'
+    kv_single_quote = "{'password': 'SingleQuoteSecret123'}"
+    assert "PlainSecretPassword123" not in scrubber.scrub(kv_unquoted_colon)
+    assert "PlainSecretPassword123" not in scrubber.scrub(kv_unquoted_equals)
+    assert "SingleQuoteSecret123" not in scrubber.scrub(kv_single_quote)
+
+    # 4. Escaped quotes inside string-encoded JSON
+    escaped_json = r'{\"password\": \"EscapedSecretPassword123\"}'
+    scrubbed_escaped = scrubber.scrub(escaped_json)
+    assert "EscapedSecretPassword123" not in scrubbed_escaped
+    assert "[SECRET_REDACTED]" in scrubbed_escaped
+
+    # 5. Nested JSON string
+    nested_json_str = '{"app": {"security": {"user_password": "NestedStringSecret999"}}}'
+    scrubbed_nested = scrubber.scrub(nested_json_str)
+    assert "NestedStringSecret999" not in scrubbed_nested
+    assert "[SECRET_REDACTED]" in scrubbed_nested
+
+    # 6. scrub_dict with nested dictionaries and lists
+    dict_payload = {
+        "service": "auth_service",
+        "auth_config": {
+            "db_password": "DeepSecretDbPass888",
+            "api_key": "SecretServiceApiKey777",
+            "tokens": ["TokenValue12345", "TokenValue67890"],
+            "safe_metadata": {"host": "auth-srv-01", "port": 5432},
+        },
+    }
+    scrubbed_dict = scrubber.scrub_dict(dict_payload)
+    assert scrubbed_dict["auth_config"]["db_password"] == "[SECRET_REDACTED]"
+    assert scrubbed_dict["auth_config"]["api_key"] == "[SECRET_REDACTED]"
+    assert scrubbed_dict["auth_config"]["tokens"] == ["[SECRET_REDACTED]", "[SECRET_REDACTED]"]
+    assert scrubbed_dict["auth_config"]["safe_metadata"]["host"] == "auth-srv-01"
+    assert scrubbed_dict["auth_config"]["safe_metadata"]["port"] == 5432
+
+
+def test_f3_credit_card_luhn_preserves_log_numbers_and_timestamps():
+    """Verify PIIScrubber does NOT redact 16-digit log record IDs or timestamps, but redacts valid cards."""
+    scrubber = PIIScrubber()
+
+    # 1. 16-digit log numbers that are NOT credit cards
+    event_log = "EventRecordID 1234567890123456 processed"
+    scrubbed_event = scrubber.scrub(event_log)
+    assert "[CC_REDACTED]" not in scrubbed_event, f"Incorrectly redacted 16-digit ID: {scrubbed_event}"
+    assert "1234567890123456" in scrubbed_event
+
+    # 2. 16-digit microsecond timestamp
+    timestamp_log = "Timestamp microseconds 1700000000123456 logged"
+    scrubbed_ts = scrubber.scrub(timestamp_log)
+    assert "[CC_REDACTED]" not in scrubbed_ts, f"Incorrectly redacted timestamp: {scrubbed_ts}"
+    assert "1700000000123456" in scrubbed_ts
+
+    # 3. Valid credit card numbers (must pass Luhn and be redacted)
+    # 4532015012345671 is a valid Visa (Luhn check sum = 50)
+    valid_card_contiguous = "Card number 4532015012345671 on file"
+    scrubbed_card1 = scrubber.scrub(valid_card_contiguous)
+    assert "4532015012345671" not in scrubbed_card1
+    assert "[CC_REDACTED]" in scrubbed_card1
+
+    # Formatted valid card: 4532-0150-1234-5671
+    valid_card_formatted = "Card number 4532-0150-1234-5671 on file"
+    scrubbed_card2 = scrubber.scrub(valid_card_formatted)
+    assert "4532-0150-1234-5671" not in scrubbed_card2
+    assert "[CC_REDACTED]" in scrubbed_card2
+
+    # Valid Amex: 378282246310005 (15 digits, Luhn check sum = 60)
+    valid_amex = "Customer Amex 378282246310005 logged"
+    scrubbed_amex = scrubber.scrub(valid_amex)
+    assert "378282246310005" not in scrubbed_amex
+    assert "[CC_REDACTED]" in scrubbed_amex
+
 
 
