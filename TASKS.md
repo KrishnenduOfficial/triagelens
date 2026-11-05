@@ -72,12 +72,12 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ## 3.3 GitHub
 
-* [ ] Create public GitHub repository.
-* [ ] Connect local repository to GitHub remote.
-* [ ] Verify remote configuration.
-* [ ] Push initial project commit.
-* [ ] Verify repository contents online.
-* [ ] Review repository for exposed credentials or sensitive information.
+* [x] Create GitHub repository (remote: https://github.com/KrishnenduOfficial/triagelens.git).
+* [x] Connect local repository to GitHub remote.
+* [x] Verify remote configuration.
+* [x] Push initial project commit.
+* [x] Verify repository contents online.
+* [x] Review repository for exposed credentials or sensitive information.
 
 ---
 
@@ -418,8 +418,8 @@ The complete core pipeline operates reliably on the development machine, with au
 * [x] TASKS.md saved and reviewed.
 * [x] DECISIONS.md created.
 * [x] Antigravity instruction loading verified.
-* [ ] GitHub repository created.
-* [ ] Initial project pushed to GitHub.
+* [x] GitHub repository created.
+* [x] Initial project pushed to GitHub.
 
 ### Milestone Completion Criteria
 
