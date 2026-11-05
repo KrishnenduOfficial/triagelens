@@ -52,6 +52,86 @@ class GeminiTriageEngine:
     DEFAULT_MODEL = "gemini-flash-lite-latest"
     FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-3.8-flash"]
 
+    FORBIDDEN_EVALUATION_KEYS = {
+        "ground_truth_label",
+        "ground_truth",
+        "mitre_technique",
+        "technique",
+        "mitre",
+        "attack_technique",
+        "is_malicious",
+        "malicious",
+        "label",
+        "verdict",
+        "classification",
+    }
+
+    FORBIDDEN_PROVENANCE_KEYS = {
+        "source_dataset",
+        "source_file",
+        "dataset_source",
+        "dataset",
+        "source",
+    }
+
+    ALLOWLISTED_FIELDS = {
+        # Process and execution
+        "processname",
+        "commandline",
+        "parentprocessname",
+        "processid",
+        "parentprocessid",
+        "command_line",
+        # User and identity
+        "user",
+        "targetusername",
+        "subjectusername",
+        "target_user_name",
+        "subject_user_name",
+        "workstation",
+        "workstationname",
+        "logontype",
+        "authenticationpackage",
+        # Host / System
+        "host",
+        "hostname",
+        "computername",
+        "deviceid",
+        "devicedescription",
+        # Network telemetry
+        "network",
+        "destinationip",
+        "destinationport",
+        "sourceip",
+        "sourceport",
+        "protocol",
+        "clientip",
+        "clientaddress",
+        "uri",
+        "httpmethod",
+        "responsecode",
+        "useragent",
+        "ip",
+        "target_ip",
+        # System & File
+        "filepath",
+        "targetfilepath",
+        "action",
+        "jobname",
+        "servicename",
+        "imagepath",
+        "targetobject",
+        "details",
+        "sha256",
+        "md5",
+        "admin_contact",
+        "developer_email",
+        "aws_access_key",
+        "gcp_api_key",
+        "customer_credit_card",
+        "customer_amex",
+    }
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -129,6 +209,91 @@ class GeminiTriageEngine:
 
         return None
 
+    def _build_sanitized_triage_payload(self, timeline: ThreatTimeline) -> Dict[str, Any]:
+        """Builds a strictly allow-listed, sanitized triage payload from a ThreatTimeline.
+
+        Enforces ADR-008:
+        - Never serializes whole objects.
+        - Strips and neutralizes all provenance fields (source_dataset, source_file, grouping_key).
+        - Strips all ground truth labels, verdicts, and MITRE technique IDs.
+        - Retains only legitimate observable forensic telemetry for independent AI triage.
+        """
+        sanitized_events = []
+        for alert in timeline.alerts:
+            event_entry: Dict[str, Any] = {
+                "timestamp": alert.timestamp.isoformat() if alert.timestamp else None,
+                "event_type": alert.event_type,
+                "indicators": list(alert.extracted_indicators or []),
+            }
+
+            details: Dict[str, Any] = {}
+            if isinstance(alert.original_record, dict):
+                for k, v in alert.original_record.items():
+                    k_str = str(k).strip()
+                    lower_k = k_str.lower()
+
+                    # Strictly skip evaluation and provenance keys
+                    if lower_k in self.FORBIDDEN_EVALUATION_KEYS or lower_k in self.FORBIDDEN_PROVENANCE_KEYS:
+                        continue
+                    if any(bad in lower_k for bad in ("mitre", "ground_truth", "verdict")):
+                        continue
+
+                    # If value is a string matching forbidden ground truth label or MITRE technique ID, omit it
+                    if isinstance(v, str):
+                        lower_val = v.strip().lower()
+                        if lower_val in ("malicious", "benign", "attack"):
+                            continue
+                        if re.match(r"^t\d{4}(?:\.\d{3})?$", lower_val):
+                            continue
+
+                    # Allow-list filter
+                    if lower_k in self.ALLOWLISTED_FIELDS:
+                        if isinstance(v, dict):
+                            # Sanitize nested dictionary (e.g. Network)
+                            clean_nested = {
+                                nk: nv
+                                for nk, nv in v.items()
+                                if str(nk).strip().lower() not in self.FORBIDDEN_EVALUATION_KEYS
+                                and str(nk).strip().lower() not in self.FORBIDDEN_PROVENANCE_KEYS
+                                and not any(bad in str(nk).strip().lower() for bad in ("mitre", "ground_truth", "verdict"))
+                            }
+                            details[k_str] = clean_nested
+                        else:
+                            details[k_str] = v
+
+            if details:
+                event_entry["details"] = details
+            sanitized_events.append(event_entry)
+
+        sanitized_enrichments = []
+        for enr in (timeline.enrichment_data or []):
+            enr_entry: Dict[str, Any] = {
+                "indicator": enr.indicator,
+                "indicator_type": enr.indicator_type,
+                "provider": enr.provider,
+                "is_malicious": enr.is_malicious,
+            }
+            if isinstance(enr.raw_response, dict):
+                clean_raw = {}
+                for k, v in enr.raw_response.items():
+                    if str(k).strip().lower() not in self.FORBIDDEN_EVALUATION_KEYS:
+                        clean_raw[k] = v
+                if clean_raw:
+                    enr_entry["intel_summary"] = clean_raw
+            sanitized_enrichments.append(enr_entry)
+
+        return {
+            "timeline_id": str(timeline.timeline_id),
+            "grouping_key": "timeline-001",
+            "time_window": {
+                "start_time": timeline.start_time.isoformat() if timeline.start_time else None,
+                "end_time": timeline.end_time.isoformat() if timeline.end_time else None,
+            },
+            "total_events": len(sanitized_events),
+            "events": sanitized_events,
+            "enrichment_data": sanitized_enrichments,
+        }
+
     def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
         """Performs AI-assisted triage analysis on a threat timeline.
 
@@ -145,9 +310,10 @@ class GeminiTriageEngine:
             logger.error("analyze_timeline requires a valid ThreatTimeline instance.")
             return None
 
-        # 1. Serialize timeline and scrub all PII / credentials
-        timeline_raw_json = timeline.model_dump_json(indent=2)
-        sanitized_timeline_json = self.scrubber.scrub(timeline_raw_json)
+        # 1. Build sanitized allow-list payload (ADR-008, prevents ground-truth leakage)
+        sanitized_payload = self._build_sanitized_triage_payload(timeline)
+        timeline_clean_json = json.dumps(sanitized_payload, indent=2, default=str)
+        sanitized_timeline_json = self.scrubber.scrub(timeline_clean_json)
 
         # 2. Construct API request payload
         user_prompt = (

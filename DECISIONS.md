@@ -396,6 +396,29 @@ Prevents accidental credential leakage, keeps the repository reproducible across
 
 ---
 
+### ADR-017: Ground-Truth Prompt Isolation and Strict Allow-List Serializer
+
+**Status:** Accepted
+
+**Decision:**
+
+To prevent evaluation bias and prompt contamination, all alert payloads transmitted to the LLM (`GeminiTriageEngine.analyze_timeline`) must be constructed through an explicit allow-list of observable forensic telemetry attributes (`timestamp`, `event_type`, `process_name`, `command_line`, `user`, `host`, `network_connection`, `enrichment_summary`, `raw_log_summary`).
+
+1. **Exclusion of Provenance & Ground Truth:** All dataset provenance metadata (`source_dataset`, `source_file`, `source_id`), correlation grouping identifiers (neutralized to `"timeline-001"`), and evaluation / ground-truth fields (`ground_truth_label`, `verdict`, `mitre_technique`, `attack_technique`, `is_malicious`, etc.) are strictly excluded prior to prompt construction.
+2. **Deep Scrubbing of Unstructured Fields:** Unstructured dictionary fields (such as `enrichment_summary`) undergo recursive scrubbing to remove known ground-truth keys and verdict classification tokens (`malicious`, `benign`, `suspicious`, `true_positive`, `false_positive`).
+3. **Architectural Enforcement:** In accordance with ADR-008, ground-truth labels remain strictly isolated within the evaluation engine (`AccuracyTracker`) and are never serialized into AI inference contexts.
+
+**Rationale:**
+
+Direct serialization of internal objects (e.g., `timeline.model_dump_json()`) leaks dataset source names, event grouping patterns, and embedded ground-truth labels into the AI prompt. Such leakage invalidates benchmark integrity and artificially inflates AI triage accuracy metrics.
+
+**Consequences:**
+
+* The LLM operates purely on observable DFIR telemetry and cannot form conclusions based on dataset labels or source dataset names.
+* Evaluation integrity and confusion matrix calculations in Phase 5 remain uncompromised and scientifically valid.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.

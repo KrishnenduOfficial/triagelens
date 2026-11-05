@@ -464,3 +464,85 @@ def test_pii_scrubber_adversarial_patterns():
     assert scrubber.scrub("") == ""
     assert scrubber.scrub(None) == ""
 
+
+# =====================================================================
+# 7. Ground Truth & Provenance Isolation Tests (ADR-008)
+# =====================================================================
+
+
+def test_no_ground_truth_or_provenance_leakage_in_prompt():
+    """Verify that no ground truth labels, technique IDs, or provenance metadata reach the LLM prompt.
+
+    Enforces ADR-008: AI predictions and ground truth must remain completely independent.
+    """
+    classified_keys = [
+        "ground_truth_label",
+        "mitre_technique",
+        "technique",
+        "mitre",
+        "attack_technique",
+        "is_malicious",
+        "malicious",
+        "ground_truth",
+        "label",
+        "verdict",
+    ]
+
+    leak_alert = NormalizedAlert(
+        source_dataset="attack_apt29_samples",
+        source_file="attack_lsass_dump.json",
+        event_type="ProcessCreate",
+        timestamp="2026-11-05T08:00:00Z",
+        original_record={
+            "ProcessName": "powershell.exe",
+            "CommandLine": "powershell.exe -enc aW52b2tlLW1pbWlrYXR6",
+            "User": "SYSTEM",
+            "mitre_technique": "T1003.001",
+            "technique": "T1003",
+            "attack_technique": "Credential Dumping",
+            "is_malicious": True,
+            "malicious": "yes",
+            "ground_truth": "malicious",
+            "label": "malicious",
+            "verdict": "malicious",
+        },
+        extracted_indicators=["powershell.exe"],
+        ground_truth_label="malicious",
+    )
+
+    leak_timeline = ThreatTimeline(
+        grouping_key="attack_apt29_samples",
+        alerts=[leak_alert],
+        total_events=1,
+    )
+
+    engine = GeminiTriageEngine(api_key="mock_key")
+    mock_resp = build_gemini_api_response("""{
+        "severity": "CRITICAL",
+        "confidence_score": 0.99,
+        "summary": "Mimikatz detected",
+        "reasoning": ["Offensive tool"],
+        "recommended_actions": ["Isolate"]
+    }""")
+
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        engine.analyze_timeline(leak_timeline)
+
+    assert mock_post.called
+    call_args = mock_post.call_args
+    sent_payload = call_args.kwargs["json"]
+    sent_prompt = sent_payload["contents"][0]["parts"][0]["text"]
+
+    # 1. Assert label values and keywords are absent
+    for forbidden_val in ("malicious", "attack", "benign", "T1003.001", "T1003", "Credential Dumping"):
+        assert forbidden_val.lower() not in sent_prompt.lower(), f"Prompt leaked value: {forbidden_val}"
+
+    # 2. Assert all _classify_alert_label keys are absent
+    for forbidden_key in classified_keys:
+        assert f'"{forbidden_key}"' not in sent_prompt, f"Prompt leaked key: {forbidden_key}"
+
+    # 3. Assert provenance names and dataset indicators are neutralized
+    assert "attack_apt29_samples" not in sent_prompt, "Prompt leaked source_dataset / grouping_key"
+    assert "attack_lsass_dump.json" not in sent_prompt, "Prompt leaked source_file"
+
+

@@ -203,6 +203,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement investigation recommendations.
 * [ ] Implement uncertainty reporting.
 * [x] Implement sensitive-data masking.
+* [x] Implement ground-truth and provenance isolation via allow-list serialization (ADR-017).
 * [x] Implement API timeout and error handling.
 * [ ] Implement response caching where appropriate.
 * [x] Write mocked integration tests.
@@ -241,6 +242,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Handle missing ground truth.
 * [ ] Handle unavailable AI predictions.
 * [x] Store evaluation results.
+* [x] Ground-truth independence verification: Automated regression tests verify zero label or provenance leakage into LLM prompts (ADR-008, ADR-017).
 * [ ] Implement reproducible evaluation.
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
