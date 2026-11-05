@@ -359,3 +359,82 @@ def test_resource_exhaustion_rapid_timelines_reads(test_setup):
 
     assert len(status_codes) == num_requests
     assert all(code == 200 for code in status_codes)
+
+
+# =====================================================================
+# 6. Request Boundary & Exception Sanitization Tests (Batch 2)
+# =====================================================================
+
+
+def test_hunt_request_oversized_query_rejected(test_setup):
+    """Verify queries exceeding 2000 characters are rejected with HTTP 422."""
+    client = test_setup["client"]
+    oversized = 'event_type == "' + ('A' * 2005) + '"'
+    resp = client.post("/api/hunt", json={"query": oversized})
+    assert resp.status_code == 422
+
+
+def test_hunt_request_empty_query_rejected(test_setup):
+    """Verify empty query string is rejected at Pydantic layer with HTTP 422."""
+    client = test_setup["client"]
+    resp = client.post("/api/hunt", json={"query": ""})
+    assert resp.status_code == 422
+
+
+def test_hunt_request_negative_limit_rejected(test_setup):
+    """Verify negative limit in hunt request is rejected with HTTP 422."""
+    client = test_setup["client"]
+    resp = client.post(
+        "/api/hunt",
+        json={"query": 'event_type == "ProcessCreate"', "limit": -5},
+    )
+    assert resp.status_code == 422
+
+
+def test_hunt_request_excessive_limit_rejected(test_setup):
+    """Verify limit exceeding 1000 in hunt request is rejected with HTTP 422."""
+    client = test_setup["client"]
+    resp = client.post(
+        "/api/hunt",
+        json={"query": 'event_type == "ProcessCreate"', "limit": 99999},
+    )
+    assert resp.status_code == 422
+
+
+def test_hunt_request_extra_fields_forbidden(test_setup):
+    """Verify unexpected/extra JSON fields are rejected with HTTP 422."""
+    client = test_setup["client"]
+    resp = client.post(
+        "/api/hunt",
+        json={"query": 'event_type == "ProcessCreate"', "malicious_payload": "injected"},
+    )
+    assert resp.status_code == 422
+
+
+def test_global_exception_handler_sanitizes_500():
+    """Verify unhandled server exceptions return sanitized JSON without file paths or SQL."""
+    from unittest.mock import patch
+    from src.engine.database import DatabaseManager
+
+    db = DatabaseManager(":memory:", check_same_thread=False)
+    db.init_db()
+    app = create_app(db=db)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    sensitive_leak = "Critical database failure at C:\\triagelens\\src\\engine\\database.py: SELECT secret_key FROM users"
+    with patch.object(DatabaseManager, "get_timelines", side_effect=RuntimeError(sensitive_leak)):
+        resp = client.get("/api/timelines")
+
+    assert resp.status_code == 500
+    assert resp.headers.get("content-type") == "application/json"
+    data = resp.json()
+    assert data["error"] == "Internal Server Error"
+    assert "internal server error" in data["detail"].lower()
+
+    # Guarantee zero leak of internal paths, SQL text, or traceback frames
+    body_text = resp.text
+    assert "C:\\" not in body_text
+    assert ".py" not in body_text
+    assert "SELECT secret_key" not in body_text
+    assert "traceback" not in body_text.lower()
+

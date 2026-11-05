@@ -4,22 +4,38 @@ Provides REST endpoints for metrics, timelines, alerts, and triage verdicts
 with CORS middleware, strict input validation, and thread-safe persistence.
 """
 
+import logging
 import os
 from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
 from src.engine.hunting import KQLParseError, ThreatHuntingEngine
 
+logger = logging.getLogger(__name__)
+
 
 class HuntRequest(BaseModel):
-    """Payload for threat hunting search queries."""
+    """Payload for threat hunting search queries with strict boundary constraints."""
 
-    query: str
-    limit: Optional[int] = 500
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="KQL-style search query expression (1-2000 chars)",
+    )
+    limit: Optional[int] = Field(
+        default=500,
+        ge=1,
+        le=1000,
+        description="Maximum number of matching telemetry alerts to return (1-1000)",
+    )
 
 
 def get_db(request: Request) -> DatabaseManager:
@@ -79,7 +95,30 @@ def create_app(
     app.state.db = db
     app.state.tracker = tracker or AccuracyTracker()
 
-    # 3. Health check endpoint
+    # 3. Global Exception Handler (sanitizes 500 errors, prevents stack/SQL/path leaks)
+    @app.exception_handler(Exception)
+    def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Global fallback handler catching unhandled exceptions.
+
+        Returns a generic, sanitized JSON response without leaking stack traces,
+        internal filesystem paths, SQL queries, or database connection strings.
+        """
+        logger.error(
+            "Unhandled server error during %s %s: %s",
+            request.method,
+            request.url.path,
+            str(exc),
+            exc_info=False,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": "Internal Server Error",
+                "detail": "An internal server error occurred while processing the request.",
+            },
+        )
+
+    # 4. Health check endpoint
     @app.get("/health", tags=["System"])
     def health_check() -> Dict[str, str]:
         """Health check endpoint."""

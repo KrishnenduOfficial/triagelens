@@ -283,7 +283,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement AI assessment API endpoints.
 * [x] Implement evaluation API endpoints.
 * [x] Implement API error handling.
-* [x] Implement API security and concurrency hardening (restricted CORS, SQLite WAL mode, KQL row limits; ADR-019).
+* [x] Implement API security and concurrency hardening (restricted CORS, SQLite WAL mode, KQL row limits, Pydantic bounds, and global 500 error sanitization; ADR-019, ADR-020).
 * [x] Test API endpoints.
 
 ### Completion Criteria

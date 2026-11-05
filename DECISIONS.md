@@ -465,6 +465,28 @@ Audit API-1 to API-10 revealed that wildcard CORS exposed endpoints to cross-ori
 
 ---
 
+### ADR-020: API Request Boundary Enforcement and Global Exception Sanitization
+
+**Status:** Accepted
+
+**Decision:**
+
+To safeguard the FastAPI backend against resource exhaustion, malformed payloads, and information leakage:
+1. **Strict Pydantic Input Boundaries:** All POST request bodies (such as `HuntRequest`) enforce strict character length bounds (`min_length=1, max_length=2000`), integer range bounds (`ge=1, le=1000`), and reject extra/unexpected payload attributes via `model_config = ConfigDict(extra="forbid")`.
+2. **Global Exception Masking:** All unhandled server exceptions are intercepted by a global `@app.exception_handler(Exception)` returning a generic, safe HTTP 500 JSON payload (`{"error": "Internal Server Error", "detail": "An internal server error occurred while processing the request."}`).
+3. **Information Disclosure Prevention:** Stack traces, internal filesystem paths (`.py`), raw SQL statements (`SELECT`, `PRAGMA`), and database connection strings are never exposed to API consumers in error responses.
+
+**Rationale:**
+
+Unbounded request models enabled payload flooding and parameter injection, while unhandled exceptions risked exposing internal directory structures, code files, and database queries in error responses.
+
+**Consequences:**
+
+* Malicious or oversized search queries are caught and rejected at the validation layer with HTTP 422 before reaching the execution engine.
+* System and database errors are sanitized, preserving confidential operational context within internal logs without external exposure.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.
