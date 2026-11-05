@@ -304,17 +304,17 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Establish TypeScript frontend.
 * [x] Configure frontend-backend communication.
 * [x] Create dashboard layout.
-* [ ] Create overview section.
+* [x] Create overview section.
 * [ ] Create alert management interface.
-* [ ] Create alert detail view.
+* [x] Create alert detail view.
 * [ ] Create threat intelligence view.
-* [ ] Create incident timeline interface.
-* [ ] Create AI triage result view.
-* [ ] Create accuracy analytics dashboard.
-* [ ] Implement severity indicators.
-* [ ] Implement loading and error states.
-* [ ] Verify responsive layout.
-* [ ] Test frontend-backend integration.
+* [x] Create incident timeline interface.
+* [x] Create AI triage result view.
+* [x] Create accuracy analytics dashboard.
+* [x] Implement severity indicators.
+* [x] Implement loading and error states.
+* [x] Verify responsive layout.
+* [x] Test frontend-backend integration.
 
 ### Completion Criteria
 
