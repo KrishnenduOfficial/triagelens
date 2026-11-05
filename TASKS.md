@@ -301,9 +301,9 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [ ] Establish TypeScript frontend.
-* [ ] Configure frontend-backend communication.
-* [ ] Create dashboard layout.
+* [x] Establish TypeScript frontend.
+* [x] Configure frontend-backend communication.
+* [x] Create dashboard layout.
 * [ ] Create overview section.
 * [ ] Create alert management interface.
 * [ ] Create alert detail view.
