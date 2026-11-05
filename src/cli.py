@@ -69,7 +69,7 @@ def detect_indicator_type(indicator: str) -> str:
 def run_pipeline(
     data_dir: str = "data/",
     db_path: Optional[str] = None,
-    group_by: str = "source_dataset",
+    group_by: str = "auto",
     skip_llm: bool = False,
 ) -> Dict[str, float]:
     """Executes the complete TriageLens alert investigation and triage pipeline.
@@ -289,8 +289,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--group-by",
-        default="source_dataset",
-        help="Field name to group alerts by for timeline generation (default: 'source_dataset')",
+        default="auto",
+        help="Correlation strategy or field name: 'auto' (host+user correlation with time-windowing), 'host', 'user', or specific field name (default: 'auto')",
     )
     parser.add_argument(
         "--skip-llm",

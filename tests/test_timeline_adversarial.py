@@ -210,3 +210,186 @@ def test_empty_alerts_and_all_none_timestamps(builder):
     assert timelines[0].start_time is None
     assert timelines[0].end_time is None
 
+
+# ---------------------------------------------------------------------------
+# 6. Time Windowing, Event Capping, and Correlation Confidence (Task F4)
+# ---------------------------------------------------------------------------
+
+def test_alerts_spaced_days_apart_split_into_multiple_timelines(builder):
+    """Verify alerts on same host/user spaced days apart split into distinct timelines."""
+    t1 = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc)  # 9 days later
+    t3 = datetime(2026, 1, 30, 10, 0, 0, tzinfo=timezone.utc)  # 20 days later
+
+    alerts = [
+        NormalizedAlert(
+            source_dataset="BendeDataset",
+            source_file="auth.log",
+            event_type="Logon",
+            original_record={"host": "SRV-APP-01", "user": "admin"},
+            timestamp=t1,
+        ),
+        NormalizedAlert(
+            source_dataset="BendeDataset",
+            source_file="auth.log",
+            event_type="Process",
+            original_record={"host": "SRV-APP-01", "user": "admin"},
+            timestamp=t2,
+        ),
+        NormalizedAlert(
+            source_dataset="BendeDataset",
+            source_file="auth.log",
+            event_type="Network",
+            original_record={"host": "SRV-APP-01", "user": "admin"},
+            timestamp=t3,
+        ),
+    ]
+
+    timelines = builder.build_timelines(alerts)
+    # Alerts spaced days apart must split into 3 distinct timelines (1 per session)
+    assert len(timelines) == 3
+    assert all(t.total_events == 1 for t in timelines)
+    assert all(t.correlation_type == "confirmed" for t in timelines)
+    assert [t.start_time for t in timelines] == [t1, t2, t3]
+
+
+def test_timeline_time_gap_splitting(builder):
+    """Verify alerts split when consecutive gap exceeds time_gap_minutes (30 min)."""
+    t1 = datetime(2026, 2, 1, 10, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 2, 1, 10, 15, 0, tzinfo=timezone.utc)  # 15 min gap (same session)
+    t3 = datetime(2026, 2, 1, 11, 0, 0, tzinfo=timezone.utc)   # 45 min gap (> 30 min -> new session)
+    t4 = datetime(2026, 2, 1, 11, 10, 0, tzinfo=timezone.utc)  # 10 min gap (same 2nd session)
+
+    alerts = [
+        NormalizedAlert(
+            source_dataset="EVTX",
+            source_file="events.json",
+            event_type="Logon",
+            original_record={"host": "WKSTN-01", "user": "alice"},
+            timestamp=t1,
+        ),
+        NormalizedAlert(
+            source_dataset="EVTX",
+            source_file="events.json",
+            event_type="ProcessCreate",
+            original_record={"host": "WKSTN-01", "user": "alice"},
+            timestamp=t2,
+        ),
+        NormalizedAlert(
+            source_dataset="EVTX",
+            source_file="events.json",
+            event_type="FileAccess",
+            original_record={"host": "WKSTN-01", "user": "alice"},
+            timestamp=t3,
+        ),
+        NormalizedAlert(
+            source_dataset="EVTX",
+            source_file="events.json",
+            event_type="NetworkConnect",
+            original_record={"host": "WKSTN-01", "user": "alice"},
+            timestamp=t4,
+        ),
+    ]
+
+    timelines = builder.build_timelines(alerts, time_gap_minutes=30)
+    assert len(timelines) == 2
+
+    # Session 1: 10:00 and 10:15
+    assert timelines[0].total_events == 2
+    assert timelines[0].start_time == t1
+    assert timelines[0].end_time == t2
+    assert timelines[0].correlation_type == "confirmed"
+
+    # Session 2: 11:00 and 11:10
+    assert timelines[1].total_events == 2
+    assert timelines[1].start_time == t3
+    assert timelines[1].end_time == t4
+    assert timelines[1].correlation_type == "confirmed"
+
+
+def test_timeline_event_capping(builder):
+    """Verify timelines exceeding max_events_per_timeline are chunked sequentially."""
+    base_time = datetime(2026, 3, 1, 9, 0, 0, tzinfo=timezone.utc)
+    alerts = [
+        NormalizedAlert(
+            source_dataset="Suricata",
+            source_file="eve.json",
+            event_type="Flow",
+            original_record={"host": "FIREWALL-01", "user": "system"},
+            timestamp=base_time + timedelta(minutes=i),
+        )
+        for i in range(25)
+    ]
+
+    timelines = builder.build_timelines(alerts, max_events_per_timeline=10)
+    # 25 events capped at 10 per timeline -> 3 timelines (10, 10, 5)
+    assert len(timelines) == 3
+    assert [t.total_events for t in timelines] == [10, 10, 5]
+    assert all(t.correlation_type == "confirmed" for t in timelines)
+    assert all("FIREWALL-01" in t.grouping_key for t in timelines)
+
+
+def test_correlation_type_confirmed_vs_potential(builder):
+    """Verify shared hard identifiers yield 'confirmed' and unassociated yield 'potential'."""
+    t = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+    confirmed_alert = NormalizedAlert(
+        source_dataset="DatasetA",
+        source_file="log.json",
+        event_type="Auth",
+        original_record={"host": "PROD-DB-01", "user": "oracle"},
+        timestamp=t,
+    )
+    potential_alert = NormalizedAlert(
+        source_dataset="DatasetB",
+        source_file="raw.json",
+        event_type="GenericPing",
+        original_record={"noise": "unstructured"},
+        timestamp=t,
+    )
+
+    timelines = builder.build_timelines([confirmed_alert, potential_alert])
+    assert len(timelines) == 2
+
+    confirmed_tl = next(tl for tl in timelines if "PROD-DB-01" in tl.grouping_key)
+    assert confirmed_tl.correlation_type == "confirmed"
+    assert confirmed_tl.correlation_reason is not None
+
+    potential_tl = next(tl for tl in timelines if tl.grouping_key == "ungrouped")
+    assert potential_tl.correlation_type == "potential"
+    assert potential_tl.correlation_reason == "time_proximity_fallback"
+
+
+def test_naive_timestamp_treated_as_utc(builder):
+    """Verify naive datetimes from logs are treated as UTC for sorting and windowing."""
+    naive_t1 = datetime(2026, 5, 1, 10, 0, 0)  # Naive
+    aware_t2 = datetime(2026, 5, 1, 10, 20, 0, tzinfo=timezone.utc)  # 20 min later in UTC
+
+    alerts = [
+        NormalizedAlert(
+            source_dataset="WinSys",
+            source_file="evtx.json",
+            event_type="Logon",
+            original_record={"host": "FS01", "user": "bob"},
+            timestamp=aware_t2,
+        ),
+        NormalizedAlert(
+            source_dataset="WinSys",
+            source_file="evtx.json",
+            event_type="Process",
+            original_record={"host": "FS01", "user": "bob"},
+            timestamp=naive_t1,
+        ),
+    ]
+
+    timelines = builder.build_timelines(alerts)
+    # Sorted order should have naive_t1 first, then aware_t2
+    assert len(timelines) == 1
+    assert timelines[0].total_events == 2
+    assert timelines[0].alerts[0].timestamp == naive_t1
+    assert timelines[0].alerts[1].timestamp == aware_t2
+    assert timelines[0].start_time == naive_t1
+    assert timelines[0].end_time == aware_t2
+
+
+
+

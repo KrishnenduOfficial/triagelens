@@ -29,4 +29,13 @@ class ThreatTimeline(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     total_events: int = 0
+    correlation_type: str = Field(
+        default="confirmed",
+        description="Correlation confidence: 'confirmed' (shared hard identifier) or 'potential' (time proximity only)",
+    )
+    correlation_reason: Optional[str] = Field(
+        default=None,
+        description="Documented rationale for event correlation (e.g., shared_host_and_user, time_proximity_fallback)",
+    )
+
 

@@ -167,7 +167,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Group potentially related events.
 * [x] Generate chronological timelines.
 * [x] Preserve individual event references.
-* [ ] Distinguish confirmed and potential correlations.
+* [x] Distinguish confirmed and potential correlations (ADR-021).
 * [x] Handle missing timestamps.
 * [x] Write unit tests.
 * [x] Verify timeline generation.

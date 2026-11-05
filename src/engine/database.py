@@ -115,9 +115,20 @@ class DatabaseManager:
                     start_time TEXT,
                     end_time TEXT,
                     total_events INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    correlation_type TEXT DEFAULT 'confirmed',
+                    correlation_reason TEXT
                 );
             """)
+
+            # Migration: ensure correlation columns exist if table was previously created
+            cursor.execute("PRAGMA table_info(timelines);")
+            existing_tl_cols = {row["name"] for row in cursor.fetchall()}
+            if "correlation_type" not in existing_tl_cols:
+                cursor.execute("ALTER TABLE timelines ADD COLUMN correlation_type TEXT DEFAULT 'confirmed';")
+            if "correlation_reason" not in existing_tl_cols:
+                cursor.execute("ALTER TABLE timelines ADD COLUMN correlation_reason TEXT;")
+
 
             # 2. Alerts Table
             cursor.execute("""
@@ -294,12 +305,15 @@ class DatabaseManager:
             start_str = timeline.start_time.isoformat() if timeline.start_time else None
             end_str = timeline.end_time.isoformat() if timeline.end_time else None
             now_str = datetime.now(timezone.utc).isoformat()
+            corr_type = getattr(timeline, "correlation_type", "confirmed") or "confirmed"
+            corr_reason = getattr(timeline, "correlation_reason", None)
 
             conn.execute(
                 """
                 INSERT INTO timelines (
-                    id, grouping_key, start_time, end_time, total_events, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?);
+                    id, grouping_key, start_time, end_time, total_events, created_at,
+                    correlation_type, correlation_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     timeline_id_str,
@@ -308,6 +322,8 @@ class DatabaseManager:
                     end_str,
                     timeline.total_events,
                     now_str,
+                    corr_type,
+                    corr_reason,
                 ),
             )
 

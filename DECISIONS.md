@@ -487,6 +487,41 @@ Unbounded request models enabled payload flooding and parameter injection, while
 
 ---
 
+### ADR-021: Deterministic Multi-Identifier Timeline Correlation, Windowing, and Provenance Distinction
+
+**Status:** Accepted
+
+**Decision:**
+
+To prevent unbounded timeline collapse, ground-truth overgeneralization, and LLM prompt inflation, `TimelineBuilder` enforces real entity correlation, activity windowing, and provenance classification:
+1. **Documented Identifier Hierarchy (`group_by="auto"`):**
+   - Alerts are correlated by observed entities: composite `host:user` > `host` alone > `user` alone > observable indicator > `ungrouped`.
+   - Host keys recognized: `host`, `hostname`, `computer_name`, `computername`, `computer`, `workstation`, `device_name`.
+   - User keys recognized: `user`, `username`, `target_user_name`, `subject_user_name`, `targetusername`, `subjectusername`, `account_name`.
+2. **Time Gap Windowing (Sessionization):**
+   - Consecutive chronological events within an entity group separated by more than `time_gap_minutes` (default: 30 minutes, configurable) are split into distinct timeline sessions.
+3. **Event Capping:**
+   - Long continuous activity bursts exceeding `max_events_per_timeline` (default: 100 events, configurable) are chunked into bounded sequential timelines to prevent AI prompt bloat and token exhaustion.
+4. **Correlation Confidence Distinction:**
+   - Every `ThreatTimeline` carries `correlation_type`:
+     - `'confirmed'`: Alerts share a deterministic entity identifier (host+user, host, user, indicator).
+     - `'potential'`: Alerts share only temporal proximity or coarse dataset provenance without an explicit entity link.
+   - Every `ThreatTimeline` carries `correlation_reason` documenting the exact heuristic applied (e.g., `shared_host_and_user`, `time_proximity_fallback`).
+5. **UTC Normalization for Naive Datetimes:**
+   - Naive `datetime` instances parsed from logs without timezone offsets are explicitly normalized and interpreted as UTC (`timezone.utc`). This guarantees deterministic chronological sorting across heterogeneous log sources and prevents `TypeError` when comparing naive and aware datetimes.
+
+**Rationale:**
+
+Defaulting to dataset-level grouping (`group_by="source_dataset"`) collapsed months of alerts into a single timeline. If a single alert in a 30-day dataset was labelled malicious, the entire dataset was falsely classified as a single malicious incident, and prompt tokens ballooned to unusable sizes. Real SOC investigation requires scoped entity sessions with transparent provenance.
+
+**Consequences:**
+
+* Alert sessions are bounded in duration and event volume, producing tightly focused timeline contexts for LLM triage and analyst review.
+* Evaluators can distinguish confirmed entity attacks from potential temporal coincidences.
+* Naive log timestamps are consistently handled across all time calculations and database persistence.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.
