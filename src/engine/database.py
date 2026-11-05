@@ -231,7 +231,10 @@ class DatabaseManager:
                     id, timeline_id, timestamp, source_dataset, source_file,
                     event_type, original_record, extracted_indicators,
                     ground_truth_label, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    timeline_id = COALESCE(excluded.timeline_id, alerts.timeline_id),
+                    ground_truth_label = COALESCE(excluded.ground_truth_label, alerts.ground_truth_label);
                 """,
                 (
                     alert_id_str,

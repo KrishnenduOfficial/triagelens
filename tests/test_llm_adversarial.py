@@ -360,6 +360,36 @@ def test_outage_simulation_http_503(sample_timeline):
     assert verdict is None
 
 
+def test_fallback_on_primary_model_http_503(sample_timeline):
+    """Verify engine falls back to secondary model when primary returns 503."""
+    import json
+    mock_503 = MagicMock(spec=httpx.Response)
+    mock_503.status_code = 503
+    mock_503.text = json.dumps({"error": {"code": 503, "message": "High demand"}})
+
+    mock_200 = build_gemini_api_response("""{
+        "severity": "HIGH",
+        "confidence_score": 0.85,
+        "summary": "Fallback model triage",
+        "reasoning": ["Primary 503, secondary recovered"],
+        "recommended_actions": ["Isolate host"]
+    }""")
+
+    engine = GeminiTriageEngine(
+        api_key="mock_key",
+        model="gemini-3.8-flash",
+        fallback_models=["gemini-flash-lite-latest"],
+    )
+
+    with patch("httpx.post", side_effect=[mock_503, mock_200]) as mock_post:
+        verdict = engine.analyze_timeline(sample_timeline)
+
+    assert verdict is not None
+    assert verdict.severity == "HIGH"
+    assert verdict.confidence_score == 0.85
+    assert mock_post.call_count == 2
+
+
 def test_outage_simulation_http_429_rate_limit(sample_timeline):
     """Verify engine handles Gemini 429 Resource Exhausted gracefully without crashing."""
     mock_resp = MagicMock(spec=httpx.Response)

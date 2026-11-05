@@ -2,8 +2,8 @@
 
 **Project:** TriageLens
 **Version:** 0.1.0
-**Development Status:** Initial Setup Complete
-**Project Stage:** Documentation and Architecture Definition
+**Development Status:** Core Pipeline Verified & Cleaned
+**Project Stage:** Phases 1–8 Core Implemented / Portfolio Preparation
 
 ---
 
@@ -89,8 +89,8 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### Tasks
 
-* [x] Research suitable public security datasets.
-* [x] Select initial dataset.
+* [ ] Research suitable public security datasets (synthetic dataset created; public repository integration pending).
+* [ ] Select initial dataset (synthetic telemetry created; public repository selection pending).
 * [x] Define normalized alert data model.
 * [x] Implement JSON ingestion.
 * [x] Implement CSV ingestion.
@@ -270,7 +270,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement alert persistence.
 * [x] Implement indicator persistence.
 * [x] Implement enrichment persistence.
-* [x] Implement incident persistence.
+* [ ] Implement incident persistence (schema persists timelines, alerts, verdicts; incident aggregation entity deferred).
 * [x] Implement timeline persistence.
 * [x] Implement AI assessment persistence.
 * [x] Implement evaluation persistence.
@@ -314,7 +314,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement severity indicators.
 * [x] Implement loading and error states.
 * [x] Verify responsive layout.
-* [x] Test frontend-backend integration.
+* [ ] Test frontend-backend integration (static Vite/tsc build verified; automated E2E testing deferred).
 
 ### Completion Criteria
 
@@ -332,10 +332,14 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 ### SQL and KQL Hunting
 
-* [ ] Research relevant security hunting queries.
-* [ ] Create a collection of investigation queries.
-* [ ] Document query use cases.
-* [ ] Validate queries against compatible datasets.
+* [x] Research relevant security hunting queries.
+* [x] Create a collection of investigation queries.
+* [x] Document query use cases.
+* [ ] Validate queries against compatible datasets (verified on unit fixtures and synthetic dataset; real public dataset test pending).
+* [x] Implement ThreatHuntingEngine with KQL-to-SQL parameterized translation.
+* [x] Support deep JSON attribute extraction (e.g., `Network.DestinationIp`).
+* [x] Add `POST /api/hunt` endpoint with input validation and error handling.
+* [x] Validate against adversarial SQL injection and syntax corruption attack vectors.
 
 ### YARA Integration
 

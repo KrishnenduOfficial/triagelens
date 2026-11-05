@@ -1,7 +1,51 @@
-.venv/
+# =====================================================================
+# TriageLens .gitignore
+# =====================================================================
+
+# Environment and Secrets
 .env
+.env.local
+.env.*.local
+
+# Python Environments & Cache
+.venv/
+env/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases & Runtime Storage
+*.db
+*.sqlite
+*.sqlite3
 data/raw/
 data/cache/
+
+# Node.js & Dashboard Build
 node_modules/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Code Dumps & Scratch Scripts
+*.dmp
+*.dump
+*codebase*.txt
+debug_*.py
+pack_*.py
+test_*.tmp
+
+# Operating System & IDE Artifacts
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo

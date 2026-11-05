@@ -1,4 +1,4 @@
-# GEMINI.md — TriageLens
+# GEMINI.md â€” TriageLens
 ## 1. Project Identity
 
 **Project Name:** TriageLens
@@ -69,9 +69,9 @@ Correlate related events into an understandable sequence.
 
 Example:
 
-* 10:02 — Unusual login detected.
-* 10:05 — Suspicious process execution.
-* 10:09 — Possible lateral movement.
+* 10:02 â€” Unusual login detected.
+* 10:05 â€” Suspicious process execution.
+* 10:09 â€” Possible lateral movement.
 
 Requirements:
 
@@ -274,11 +274,11 @@ Do not claim that commands, tests, installations, or API integrations succeeded 
 
 For every assigned task:
 
-**Step 1 — Understand**
+**Step 1 â€” Understand**
 
 Read the relevant documentation and inspect the existing implementation.
 
-**Step 2 — Plan**
+**Step 2 â€” Plan**
 
 Explain:
 
@@ -288,19 +288,19 @@ Explain:
 * What dependencies are required.
 * How it will be tested.
 
-**Step 3 — Implement**
+**Step 3 â€” Implement**
 
 Implement only the approved task.
 
-**Step 4 — Verify**
+**Step 4 â€” Verify**
 
 Run appropriate tests and inspect the resulting changes.
 
-**Step 5 — Document**
+**Step 5 â€” Document**
 
 Update TASKS.md and DECISIONS.md whenever the task changes project progress or establishes a technical decision.
 
-**Step 6 — Report**
+**Step 6 â€” Report**
 
 Summarize:
 
@@ -330,22 +330,22 @@ The following principles are non-negotiable:
 
 ## 10. Current Project Status
 
-The initial local development environment has been prepared.
+The core TriageLens architecture is implemented and verified:
 
-The project is currently at the documentation and architecture definition stage.
+1. **Stage 1 (Alert Intake):** JSON and CSV ingestion with normalization and validation (`AlertIntakeEngine`).
+2. **Stage 2 (Threat Intel):** Multi-provider enrichment (VirusTotal, AbuseIPDB, URLhaus) with caching (`EnrichmentEngine`).
+3. **Stage 3 (Timeline Builder):** Chronological event correlation and timeline construction (`TimelineBuilder`).
+4. **Stage 4 (LLM Triage):** Cloud-based Google Gemini DFIR triage with automated candidate model failover and regex PII/secret scrubbing (`GeminiTriageEngine`).
+5. **Stage 5 (Accuracy Engine):** Independent ground-truth evaluation, confusion matrix (TP, TN, FP, FN), precision, recall, and F1 calculations (`AccuracyTracker`).
+6. **Stage 6 (Storage & Backend):** Foreign-key enforced SQLite database (`DatabaseManager`) and REST API endpoints (`FastAPI`).
+7. **Stage 7 (Analyst Dashboard):** Dark-mode TypeScript/React frontend with Operations Console and Threat Hunting UI.
+8. **Stage 8 (Threat Hunting Engine):** Parameterized KQL-to-SQLite translation engine with deep JSON extraction (`ThreatHuntingEngine`).
+9. **Test Suite:** 174 adversarial, security, and edge-case unit tests passing across all components.
 
-The next priorities are:
-
-1. Finalize GEMINI.md.
-2. Finalize ARCHITECTURE.md.
-3. Finalize TASKS.md.
-4. Finalize DECISIONS.md.
-5. Verify the AI agent's workspace instruction-loading mechanism.
-6. Establish the first implementation milestone.
-
-Do not begin implementing the entire application at once.
-
-Wait for the developer's explicit task before starting implementation.
+Current Priorities:
+- Audit and align all task tracking in `TASKS.md` with verifiable deliverables.
+- Maintain human-in-the-loop oversight and non-negotiable architectural principles (ADR-008).
+- Prepare comprehensive documentation (`README.md`, setup instructions) for portfolio presentation.
 
 ---
 

@@ -358,6 +358,44 @@ Never mark a task complete merely because an AI agent claims it is complete. Ver
 
 ---
 
+### ADR-015: Parameterized KQL-to-SQLite Threat Hunting Engine
+
+**Status:** Accepted
+
+**Decision:**
+
+A dedicated `ThreatHuntingEngine` translates a simplified KQL syntax into SQLite queries leveraging `json_extract(original_record, '$.path')`.
+
+**Rationale:**
+
+Security analysts expect KQL-style syntax (e.g., `event_type == "ProcessCreate" AND CommandLine contains "mimikatz"`). Because security alerts are ingested from heterogeneous schemas into the JSON-backed `original_record` column, dynamic extraction is necessary. To prevent SQL Injection, field identifiers are strictly validated against `^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$` and all user-supplied values are strictly parameterized using SQLite `?` placeholders.
+
+**Consequences:**
+
+* Allows hunting across direct table columns and arbitrary nested JSON attributes.
+* Protects against SQL injection in values, operators, and field paths.
+* Raises `KQLParseError` on invalid syntax, translating to HTTP 400 at the API boundary.
+
+---
+
+### ADR-016: Repository Hygiene and Credential Sanitization Standards
+
+**Status:** Accepted
+
+**Decision:**
+
+Repository artifacts must adhere to strict cleanliness:
+1. Environment variables and secrets must only be documented via placeholder `.env.example` templates.
+2. Temporary memory dumps, diagnostic scripts (`debug_*.py`), and monolithic codebase packing text files (`*codebase*.txt`) are barred from version control via `.gitignore`.
+3. All repository markdown and configuration files must be encoded in UTF-8 without BOM to prevent mojibake and platform-dependent decoding failures.
+4. Tasks in `TASKS.md` must not remain marked `[x]` unless backed by verified, automated tests or committed artifacts.
+
+**Rationale:**
+
+Prevents accidental credential leakage, keeps the repository reproducible across Windows/Linux environments, and enforces honesty in project tracking.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.
@@ -374,7 +412,7 @@ The following decisions are intentionally not finalized yet.
 | Deployment     | Hosting platform and deployment architecture          |
 | Infrastructure | Whether Docker or containers are necessary            |
 | Detection      | Detailed YARA and MITRE ATT&CK implementation         |
-| Hunting        | SQL/KQL threat-hunting capabilities and scope         |
+| Hunting        | Simplified KQL-to-SQLite engine implemented (ADR-015) |
 
 These should be decided when the relevant implementation stage is reached.
 

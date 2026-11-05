@@ -182,3 +182,20 @@ export async function fetchTimelineDetail(
     );
   }
 }
+
+/**
+ * Executes a threat hunt query against the alerts telemetry database using KQL syntax.
+ *
+ * @param query KQL-style query string (e.g., 'CommandLine contains "powershell"')
+ * @returns Array of matching NormalizedAlert objects
+ */
+export const huntAlerts = async (query: string): Promise<NormalizedAlert[]> => {
+  try {
+    const response = await apiClient.post<NormalizedAlert[]>("/api/hunt", {
+      query,
+    });
+    return response.data;
+  } catch (error) {
+    throw normalizeError(error, "Failed to execute threat hunt query.");
+  }
+};

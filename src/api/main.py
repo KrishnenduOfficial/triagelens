@@ -8,9 +8,17 @@ import os
 from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
+from src.engine.hunting import KQLParseError, ThreatHuntingEngine
+
+
+class HuntRequest(BaseModel):
+    """Payload for threat hunting search queries."""
+
+    query: str
 
 
 def get_db(request: Request) -> DatabaseManager:
@@ -168,6 +176,30 @@ def create_app(
     ) -> List[Dict[str, Any]]:
         """Returns all cached/recorded threat intelligence lookups for an indicator."""
         return db.get_enrichments(indicator)
+
+    # 9. Threat Hunting Endpoint
+    @app.post(
+        "/api/hunt",
+        tags=["Threat Hunting"],
+        summary="Execute KQL threat hunting query against security telemetry",
+    )
+    def hunt_telemetry(
+        hunt_req: HuntRequest,
+        db: DatabaseManager = Depends(get_db),
+    ) -> List[Dict[str, Any]]:
+        """Executes a KQL-style query translated into secure parameterized SQL.
+
+        Returns matching NormalizedAlert items.
+        """
+        hunting_engine = ThreatHuntingEngine(db)
+        try:
+            matched = hunting_engine.execute_hunt(hunt_req.query)
+            return [alert.model_dump(mode="json") for alert in matched]
+        except KQLParseError as parse_err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"KQL Parse Error: {str(parse_err)}",
+            )
 
     return app
 

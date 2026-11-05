@@ -9,6 +9,7 @@ from src.engine.enrichment import (
     VirusTotalProvider,
 )
 from src.engine.evaluation import AccuracyTracker
+from src.engine.hunting import KQLParseError, ThreatHuntingEngine
 from src.engine.intake import AlertIntakeEngine
 from src.engine.llm import GeminiTriageEngine
 from src.engine.timeline import TimelineBuilder
@@ -24,5 +25,7 @@ __all__ = [
     "GeminiTriageEngine",
     "AccuracyTracker",
     "DatabaseManager",
+    "ThreatHuntingEngine",
+    "KQLParseError",
 ]
 

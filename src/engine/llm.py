@@ -49,12 +49,14 @@ class GeminiTriageEngine:
     and validates LLM responses against structured Pydantic schemas.
     """
 
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    DEFAULT_MODEL = "gemini-flash-lite-latest"
+    FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-3.8-flash"]
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        fallback_models: Optional[list] = None,
         timeout: float = 15.0,
         scrubber: Optional[PIIScrubber] = None,
     ) -> None:
@@ -62,7 +64,8 @@ class GeminiTriageEngine:
 
         Args:
             api_key: Gemini API key. Defaults to the GEMINI_API_KEY environment variable.
-            model: Gemini model identifier (e.g., 'gemini-2.5-flash').
+            model: Gemini model identifier (e.g., 'gemini-flash-lite-latest').
+            fallback_models: Optional list of fallback model identifiers to try on 503/429/404.
             timeout: HTTP request timeout in seconds.
             scrubber: Optional custom PIIScrubber instance.
 
@@ -75,7 +78,8 @@ class GeminiTriageEngine:
                 "GEMINI_API_KEY is required to initialize GeminiTriageEngine. "
                 "Provide it directly or configure the GEMINI_API_KEY environment variable."
             )
-        self.model = model or self.DEFAULT_MODEL
+        self.model = model or os.getenv("GEMINI_MODEL", self.DEFAULT_MODEL)
+        self.fallback_models = fallback_models if fallback_models is not None else list(self.FALLBACK_MODELS)
         self.timeout = timeout
         self.scrubber = scrubber or PIIScrubber()
 
@@ -167,33 +171,56 @@ class GeminiTriageEngine:
             },
         }
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         headers = {
             "Content-Type": "application/json",
             "x-goog-api-key": self.api_key,
         }
 
-        # 3. Transmit request with resilience handling
-        try:
-            response = httpx.post(url, headers=headers, json=payload, timeout=self.timeout)
-        except httpx.TimeoutException as exc:
-            logger.error(f"Gemini API request timed out after {self.timeout}s: {exc}")
-            return None
-        except httpx.RequestError as exc:
-            logger.error(f"Gemini API network request error: {exc}")
-            return None
+        # 3. Transmit request with resilience and model fallback handling
+        candidate_models = [self.model]
+        for fb in self.fallback_models:
+            if fb not in candidate_models:
+                candidate_models.append(fb)
 
-        # 4. Handle HTTP status codes (outages, rate limits)
-        if response.status_code == 429:
-            logger.warning("Gemini API rate limit exceeded (HTTP 429).")
-            return None
-        elif response.status_code == 503:
-            logger.error("Gemini API service temporarily unavailable (HTTP 503).")
-            return None
-        elif response.status_code != 200:
-            logger.error(
-                f"Gemini API request failed with HTTP {response.status_code}: {response.text}"
-            )
+        response = None
+        for candidate in candidate_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:generateContent"
+            try:
+                candidate_response = httpx.post(url, headers=headers, json=payload, timeout=self.timeout)
+            except httpx.TimeoutException as exc:
+                logger.warning(f"Gemini API request timed out ({candidate}) after {self.timeout}s: {exc}")
+                continue
+            except httpx.RequestError as exc:
+                logger.warning(f"Gemini API network request error ({candidate}): {exc}")
+                continue
+
+            if candidate_response.status_code == 200:
+                response = candidate_response
+                break
+            elif candidate_response.status_code == 503:
+                logger.warning(
+                    f"Gemini model '{candidate}' returned HTTP 503 (high demand): {candidate_response.text}"
+                )
+                continue
+            elif candidate_response.status_code == 429:
+                logger.warning(
+                    f"Gemini model '{candidate}' rate limit exceeded (HTTP 429): {candidate_response.text}"
+                )
+                continue
+            elif candidate_response.status_code == 404:
+                logger.warning(
+                    f"Gemini model '{candidate}' not found / deprecated (HTTP 404): {candidate_response.text}"
+                )
+                continue
+            else:
+                logger.error(
+                    f"Gemini API request failed ({candidate}) with HTTP {candidate_response.status_code}: {candidate_response.text}"
+                )
+                break
+
+        # 4. Handle complete failure across all candidates
+        if response is None or response.status_code != 200:
+            logger.error("All Gemini API candidate models failed to return a successful triage response.")
             return None
 
         # 5. Extract raw text from Gemini response structure

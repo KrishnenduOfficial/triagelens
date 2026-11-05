@@ -1,7 +1,8 @@
 import React from "react";
-import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { DashboardHome } from "./pages/DashboardHome";
 import { TimelineView } from "./pages/TimelineView";
+import { ThreatHunt } from "./pages/ThreatHunt";
 
 export const App: React.FC = () => {
   return (
@@ -20,10 +21,24 @@ export const App: React.FC = () => {
               </Link>
             </div>
 
-            <nav className="header-nav">
-              <Link to="/" className="nav-link active">
-                Operations Console
-              </Link>
+            <nav className="header-nav" aria-label="Main Navigation">
+              <NavLink
+                to="/"
+                end
+                className={({ isActive }) =>
+                  `nav-link ${isActive ? "active" : ""}`
+                }
+              >
+                Overview Dashboard
+              </NavLink>
+              <NavLink
+                to="/hunt"
+                className={({ isActive }) =>
+                  `nav-link ${isActive ? "active" : ""}`
+                }
+              >
+                Threat Hunting
+              </NavLink>
               <a
                 href="http://localhost:8000/docs"
                 target="_blank"
@@ -45,6 +60,7 @@ export const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<DashboardHome />} />
             <Route path="/timeline/:id" element={<TimelineView />} />
+            <Route path="/hunt" element={<ThreatHunt />} />
           </Routes>
         </main>
 
