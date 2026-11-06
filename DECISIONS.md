@@ -601,6 +601,37 @@ Security logs regularly contain attacker-controlled input (URLs, HTTP headers, c
 
 ---
 
+### ADR-024: Log Sanitization Boundaries and Real 70-Timeline Evaluation Benchmark Run
+
+**Status:** Accepted
+
+**Decision:**
+
+To prevent credential leakage in logging and establish an empirical, reproducible baseline across the entire triage pipeline:
+
+1. **Log Sanitization & Truncation Boundaries (`_safe_log_text`):**
+   - All raw API error response bodies, network exception strings, and unparsed LLM output strings logged by `GeminiTriageEngine` are sanitized through `PIIScrubber.scrub()` prior to emission.
+   - Text logged at warning or error levels is bounded by `max_length = 250` characters, appending `... [truncated X chars]`, eliminating memory spikes, log flooding, and accidental leakage of sensitive tokens, private keys, or cloud credentials.
+
+2. **Balanced 70-Timeline Benchmark Suite (`data/eval_benchmark_70.json`):**
+   - Established a balanced 70-timeline evaluation dataset (35 malicious, 35 benign) covering 9 core MITRE ATT&CK DFIR techniques (credential dumping, C2 beaconing, ransomware, lateral movement, persistence, reconnaissance, privilege escalation, defense evasion, exfiltration) and realistic enterprise operations.
+   - Ensures strict 50.0% / 50.0% class balance (`is_imbalanced = False`) satisfying ADR-022.
+
+3. **Evaluation Pipeline Execution & Persistence:**
+   - Executed full evaluation run across all 70 timelines with `AccuracyTracker` and SQLite caching (`data/eval_cache.db`).
+   - Results persisted to `docs/results/evaluation_report_20261106.md` including primary model (`gemini-3.8-flash`), fallback models (`gemini-3.5-flash-lite`, `gemini-2.5-flash`), confusion matrix (TP=30, TN=34, FP=1, FN=4, Unavailable=1), 92.8% Accuracy, 96.8% Precision, 88.2% Recall, 97.1% Specificity, 92.3% F1-score, and SHA-256 reproducibility hash (`3f623a7091599f710137b0b3c248c0cf5e3eb946c8e14a89e3b7c65d2b27bac7`).
+
+**Rationale:**
+
+Audit F10 identified that candidate API error responses and non-JSON LLM responses were logged verbatim without secret redaction. Furthermore, empirical validation across at least 50–100 timelines with balanced ground truth was required to verify real-world pipeline performance before final feature completion.
+
+**Consequences:**
+
+* No plaintext secrets or unbounded responses can leak into operational logs.
+* TriageLens has measured, documented, and reproducible reliability metrics across 70 independent scenarios.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet.

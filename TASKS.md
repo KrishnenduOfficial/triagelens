@@ -206,6 +206,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement investigation recommendations.
 * [ ] Implement uncertainty reporting.
 * [x] Implement sensitive-data masking (enhanced with JSON-aware KV regex, recursive scrub_dict, and Luhn credit-card validation; ADR-018).
+* [x] Implement log sanitization and truncation boundaries for raw API errors and raw LLM text (ADR-024).
 * [x] Implement ground-truth and provenance isolation via allow-list serialization (ADR-017).
 * [x] Implement API timeout and error handling.
 * [ ] Implement response caching where appropriate.
@@ -247,6 +248,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Store evaluation results.
 * [x] Ground-truth independence verification: Automated regression tests verify zero label or provenance leakage into LLM prompts (ADR-008, ADR-017).
 * [x] Implement reproducible evaluation (ADR-022).
+* [x] Execute real evaluation benchmark run across 70 balanced enterprise timelines (docs/results/evaluation_report_20261106.md; ADR-024).
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
 

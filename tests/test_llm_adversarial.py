@@ -8,6 +8,7 @@ Tests defense mechanisms against:
 """
 
 import json
+import logging
 import os
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -788,6 +789,50 @@ def test_model_fallback_on_404_logs_error_and_records_answering_model():
         assert verdict is not None
         # Must record that gemini-3.8-flash was the model that answered
         assert verdict.model_name == "gemini-3.8-flash"
+
+
+def test_f10_raw_logging_sanitizes_secrets_and_truncates(caplog):
+    """Verify raw API errors and raw LLM text are scrubbed and truncated before logging (F10)."""
+    engine = GeminiTriageEngine(api_key="mock-key", model="gemini-3.8-flash", fallback_models=[])
+    timeline = ThreatTimeline(grouping_key="test_f10", alerts=[], total_events=0)
+
+    # 1. Test raw API error body logging with secrets and excessive length
+    secret_gcp_key = "AIzaSyD-1234567890abcdefghijklmnopqrst"
+    long_noisy_error = f'{{"error": "Invalid token: {secret_gcp_key}"}} ' + ("A" * 600)
+    mock_resp_err = MagicMock(spec=httpx.Response, status_code=500, text=long_noisy_error)
+
+    with caplog.at_level(logging.WARNING):
+        with patch("httpx.post", return_value=mock_resp_err):
+            verdict = engine.analyze_timeline(timeline)
+            assert verdict is None
+
+        # Assert secret GCP key is NOT leaked in raw plaintext in logs
+        assert secret_gcp_key not in caplog.text
+        # Assert excessive error text is truncated
+        assert "truncated" in caplog.text or len(caplog.text) < len(long_noisy_error)
+
+    caplog.clear()
+
+    # 2. Test raw non-JSON LLM text logging with secrets and excessive length
+    secret_pwd = "SuperSecretPassword123!"
+    secret_aws_key = "AKIAIOSFODNN7EXAMPLE"
+    unparsable_llm_text = (
+        f"I refuse to output JSON. Here is the leaked secret: password = '{secret_pwd}' "
+        f"and aws_access_key = '{secret_aws_key}' " + ("B" * 600)
+    )
+    mock_resp_200 = build_gemini_api_response(unparsable_llm_text)
+
+    with caplog.at_level(logging.ERROR):
+        with patch("httpx.post", return_value=mock_resp_200):
+            verdict = engine.analyze_timeline(timeline)
+            assert verdict is None
+
+        # Assert plaintext password and AWS key are scrubbed from logs
+        assert secret_pwd not in caplog.text
+        assert secret_aws_key not in caplog.text
+        # Assert excessive text is truncated
+        assert "truncated" in caplog.text or len(caplog.text) < len(unparsable_llm_text)
+
 
 
 

