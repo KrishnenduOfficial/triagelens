@@ -125,11 +125,17 @@ def create_app(
     )
     def get_metrics(
         tracker: AccuracyTracker = Depends(get_tracker),
+        db: DatabaseManager = Depends(get_db),
     ) -> Dict[str, Any]:
         """Returns the current confusion matrix and statistical evaluation metrics:
 
         TP, TN, FP, FN, Precision, Recall, Accuracy, and F1-Score.
+        Dynamically computes from stored database evaluations when present.
         """
+        if db is not None:
+            db_tracker = AccuracyTracker.from_database(db)
+            if db_tracker.total_evaluated > 0 or db_tracker.history:
+                return db_tracker.get_metrics()
         return tracker.get_metrics()
 
     # 5. Timelines List Endpoint (with strict pagination validation)

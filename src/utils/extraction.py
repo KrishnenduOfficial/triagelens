@@ -62,6 +62,37 @@ def is_public_ipv4(ip_str: str) -> bool:
         return False
 
 
+def is_public_ipv6(ip_str: str) -> bool:
+    """Validates that a string is a valid, routable, non-private IPv6 address.
+
+    Strictly rejects:
+    - Loopback (::1)
+    - Link-local (fe80::/10)
+    - Multicast (ff00::/8)
+    - Unspecified (::)
+    - Private / Unique Local Addresses (fc00::/7)
+    - Reserved addresses
+    """
+    if not ip_str or not isinstance(ip_str, str):
+        return False
+    try:
+        ip = ipaddress.ip_address(ip_str.strip())
+        if not isinstance(ip, ipaddress.IPv6Address):
+            return False
+        if (
+            ip.is_loopback
+            or ip.is_multicast
+            or ip.is_link_local
+            or ip.is_unspecified
+            or ip.is_private
+            or ip.is_reserved
+        ):
+            return False
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def is_valid_domain(candidate: str) -> bool:
     """Validates if a candidate token is a syntactically valid domain name.
 

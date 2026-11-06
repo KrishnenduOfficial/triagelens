@@ -139,6 +139,10 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement caching.
 * [x] Implement enrichment error handling.
 * [x] Preserve lookup timestamps.
+* [x] Implement indicator type routing across providers and credential gating (IP -> VirusTotal + AbuseIPDB, Hash -> VirusTotal, Domain/URL -> VirusTotal + URLhaus; ADR-028).
+* [x] Implement client-side rate limiting, Retry-After backoff, persistent SQLite caching with positive/negative TTL, per-run lookup cap, lookup status classification, and unavailable intelligence LLM defense (ADR-029).
+* [x] Implement compact normalized threat intelligence summaries (< 800 bytes, prompt injection stripping), URLhaus Auth-Key authentication, HTTP 401/403/404/422 error granularity, indicator quality gates (IPv6 & junk rejection), and configurable detection thresholds (ADR-030).
+* [x] Implement safe live connection smoke test script (scripts/check_connections.py) with zero secret exposure, response body withholding, --dry-run support, and mocked unit test verification (ADR-031).
 * [x] Write unit tests using mocked API responses.
 * [x] Verify enrichment results.
 
@@ -291,6 +295,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement evaluation API endpoints.
 * [x] Implement API error handling.
 * [x] Implement API security and concurrency hardening (restricted CORS, SQLite WAL mode, KQL row limits, Pydantic bounds, and global 500 error sanitization; ADR-019, ADR-020).
+* [x] Implement dynamic database-derived metrics calculation for /api/metrics, end-to-end evaluation runner pipeline, and file-database verification (ADR-032).
 * [x] Test API endpoints.
 
 ### Completion Criteria

@@ -4,7 +4,7 @@ Provides connection management, schema initialization, parameterized queries,
 foreign key enforcement, and thread-safe concurrent execution.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import sqlite3
@@ -160,6 +160,27 @@ class DatabaseManager:
                 );
             """)
 
+            cursor.execute("PRAGMA table_info(enrichments);")
+            existing_enrich_cols = {row["name"] for row in cursor.fetchall()}
+            if "lookup_status" not in existing_enrich_cols:
+                cursor.execute("ALTER TABLE enrichments ADD COLUMN lookup_status TEXT DEFAULT 'ok';")
+
+            # 3b. Enrichment Persistent Cache Table (ADR-029)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS enrichment_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    indicator TEXT NOT NULL,
+                    indicator_type TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    lookup_status TEXT NOT NULL,
+                    is_malicious INTEGER NOT NULL,
+                    raw_response TEXT NOT NULL,
+                    cached_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_enrichment_cache_expires ON enrichment_cache(expires_at);")
+
             # 4. Triage Verdicts Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS verdicts (
@@ -201,10 +222,20 @@ class DatabaseManager:
                     is_correct INTEGER,
                     category TEXT NOT NULL,
                     evaluated_at TEXT NOT NULL,
+                    confidence_score REAL,
+                    severity_prediction TEXT,
                     FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE CASCADE,
                     FOREIGN KEY (verdict_id) REFERENCES verdicts(id) ON DELETE CASCADE
                 );
             """)
+
+            # Migration: ensure confidence_score and severity_prediction columns exist in evaluations
+            cursor.execute("PRAGMA table_info(evaluations);")
+            existing_eval_cols = {row["name"] for row in cursor.fetchall()}
+            if "confidence_score" not in existing_eval_cols:
+                cursor.execute("ALTER TABLE evaluations ADD COLUMN confidence_score REAL;")
+            if "severity_prediction" not in existing_eval_cols:
+                cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_prediction TEXT;")
 
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
@@ -427,15 +458,16 @@ class DatabaseManager:
         with self._lock:
             conn = self.connect()
             ts_str = enrichment.lookup_timestamp.isoformat()
-            raw_json = json.dumps(enrichment.raw_response)
+            raw_json = json.dumps(enrichment.raw_response, default=str)
             is_malicious_int = 1 if enrichment.is_malicious else 0
+            lookup_status_str = getattr(enrichment, "lookup_status", "ok") or "ok"
 
             cursor = conn.execute(
                 """
                 INSERT INTO enrichments (
                     indicator, indicator_type, provider, is_malicious,
-                    raw_response, lookup_timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?);
+                    raw_response, lookup_timestamp, lookup_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     enrichment.indicator,
@@ -444,6 +476,7 @@ class DatabaseManager:
                     is_malicious_int,
                     raw_json,
                     ts_str,
+                    lookup_status_str,
                 ),
             )
             conn.commit()
@@ -462,8 +495,73 @@ class DatabaseManager:
                 data = dict(row)
                 data["raw_response"] = json.loads(data["raw_response"])
                 data["is_malicious"] = bool(data["is_malicious"])
+                data["lookup_status"] = data.get("lookup_status", "ok") or "ok"
                 results.append(data)
             return results
+
+    def get_cached_enrichment(self, cache_key: str) -> Optional[EnrichmentResult]:
+        """Retrieves a non-expired enrichment result from the persistent SQLite cache."""
+        with self._lock:
+            conn = self.connect()
+            now_str = datetime.now(timezone.utc).isoformat()
+            cursor = conn.execute(
+                """
+                SELECT * FROM enrichment_cache
+                WHERE cache_key = ? AND expires_at > ?;
+                """,
+                (cache_key, now_str),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            data = dict(row)
+            return EnrichmentResult(
+                indicator=data["indicator"],
+                indicator_type=data["indicator_type"],
+                provider=data["provider"],
+                is_malicious=bool(data["is_malicious"]),
+                raw_response=json.loads(data["raw_response"]),
+                lookup_timestamp=datetime.fromisoformat(data["cached_at"]),
+                lookup_status=data["lookup_status"],
+            )
+
+    def set_cached_enrichment(
+        self,
+        cache_key: str,
+        result: EnrichmentResult,
+        ttl_seconds: int = 86400,
+    ) -> None:
+        """Stores an EnrichmentResult in the persistent SQLite cache with a defined TTL."""
+        with self._lock:
+            conn = self.connect()
+            now = datetime.now(timezone.utc)
+            cached_at_str = now.isoformat()
+            expires_at_str = (now + timedelta(seconds=ttl_seconds)).isoformat()
+            raw_json = json.dumps(result.raw_response, default=str)
+            is_malicious_int = 1 if result.is_malicious else 0
+            lookup_status_str = getattr(result, "lookup_status", "ok") or "ok"
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO enrichment_cache (
+                    cache_key, indicator, indicator_type, provider, lookup_status,
+                    is_malicious, raw_response, cached_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    cache_key,
+                    result.indicator,
+                    result.indicator_type,
+                    result.provider,
+                    lookup_status_str,
+                    is_malicious_int,
+                    raw_json,
+                    cached_at_str,
+                    expires_at_str,
+                ),
+            )
+            conn.commit()
 
     # =====================================================================
     # Triage Verdict Persistence
@@ -587,12 +685,15 @@ class DatabaseManager:
                 else None
             )
 
+            conf_val = float(evaluation.confidence_score) if evaluation.confidence_score is not None else None
+            sev_pred = evaluation.severity_prediction
+
             cursor = conn.execute(
                 """
                 INSERT INTO evaluations (
                     timeline_id, verdict_id, ground_truth, llm_prediction,
-                    is_correct, category, evaluated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                    is_correct, category, evaluated_at, confidence_score, severity_prediction
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     timeline_id_str,
@@ -602,6 +703,8 @@ class DatabaseManager:
                     correct_int,
                     evaluation.category,
                     now_str,
+                    conf_val,
+                    sev_pred,
                 ),
             )
             conn.commit()
@@ -628,5 +731,59 @@ class DatabaseManager:
                     bool(data["is_correct"]) if data["is_correct"] is not None else None
                 )
                 results.append(data)
+            return results
+
+    def get_all_evaluations(self) -> List[EvaluationResult]:
+        """Retrieves all stored evaluation records joined with verdicts for metric recomputation."""
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute("PRAGMA table_info(evaluations);")
+            cols = {row["name"] for row in cursor.fetchall()}
+            has_conf = "confidence_score" in cols
+            has_sev = "severity_prediction" in cols
+
+            conf_select = "COALESCE(e.confidence_score, v.confidence_score)" if has_conf else "v.confidence_score"
+            sev_select = "COALESCE(e.severity_prediction, v.severity)" if has_sev else "v.severity"
+
+            query = f"""
+                SELECT
+                    e.id,
+                    e.timeline_id,
+                    e.verdict_id,
+                    e.ground_truth,
+                    e.llm_prediction,
+                    e.is_correct,
+                    e.category,
+                    e.evaluated_at,
+                    {conf_select} AS confidence_score,
+                    {sev_select} AS verdict_severity
+                FROM evaluations e
+                LEFT JOIN verdicts v ON e.verdict_id = v.id
+                ORDER BY e.id ASC;
+            """
+            cursor = conn.execute(query)
+            results: List[EvaluationResult] = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                t_id = UUID(data["timeline_id"]) if data.get("timeline_id") else None
+                v_id = UUID(data["verdict_id"]) if data.get("verdict_id") else None
+                gt = bool(data["ground_truth"]) if data.get("ground_truth") is not None else None
+                pred = bool(data["llm_prediction"]) if data.get("llm_prediction") is not None else None
+                correct = bool(data["is_correct"]) if data.get("is_correct") is not None else None
+                conf = float(data["confidence_score"]) if data.get("confidence_score") is not None else None
+                sev_pred = data.get("verdict_severity")
+
+                results.append(
+                    EvaluationResult(
+                        timeline_id=t_id,
+                        verdict_id=v_id,
+                        ground_truth=gt,
+                        llm_prediction=pred,
+                        is_correct=correct,
+                        category=data["category"],
+                        confidence_score=conf,
+                        severity_prediction=sev_pred,
+                    )
+                )
             return results
 

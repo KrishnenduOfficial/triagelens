@@ -25,4 +25,8 @@ class EnrichmentResult(BaseModel):
     lookup_timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+    lookup_status: str = Field(
+        default="ok",
+        description="Status of lookup: ok, not_found, rate_limited, auth_error, error, skipped",
+    )
 

@@ -746,6 +746,188 @@ Configuration drift between documentation, template files, and code causes analy
 
 ---
 
+### ADR-028: Threat Intelligence Indicator Routing and Credential-Gated Provider Registration
+
+**Status:** Accepted
+
+**Decision:**
+
+To ensure threat intelligence lookups query appropriate services based on indicator classification and prevent unauthenticated or silent provider invocations:
+
+1. **Indicator Routing by Type:**
+   `EnrichmentEngine` enforces a routing mapping:
+   - `ip`, `ipv4`, `ipv6` $\rightarrow$ `["virustotal", "abuseipdb"]`
+   - `hash`, `file`, `md5`, `sha1`, `sha256` $\rightarrow$ `["virustotal"]`
+   - `domain`, `url` $\rightarrow$ `["virustotal", "urlhaus"]`
+
+2. **Credential-Gated Provider Registration:**
+   `EnrichmentEngine.__init__` only instantiates and registers providers that have valid API credentials configured:
+   - `VirusTotalProvider`: Registered strictly if `VIRUSTOTAL_API_KEY` or `VT_API_KEY` is present.
+   - `AbuseIPDBProvider`: Registered strictly if `ABUSEIPDB_API_KEY` is present.
+   - `URLhausProvider`: Registered unconditionally as a public/keyless service (Auth-Key migration deferred to WIRE-4).
+   - If a provider's key is not configured, it is omitted from registration and skipped during routing lookups.
+
+3. **Multi-Provider Indicator Lookup:**
+   `lookup_indicator(indicator, indicator_type)` queries all registered providers for the given indicator type, caching per provider and returning a list of `EnrichmentResult` records.
+
+4. **Separate Persistence in SQLite:**
+   In `src/cli.py` Stage 2, every returned result from each provider is appended to `all_enrichment_results` and individually persisted to the `enrichments` table via `db.insert_enrichment(res)`. Multiple provider findings for the same indicator are preserved and linked into timelines via `TimelineBuilder`.
+
+5. **Startup Telemetry:**
+   Startup logs explicitly announce the list of active threat intelligence providers without logging sensitive keys.
+
+**Rationale:**
+
+Previously, Stage 2 called `enrichment_engine.lookup()` which defaulted to `provider_name="virustotal"`. Consequently, AbuseIPDB and URLhaus were never called for IPs, domains, or URLs, while empty `EnrichmentEngine()` calls unconditionally registered unkeyed providers.
+
+**Consequences:**
+
+* IP indicators query both VirusTotal and AbuseIPDB when configured.
+* Domain and URL indicators query both VirusTotal and URLhaus.
+* File hashes query VirusTotal.
+* Providers without API keys are never queried.
+* Timelines receive comprehensive multi-source threat intelligence.
+
+---
+
+### ADR-029: Threat Intelligence Rate Limiting, Persistent SQLite Caching, and Unavailable Intelligence Defense
+
+**Status:** Accepted
+
+**Decision:**
+
+To prevent API quota exhaustion, eliminate ephemeral in-memory cache loss between pipeline runs, and ensure missing threat intelligence is never conflated with benign indicators:
+
+1. **Client-Side Provider Rate Limiter (`ProviderRateLimiter`):**
+   - Tracks requests within sliding 60-second windows (VirusTotal: 4 RPM, AbuseIPDB: 60 RPM, URLhaus: 100 RPM).
+   - Dynamically parses and honors HTTP `Retry-After` headers on HTTP 429 responses, blocking subsequent requests until the backoff penalty elapses.
+   - Executes bounded retries (max 2 attempts) with exponential backoff for transient 5xx errors or brief rate limits ($\le 2$ seconds).
+
+2. **Standardized Lookup Status Taxonomy:**
+   - Every lookup result is classified into one of: `ok`, `not_found`, `rate_limited`, `auth_error`, `error`, or `skipped`.
+   - Providers maintain backward compatibility: `lookup()` returns `None` on non-ok statuses for legacy callers, while `lookup_with_status()` and `EnrichmentEngine` retain the full diagnostic record.
+
+3. **Persistent SQLite Caching (`enrichment_cache`):**
+   - SQLite table stores cached results keyed by `provider:type:indicator`.
+   - Positive/successful lookups (`ok`): Cached with a 24-hour TTL (86,400s).
+   - Negative lookups (`not_found`, `rate_limited`, `error`): Cached with a short 15-minute TTL (900s).
+   - Cache survives across separate pipeline executions and engine instances pointing to the same SQLite database.
+
+4. **Per-Run External Lookup Cap:**
+   - `EnrichmentEngine` enforces a configurable `max_lookups_per_run` parameter. When the cap is reached, lookups return `skipped` (`reason: "lookup_cap_exceeded"`), protecting external API quotas.
+
+5. **Defense Against Misinterpreting Missing Intel as Clean:**
+   - In `GeminiTriageEngine._build_sanitized_triage_payload`, non-ok lookups are serialized with `intel_status: "unavailable"`, `is_malicious: False`, and a mandatory notice that the indicator must not be assumed clean.
+   - `DFIR_SYSTEM_PROMPT` explicitly instructs the LLM that unavailable indicators represent investigation gaps that must be recorded under `missing_information` rather than assumed safe.
+
+**Rationale:**
+
+Previously, 404, 429, timeouts, and network errors all collapsed into `None`, resulting in uncached retries, quota bans, and the danger of an AI interpreting unindexed or rate-limited malware as clean.
+
+**Consequences:**
+
+* Lookups survive process restarts via persistent SQLite storage.
+* Quota overages and 429 penalties are caught and back-off managed locally.
+* The LLM prompt explicitly recognizes intelligence gaps and documents them under missing information.
+
+---
+
+### ADR-030: Normalized Threat Intelligence Summarization, Indicator Quality Gates, and Configurable Thresholds
+
+**Status:** Accepted
+
+**Decision:**
+
+To safeguard against prompt injection, eliminate token waste, and prevent invalid indicator queries:
+1. **Compact Normalized Summaries (`summarize_enrichment`):**
+   - Distills raw provider payloads (e.g., 50+ KB VirusTotal JSON containing 80+ AV engine results and user comments) into compact summaries strictly bounded under 800 bytes per indicator.
+   - Completely strips scanner dictionaries, raw comment strings, report comment bodies, and payload dumps before serializing into the LLM prompt (`_build_sanitized_triage_payload`), effectively neutralizing prompt injection vectors embedded in threat feeds.
+   - Retains the full, un-distilled raw provider payload in SQLite (`enrichments.raw_response`) for comprehensive forensic auditing and analyst inspection.
+2. **URLhaus Auth-Key and HTTP Granularity:**
+   - Supports optional `Auth-Key` HTTP header authentication via `URLHAUS_API_KEY` (or `AUTH_KEY`) while gracefully supporting public/keyless usage when unconfigured.
+   - Distinctively handles HTTP 401/403 (`auth_error`), 404 (`not_found`), and 422 (`error`).
+3. **Indicator Quality Gates & Junk Rejection:**
+   - `detect_indicator_type()` validates indicators strictly: public IPv4 and IPv6 (`is_public_ipv6`), hex hashes (32, 40, 64 chars), URLs, and domain names (`is_valid_domain`).
+   - Junk strings, SQL injection fragments, and malformed IPs are classified as `"unknown"` rather than silently defaulting to `"domain"`.
+   - Pipeline Stage 2 skips `"unknown"` and `"invalid"` indicators, protecting threat intelligence quotas.
+4. **Configurable Detection Thresholds:**
+   - Supports configurable detection thresholds via `VIRUSTOTAL_MIN_DETECTIONS` (default: 1) and `ABUSEIPDB_MIN_SCORE` (default: 25).
+
+**Rationale:**
+
+Unfiltered provider payloads waste thousands of LLM prompt tokens and introduce an untrusted channel where attacker comments can manipulate AI triage verdicts. Furthermore, defaulting unrecognized strings to "domain" wasted external API quotas on junk strings.
+
+**Consequences:**
+
+* Large provider payloads are condensed into concise, normalized signals for LLM triage.
+* Third-party feed comments cannot inject instructions into the AI prompt.
+* Malformed strings are dropped before contacting external threat intelligence APIs.
+* Full raw evidence is preserved in the database for human SOC analysts.
+
+---
+
+### ADR-031: Live Connection Verification & Zero-Leak Secret Masking Standards
+
+**Status:** Accepted
+
+**Decision:**
+
+To establish a safe, reproducible operational procedure for verifying live external threat intelligence and AI API connectivity without risking credential leakage or automated quota depletion:
+1. **Isolated Smoke Test Utility (`scripts/check_connections.py`):**
+   - Implements a dedicated operational smoke-testing script for human analysts.
+   - Strictly barred from automated test suites (`pytest`) to prevent unmetered live network calls or quota consumption during CI/CD.
+2. **Zero-Leak Secret Masking:**
+   - Under no condition are API keys, authorization headers, or raw response bodies printed, logged, or serialized.
+   - Exceptions are safely mapped to exception type names without emitting connection URLs or parameters.
+3. **Bounded Benign Probes:**
+   - Queries exactly ONE known benign public indicator (`8.8.8.8`) per configured provider.
+   - Measures end-to-end latency and validates that the JSON response satisfies the expected schema.
+4. **Dry-Run Mode & Deterministic Exit Codes:**
+   - Supports `--dry-run` to verify credential presence without making network calls.
+   - Exits with status `0` on complete success or dry run; exits with status `1` on probe failure.
+
+**Rationale:**
+
+Operators require a rapid way to confirm whether external API credentials and network routes are operational before initiating full batch pipeline runs. Running smoke tests through standard unit test runners risks leaking keys in CI logs and rapidly depleting third-party query quotas.
+
+**Consequences:**
+
+* Operators can quickly diagnose API key validity, network connectivity, and latency.
+* API secrets and raw response payloads are never exposed to stdout, stderr, or system logs.
+* Automated testing remains 100% deterministic and free of live network calls.
+
+---
+
+### ADR-032: Database-Derived API Metrics and End-to-End Pipeline Coherence
+
+**Status:** Accepted
+
+**Decision:**
+
+To eliminate the discrepancy between CLI pipeline executions and the analyst dashboard:
+1. **Dynamic Database-Derived Metrics (`/api/metrics`):**
+   - `DatabaseManager.get_all_evaluations()` queries stored records from the `evaluations` table joined with `verdicts` to retrieve categories, predictions, ground truth, and confidence scores.
+   - `AccuracyTracker.from_database(db)` dynamically reconstructs all confusion matrix statistics (TP, TN, FP, FN, Accuracy, Precision, Recall, Specificity, F1-Score, Brier score, ECE).
+   - The FastAPI endpoint `GET /api/metrics` dynamically queries the database for stored evaluations when present, falling back to an in-memory tracker only when the database is empty.
+2. **End-to-End Evaluation Pipeline Mode:**
+   - `scripts/run_evaluation.py` provides an `--end-to-end` mode running through real pipeline stages (`EnrichmentEngine` and `TimelineBuilder`) prior to AI triage and evaluation.
+   - Persists all evaluation results to the SQLite `evaluations` table (`db.insert_evaluation`) and defaults the database path to canonical `DATABASE_PATH` (`data/triagelens.db`).
+3. **Verified Port and CORS Alignment:**
+   - Backend binds to `127.0.0.1:8000` with CORS whitelisting Vite dev server on `http://localhost:5173`.
+   - Single canonical command sequence and manual click-through checklist documented in `README.md`.
+
+**Rationale:**
+
+Previously, `/api/metrics` served an in-memory `AccuracyTracker` instantiated empty at API startup. Consequently, running the CLI pipeline populated the database, but the API and dashboard displayed zero metrics. Persisting evaluations and computing metrics directly from SQLite ensures the dashboard perfectly matches CLI execution summaries.
+
+**Consequences:**
+
+* The analyst dashboard displays real metrics immediately upon server start when the database contains evaluations.
+* Re-running the pipeline updates stored evaluations, which are immediately reflected by the API without restarting the backend.
+* Evaluation scripts populate the same database the API serves.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

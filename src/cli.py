@@ -34,7 +34,7 @@ from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
-from src.utils.extraction import is_public_ipv4, is_valid_domain
+from src.utils.extraction import is_public_ipv4, is_public_ipv6, is_valid_domain
 
 # Load environment variables (.env file)
 load_dotenv()
@@ -52,19 +52,19 @@ def detect_indicator_type(indicator: str) -> str:
     """Classifies an indicator string into its probable type.
 
     Returns:
-        'ip', 'url', 'hash', or 'domain'
+        'ip', 'url', 'hash', 'domain', or 'unknown'
     """
     clean = indicator.strip()
     if clean.startswith(("http://", "https://")):
         return "url"
-    if is_public_ipv4(clean):
+    if is_public_ipv4(clean) or is_public_ipv6(clean):
         return "ip"
     clean_hex = clean.lower()
     if len(clean_hex) in (32, 40, 64) and all(c in "0123456789abcdef" for c in clean_hex):
         return "hash"
     if is_valid_domain(clean):
         return "domain"
-    return "domain"
+    return "unknown"
 
 
 def run_pipeline(
@@ -96,27 +96,9 @@ def run_pipeline(
 
     # 2. Initialize Processing Engines
     intake_engine = AlertIntakeEngine()
-    enrichment_engine = EnrichmentEngine()
-
-    # Register threat intelligence providers (with graceful missing-key fallbacks)
-    vt_key = config.get_virustotal_api_key()
-    abuse_key = config.get_abuseipdb_api_key()
-
-    if vt_key:
-        enrichment_engine.register_provider(VirusTotalProvider(api_key=vt_key))
-        logger.info("[Enrichment] VirusTotal provider registered.")
-    else:
-        logger.info("[Enrichment] VirusTotal API key not configured; skipping VT registration.")
-
-    if abuse_key:
-        enrichment_engine.register_provider(AbuseIPDBProvider(api_key=abuse_key))
-        logger.info("[Enrichment] AbuseIPDB provider registered.")
-    else:
-        logger.info("[Enrichment] AbuseIPDB API key not configured; skipping AbuseIPDB registration.")
-
-    # URLhaus operates without an API key
-    enrichment_engine.register_provider(URLhausProvider())
-    logger.info("[Enrichment] URLhaus provider registered.")
+    enrichment_engine = EnrichmentEngine(db=db)
+    active_providers_str = ", ".join(enrichment_engine.providers.keys()) or "none"
+    logger.info("[Enrichment] Active threat intelligence providers: %s", active_providers_str)
 
     timeline_builder = TimelineBuilder()
     accuracy_tracker = AccuracyTracker()
@@ -174,14 +156,21 @@ def run_pipeline(
 
         for ind in unique_indicators:
             ind_type = detect_indicator_type(ind)
-            res = enrichment_engine.lookup(ind, indicator_type=ind_type)
-            if res:
+            if ind_type in ("unknown", "invalid"):
+                logger.warning("Skipping indicator '%s' classified as '%s'", ind, ind_type)
+                continue
+            results = enrichment_engine.lookup_indicator(ind, indicator_type=ind_type)
+            for res in results:
                 all_enrichment_results.append(res)
                 db.insert_enrichment(res)
 
+        ok_count = sum(1 for r in all_enrichment_results if getattr(r, "lookup_status", "ok") == "ok")
+        unavail_count = len(all_enrichment_results) - ok_count
         logger.info(
-            "Enrichment completed. %d indicators successfully enriched and persisted.",
+            "Enrichment completed. %d results persisted (%d verified, %d unavailable).",
             len(all_enrichment_results),
+            ok_count,
+            unavail_count,
         )
 
         # =================================================================

@@ -213,6 +213,49 @@ class AccuracyTracker:
         self.history.clear()
         self.confidence_pairs.clear()
 
+    @classmethod
+    def from_evaluations(cls, evaluations: List[EvaluationResult]) -> "AccuracyTracker":
+        """Reconstructs an AccuracyTracker instance from a collection of EvaluationResult records."""
+        tracker = cls()
+        for res in evaluations:
+            cat = res.category
+            if cat == "True Positive":
+                tracker.true_positives += 1
+                tracker.total_evaluated += 1
+            elif cat == "True Negative":
+                tracker.true_negatives += 1
+                tracker.total_evaluated += 1
+            elif cat == "False Positive":
+                tracker.false_positives += 1
+                tracker.total_evaluated += 1
+            elif cat == "False Negative":
+                tracker.false_negatives += 1
+                tracker.total_evaluated += 1
+            elif cat == "Unknown":
+                tracker.unknown_count += 1
+            elif cat == "Unavailable":
+                tracker.unavailable_count += 1
+
+            if res.confidence_score is not None and res.is_correct is not None:
+                tracker.confidence_pairs.append((float(res.confidence_score), bool(res.is_correct)))
+
+            if res.severity_correct is not None:
+                tracker.severity_evaluated += 1
+                if res.severity_correct:
+                    tracker.severity_matches += 1
+
+            tracker.history.append(res)
+        return tracker
+
+    @classmethod
+    def from_database(cls, db: Any) -> "AccuracyTracker":
+        """Reconstructs an AccuracyTracker instance by loading all evaluations from SQLite."""
+        if hasattr(db, "get_all_evaluations"):
+            evaluations = db.get_all_evaluations()
+        else:
+            evaluations = []
+        return cls.from_evaluations(evaluations)
+
     def _classify_alert_label(self, alert: NormalizedAlert) -> Optional[bool]:
         """Classifies an individual alert's ground truth using dataset-specific rules.
 

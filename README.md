@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-213_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-248_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -237,7 +237,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 
 ### 5.3 Run Automated Test Suite
 
-TriageLens contains a comprehensive test suite of 213 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
+TriageLens contains a comprehensive test suite of 248 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
 
 ```bash
 pytest -v
@@ -245,48 +245,73 @@ pytest -v
 
 Expected output:
 ```text
-======================== 213 passed, 1 warning in 12.16s ========================
+======================== 248 passed, 1 warning in 18.36s ========================
 ```
 
 ---
 
-### 5.4 Ingest Telemetry & Run Benchmarks
+### 5.4 End-to-End Execution Sequence (Ingest, Triage, Evaluate, Store, API, Dashboard)
 
-1. **Generate synthetic SOC telemetry (58 alerts across 14 timelines):**
+To run the complete system from raw ingestion to the analyst dashboard:
+
+1. **Generate synthetic SOC telemetry (58 alerts across 14 enterprise timelines):**
    ```bash
    python scripts/generate_soc_data.py
    ```
 
-2. **Run the 70-timeline evaluation benchmark:**
+2. **Execute the end-to-end pipeline via CLI:**
+   Ingests alerts from `data/`, enriches indicators, correlates chronological timelines, executes LLM DFIR triage, evaluates accuracy against ground truth, and persists records to SQLite:
    ```bash
-   python scripts/run_evaluation.py
+   python -m src.cli --data-dir data/ --db-path data/triagelens.db
+   ```
+   *(For offline execution without an active LLM API key, pass `--skip-llm`:)*
+   ```bash
+   python -m src.cli --data-dir data/ --db-path data/triagelens.db --skip-llm
    ```
 
-3. **Execute the 2-model comparison & calibration benchmark:**
+3. **(Optional) Run benchmark evaluation with end-to-end enrichment:**
    ```bash
-   python scripts/compare_models.py
+   python scripts/run_evaluation.py --end-to-end
    ```
+
+4. **Launch the FastAPI Backend:**
+   Starts the REST API server connected to the populated SQLite database:
+   ```bash
+   uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   - Interactive Swagger UI: `http://127.0.0.1:8000/docs`
+   - Real-time database metrics endpoint: `http://127.0.0.1:8000/api/metrics`
+
+5. **Launch the Analyst Dashboard (in a second terminal):**
+   ```bash
+   cd dashboard
+   npm install
+   npm run dev
+   ```
+   Open `http://localhost:5173` to interact with the SOC Operations Console and Threat Hunting Console.
 
 ---
 
-### 5.5 Launch FastAPI Backend
+### 5.5 Manual Click-Through Verification Checklist
 
-```bash
-uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-- Interactive Swagger UI documentation is available at: `http://127.0.0.1:8000/docs`
-- Redoc documentation is available at: `http://127.0.0.1:8000/redoc`
+Follow this checklist to verify that the dashboard and backend reflect the CLI pipeline results:
 
----
-
-### 5.6 Launch Analyst Dashboard
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-Open `http://localhost:5173` in your browser to access the SOC Operations Console and Threat Hunting Console.
+- [ ] **1. API Server & Metrics Verification:**
+  - Navigate to `http://127.0.0.1:8000/api/metrics`.
+  - Confirm the JSON response contains non-zero `total`, `tp`, `tn`, and calculated `accuracy`, matching the CLI summary.
+- [ ] **2. Operations Overview Console (`/`):**
+  - Open `http://localhost:5173` in your browser.
+  - Confirm the header indicates backend connectivity (`Connected to API: 127.0.0.1:8000`).
+  - Verify the 4 primary KPI cards (**Accuracy**, **Precision**, **Recall**, **F1-Score**) display non-zero percentages matching the CLI summary.
+  - Verify the **Confusion Matrix** widget displays the True Positive, True Negative, False Positive, and False Negative counts.
+- [ ] **3. Timeline Explorer (`/timelines`):**
+  - Verify the table lists correlated threat timelines with non-zero event counts.
+  - Click on any timeline row to open the incident detail drawer.
+  - Confirm the detail drawer renders chronological event cards, threat intelligence badges, and the AI Triage Verdict (severity, confidence score, reasoning bullets, and recommended actions).
+- [ ] **4. Threat Hunting Console (`/hunt`):**
+  - Navigate to the Threat Hunting tab.
+  - Select a sample pre-built query or type: `Event.Type == 'process_creation'` or `Alert.Severity == 'CRITICAL'`.
+  - Click **Run Query** and verify matching alerts are returned and highlighted.
 
 ---
 

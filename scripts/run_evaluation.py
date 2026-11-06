@@ -7,18 +7,25 @@ Calculates statistical performance metrics via AccuracyTracker and writes
 docs/results/evaluation_report_20261106.md with all required metadata.
 """
 
+import argparse
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
+# Ensure repository root is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
-from src.config import get_gemini_api_key
+from src.cli import detect_indicator_type
+from src.config import get_database_path, get_gemini_api_key
 from src.engine.database import DatabaseManager
+from src.engine.enrichment import EnrichmentEngine
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
 from src.engine.llm import GeminiTriageEngine
 from src.models.alert import NormalizedAlert
@@ -61,25 +68,47 @@ def load_benchmark_timelines(benchmark_path: str = "data/eval_benchmark_70.json"
     return timelines
 
 
-def run_evaluation(
+def run_evaluation_pipeline(
+    timelines: Optional[List[ThreatTimeline]] = None,
     benchmark_path: str = "data/eval_benchmark_70.json",
-    cache_db_path: str = "data/eval_cache.db",
-    results_output_dir: str = "docs/results",
-    pacing_seconds: float = 2.0,
+    db_path: Optional[str] = None,
+    results_output_dir: Optional[str] = None,
+    pacing_seconds: float = 0.0,
+    end_to_end: bool = False,
 ) -> Dict[str, Any]:
-    """Executes the full evaluation run across benchmark timelines."""
+    """Executes evaluation pipeline across threat timelines with optional enrichment and persistent storage."""
     api_key = get_gemini_api_key()
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
 
     engine = GeminiTriageEngine(api_key=api_key)
-    db = DatabaseManager(db_path=cache_db_path)
+    target_db = db_path or get_database_path()
+    db = DatabaseManager(db_path=target_db)
     db.init_db()
 
-    timelines = load_benchmark_timelines(benchmark_path)
-    tracker = AccuracyTracker()
+    if timelines is None:
+        timelines = load_benchmark_timelines(benchmark_path)
 
-    # Register ground truth configurations for evaluation datasets
+    # Optional end-to-end mode: run alerts through real EnrichmentEngine before triage
+    if end_to_end:
+        enrichment_engine = EnrichmentEngine(db=db)
+        for tl in timelines:
+            if not tl.enrichment_data:
+                tl.enrichment_data = []
+            for alert in (tl.alerts or []):
+                for ind in (alert.extracted_indicators or []):
+                    ind_type = detect_indicator_type(ind)
+                    if ind_type in ("unknown", "invalid"):
+                        continue
+                    enr_results = enrichment_engine.lookup_indicator(ind, indicator_type=ind_type)
+                    for res in enr_results:
+                        tl.enrichment_data.append(res)
+                        try:
+                            db.insert_enrichment(res)
+                        except Exception:
+                            pass
+
+    tracker = AccuracyTracker()
     tracker.register_dataset_config(DatasetGroundTruthConfig(
         name="EVAL-BENCHMARK-MALICIOUS",
         malicious_labels={"malicious", "attack", "true"},
@@ -93,7 +122,7 @@ def run_evaluation(
 
     print(f"Starting TriageLens Real Evaluation Run across {len(timelines)} timelines...")
     print(f"Model Configuration: Primary='{engine.model}', Fallbacks={engine.fallback_models}")
-    print(f"Cache Database: {cache_db_path}")
+    print(f"Target Database: {target_db} (end_to_end={end_to_end})")
 
     evaluation_records: List[Dict[str, Any]] = []
 
@@ -119,7 +148,6 @@ def run_evaluation(
             print(f"(cached: {verdict.model_name}) -> Severity: {verdict.severity} ", end="", flush=True)
         else:
             # 2. Execute live LLM triage
-            # Ensure timeline exists in DB to satisfy Foreign Key constraints
             try:
                 if not db.get_timeline(tl.timeline_id):
                     db.insert_timeline(tl)
@@ -144,6 +172,12 @@ def run_evaluation(
 
         # 3. Evaluate against independent ground truth (ADR-008)
         eval_result = tracker.evaluate(verdict, tl)
+        if eval_result and eval_result.verdict_id:
+            try:
+                db.insert_evaluation(eval_result)
+            except Exception as e:
+                print(f"[DB eval err: {e}] ", end="")
+
         status_symbol = "OK" if eval_result.is_correct else "ERR"
         print(f"[{eval_result.category}] {status_symbol}")
 
@@ -166,17 +200,18 @@ def run_evaluation(
     # Calculate aggregate performance metrics
     metrics = tracker.get_metrics()
     report_data = tracker.generate_reproducible_report()
-
-    out_dir = Path(results_output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_file = out_dir / "evaluation_report_20261106.md"
-
-    # Generate Markdown Report
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     spec_val_str = f"{metrics['specificity'] * 100:.1f}%" if metrics.get('specificity') is not None else "N/A"
     fpr_str = f"{metrics['false_positive_rate'] * 100:.1f}%" if metrics.get('fpr_valid') else "N/A (undefined)"
 
-    md_content = f"""# TriageLens Real Evaluation Run Report
+    if results_output_dir:
+        out_dir = Path(results_output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        report_file = out_dir / "evaluation_report_20261106.md"
+
+        # Generate Markdown Report
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        md_content = f"""# TriageLens Real Evaluation Run Report
 
 **Date of Execution:** {now_str}  
 **Primary Evaluated Model:** `{engine.model}`  
@@ -230,13 +265,13 @@ def run_evaluation(
 |---|---|---|---|---|---|---|---|
 """
 
-    for rec in evaluation_records:
-        clean_summary = rec["summary"].replace("|", "\\|").replace("\n", " ")
-        if len(clean_summary) > 75:
-            clean_summary = clean_summary[:72] + "..."
-        md_content += f"| {rec['index']} | `{rec['scenario']}` | **{rec['ground_truth_label']}** | {rec['llm_prediction_label']} | `{rec['severity_prediction']}` | `{rec['category']}` | `{rec['model_name']}` | {clean_summary} |\n"
+        for rec in evaluation_records:
+            clean_summary = rec["summary"].replace("|", "\\|").replace("\n", " ")
+            if len(clean_summary) > 75:
+                clean_summary = clean_summary[:72] + "..."
+            md_content += f"| {rec['index']} | `{rec['scenario']}` | **{rec['ground_truth_label']}** | {rec['llm_prediction_label']} | `{rec['severity_prediction']}` | `{rec['category']}` | `{rec['model_name']}` | {clean_summary} |\n"
 
-    md_content += """
+        md_content += """
 ---
 
 ## 4. Key Architectural Observations
@@ -246,8 +281,9 @@ def run_evaluation(
 3. **Model Resilience & Fallback:** Responding model attribution was captured and persisted in SQLite for every assessment.
 """
 
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write(md_content)
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print(f"Report saved to: {report_file}")
 
     print("\n" + "=" * 70)
     print("EVALUATION RUN COMPLETE")
@@ -258,12 +294,57 @@ def run_evaluation(
     print(f"Recall:          {metrics['recall']*100:.1f}%")
     print(f"Specificity:     {spec_val_str}")
     print(f"F1-Score:        {metrics['f1_score']*100:.1f}%")
-    print(f"Report saved to: {report_file}")
     print("=" * 70)
 
     db.close()
     return metrics
 
 
+def run_evaluation(
+    benchmark_path: str = "data/eval_benchmark_70.json",
+    cache_db_path: Optional[str] = None,
+    results_output_dir: str = "docs/results",
+    pacing_seconds: float = 2.0,
+    end_to_end: bool = False,
+) -> Dict[str, Any]:
+    """Executes the full evaluation run across benchmark timelines."""
+    return run_evaluation_pipeline(
+        benchmark_path=benchmark_path,
+        db_path=cache_db_path,
+        results_output_dir=results_output_dir,
+        pacing_seconds=pacing_seconds,
+        end_to_end=end_to_end,
+    )
+
+
 if __name__ == "__main__":
-    run_evaluation()
+    parser = argparse.ArgumentParser(description="TriageLens Benchmark Evaluation Runner")
+    parser.add_argument(
+        "--benchmark-path",
+        default="data/eval_benchmark_70.json",
+        help="Path to benchmark JSON (default: 'data/eval_benchmark_70.json')",
+    )
+    parser.add_argument(
+        "--db-path",
+        default=None,
+        help="Target SQLite database path (defaults to DATABASE_PATH)",
+    )
+    parser.add_argument(
+        "--end-to-end",
+        action="store_true",
+        help="Run through real Threat Intelligence Enrichment before AI triage",
+    )
+    parser.add_argument(
+        "--pacing",
+        type=float,
+        default=2.0,
+        help="Pacing delay in seconds between live triage calls (default: 2.0s)",
+    )
+
+    args = parser.parse_args()
+    run_evaluation(
+        benchmark_path=args.benchmark_path,
+        cache_db_path=args.db_path,
+        pacing_seconds=args.pacing,
+        end_to_end=args.end_to_end,
+    )

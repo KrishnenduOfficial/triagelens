@@ -23,6 +23,9 @@ CANONICAL_CONFIG_VARS = [
     "GEMINI_FALLBACK_MODELS",
     "VIRUSTOTAL_API_KEY",
     "ABUSEIPDB_API_KEY",
+    "URLHAUS_API_KEY",
+    "VIRUSTOTAL_MIN_DETECTIONS",
+    "ABUSEIPDB_MIN_SCORE",
     "DATABASE_PATH",
     "BACKEND_HOST",
     "BACKEND_PORT",
@@ -90,6 +93,34 @@ def get_abuseipdb_api_key() -> Optional[str]:
     return key.strip() if key else None
 
 
+def get_urlhaus_api_key() -> Optional[str]:
+    """Returns the URLhaus / abuse.ch API Auth-Key if configured."""
+    key = os.getenv("URLHAUS_API_KEY") or os.getenv("AUTH_KEY")
+    return key.strip() if key else None
+
+
+def get_virustotal_min_detections() -> int:
+    """Returns the minimum number of malicious engine detections required for a malicious verdict (default: 1)."""
+    raw = os.getenv("VIRUSTOTAL_MIN_DETECTIONS", "1").strip()
+    try:
+        val = int(raw)
+        return val if val >= 1 else 1
+    except ValueError:
+        logger.warning("Invalid VIRUSTOTAL_MIN_DETECTIONS '%s', defaulting to 1", raw)
+        return 1
+
+
+def get_abuseipdb_min_score() -> int:
+    """Returns the minimum AbuseIPDB confidence score required for a malicious verdict (default: 25)."""
+    raw = os.getenv("ABUSEIPDB_MIN_SCORE", "25").strip()
+    try:
+        val = int(raw)
+        return val if 0 <= val <= 100 else 25
+    except ValueError:
+        logger.warning("Invalid ABUSEIPDB_MIN_SCORE '%s', defaulting to 25", raw)
+        return 25
+
+
 def get_backend_host() -> str:
     """Returns the backend binding host (default: 127.0.0.1)."""
     return os.getenv("BACKEND_HOST", "127.0.0.1").strip()
@@ -139,6 +170,9 @@ def validate_config() -> Dict[str, Any]:
     gemini_fallbacks = get_gemini_fallback_models()
     vt_key = get_virustotal_api_key()
     abuse_key = get_abuseipdb_api_key()
+    urlhaus_key = get_urlhaus_api_key()
+    vt_threshold = get_virustotal_min_detections()
+    abuse_threshold = get_abuseipdb_min_score()
 
     status_summary = {
         "database_path": db_path,
@@ -147,6 +181,9 @@ def validate_config() -> Dict[str, Any]:
         "gemini_configured": bool(gemini_key),
         "virustotal_configured": bool(vt_key),
         "abuseipdb_configured": bool(abuse_key),
+        "urlhaus_configured": bool(urlhaus_key),
+        "virustotal_min_detections": vt_threshold,
+        "abuseipdb_min_score": abuse_threshold,
     }
 
     logger.info("[Config] Target SQLite Database: %s", db_path)
@@ -157,9 +194,12 @@ def validate_config() -> Dict[str, Any]:
         "configured" if gemini_key else "not configured",
     )
     logger.info(
-        "[Config] Threat Intelligence : VirusTotal=%s, AbuseIPDB=%s, URLhaus=public/keyless",
+        "[Config] Threat Intelligence : VirusTotal=%s (min_detections=%d), AbuseIPDB=%s (min_score=%d), URLhaus=%s",
         "configured" if vt_key else "not configured",
+        vt_threshold,
         "configured" if abuse_key else "not configured",
+        abuse_threshold,
+        "configured (Auth-Key)" if urlhaus_key else "public/keyless",
     )
 
     return status_summary
