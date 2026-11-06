@@ -252,111 +252,95 @@ The initial implementation should use transparent, deterministic correlation log
 
 ## 3.4 LLM-Assisted Triage Engine
 
-**Responsibility:** Use an external LLM to assist with alert investigation and triage.
+**Responsibility:** Use an external LLM to assist with alert investigation and triage while enforcing security boundaries and provider abstraction.
 
-### Initial Provider
+### Initial Provider & Active Tiering
 
-Google Gemini API.
+Google Gemini API (Generative Language API v1beta):
+- **Primary Model:** `gemini-3.8-flash` (Flagship analytical tier)
+- **Candidate Fallbacks:** `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite` (High-throughput, reliable failovers)
+- Fully configurable via `GEMINI_MODEL` and `GEMINI_FALLBACK_MODELS` environment variables.
 
-### Processing
+### Processing Pipeline
 
-1. Receive enriched alert information.
-2. Prepare a structured prompt.
-3. Mask sensitive information.
-4. Send the relevant information to Gemini.
-5. Receive the model response.
-6. Validate the response.
-7. Convert it into a structured internal result.
-8. Cache the result where appropriate.
+1. **Deterministic Redaction:** Strip evaluation/ground-truth keys and dataset provenance to prevent prompt data leakage (ADR-008).
+2. **PII & Secret Scrubbing:** Mask API keys, private keys, passwords, bearer tokens, IP addresses, emails, and SSNs using `PIIScrubber` with Luhn credit-card defense (ADR-019).
+3. **Prompt Injection Defense & Boundary Isolation:** Encapsulate untrusted log telemetry inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML tags. Instruct the model that log content is untrusted and cannot override system instructions (ADR-023).
+4. **Response Caching:** Check `LLMResponseCache` using SHA-256 fingerprint of sanitized timeline alerts and candidate model before making external requests (ADR-025).
+5. **API Invocation & Model Failover:** Transmit structured prompt to primary model; automatically fail over through candidate fallbacks upon HTTP 429, 503, 404, or network timeout.
+6. **Log Truncation & Sanitization:** Sanitize and truncate any raw API errors or candidate outputs to 250 characters via `_safe_log_text()` (ADR-024).
+7. **Strict Schema Parsing:** Enforce JSON object extraction, removing markdown code fences or trailing commas.
+8. **Verdict Attribution:** Store answering `model_name`, `uncertainty_level`, and `missing_information` in `TriageVerdict` and persist to SQLite.
 
-### Expected Output
+### Expected Output Schema
 
-Each triage assessment should contain:
+Each triage assessment produces a structured `TriageVerdict`:
 
-* Alert summary.
-* Suggested severity.
-* Suggested classification.
-* Supporting evidence.
-* Recommended investigation steps.
-* Confidence or uncertainty information.
-* Missing information or limitations.
-
-### Important Requirements
-
-* Use structured responses.
-* Validate model output.
-* Handle API failures.
-* Respect API rate limits.
-* Cache suitable responses.
-* Never send unnecessary raw logs.
-* Mask sensitive information before external transmission.
-* Keep model integration replaceable.
-
-### Provider Abstraction
-
-The LLM integration should use a simple provider-independent interface.
-
-Conceptual example:
-
-```python
-def triage(alert):
-    """
-    Accept an enriched alert
-    and return a structured assessment.
-    """
+```json
+{
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL",
+  "confidence_score": 0.0 - 1.0,
+  "uncertainty_level": "LOW" | "MEDIUM" | "HIGH",
+  "summary": "Executive threat summary",
+  "reasoning": [
+    "Analytical finding with forensic evidence"
+  ],
+  "missing_information": [
+    "Telemetry gap or investigative lead"
+  ],
+  "recommended_actions": [
+    "Immediate containment or remediation step"
+  ]
+}
 ```
 
-Gemini should be an implementation of this interface rather than being deeply coupled to the rest of the application.
+### Provider Abstraction (`TriageProvider`)
 
-This will allow additional providers to be integrated later.
+The engine implements a runtime-checkable protocol (`TriageProvider`) defined in `src/engine/llm.py`:
+
+```python
+@runtime_checkable
+class TriageProvider(Protocol):
+    """Provider-independent interface protocol for LLM triage engines."""
+    model: str
+
+    def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
+        ...
+```
+
+This guarantees that alternative backends (such as Azure OpenAI, Anthropic Claude, or local testing doubles) can be introduced without modifying pipeline or evaluation logic.
 
 ---
 
 ## 3.5 Accuracy and Validation Engine
 
-**Responsibility:** Measure how accurately the AI evaluates security alerts.
+**Responsibility:** Measure how accurately and reliably the AI evaluates security alerts against independent ground truth.
 
 This is the distinguishing component of TriageLens.
 
-### Core Principle
+### Core Principle (ADR-008)
 
-The AI-generated assessment must be compared against independently established ground-truth information.
+The AI-generated assessment must be compared against independently established ground-truth information. The AI must never evaluate its own correctness.
 
-The AI must never evaluate its own correctness.
+### Evaluation Metrics & Calibration
 
-### Processing
+* **Confusion Matrix:** True Positives (TP), True Negatives (TN), False Positives (FP), False Negatives (FN).
+* **Statistical Performance:** Accuracy, Precision, Recall (Sensitivity), Specificity (True Negative Rate), F1-Score.
+* **Error Rates:** False Positive Rate (FPR), False Negative Rate (FNR).
+* **Confidence Calibration (ADR-025):**
+  - **Brier Score:** Mean squared error between predicted confidence and empirical correctness ($0.0 = \text{perfect probabilistic calibration}$).
+  - **Expected Calibration Error (ECE):** Weighted absolute gap between confidence and empirical accuracy across 5 probability bins (`0.0-0.2`, `0.2-0.4`, `0.4-0.6`, `0.6-0.8`, `0.8-1.0`).
+  - **5-Bin Reliability Diagram:** Per-bin sample counts, mean confidence, and empirical accuracy.
+* **Class Imbalance Guard (ADR-022):** Detects single-class or heavily skewed datasets ($>10:1$ ratio), invalidates misleading zero-FPR calculations, and flags `is_imbalanced`.
+* **Reproducibility Digest:** SHA-256 hash across all ground truth and prediction pairs ensuring auditable benchmarks.
 
-1. Retrieve the AI-generated assessment.
-2. Retrieve the corresponding ground-truth label.
-3. Compare the predicted classification with the actual classification.
-4. Record correct and incorrect predictions.
-5. Calculate appropriate performance metrics.
-6. Store evaluation results.
+### Empirical Benchmarks
 
-### Initial Metrics
-
-* Accuracy.
-* Precision.
-* Recall.
-* F1-score.
-* False-positive rate.
-* False-negative rate.
-* Classification confusion matrix.
-
-### Additional Evaluation
-
-Where the dataset provides suitable labels, evaluate severity classification separately.
-
-### Important Requirements
-
-* Never modify original ground-truth labels.
-* Exclude records without usable ground truth from supervised accuracy calculations.
-* Record incorrect AI predictions.
-* Preserve the reason for evaluation failure where available.
-* Distinguish unavailable predictions from incorrect predictions.
-* Ensure metrics can be reproduced.
-
-The evaluation engine must clearly distinguish classification accuracy from severity-assessment accuracy.
+1. **70-Timeline Balanced Benchmark (`docs/results/evaluation_report_20261106.md`):**
+   - 92.8% Accuracy, 96.8% Precision, 88.2% Recall, 97.1% Specificity, 92.3% F1-score, 2.9% FPR, 11.8% FNR.
+2. **2-Model Calibration Benchmark (`docs/results/model_comparison_report.md`):**
+   - `gemini-3.5-flash-lite`: 95.0% Accuracy, Brier: 0.0390, ECE: 0.0020.
+   - `gemini-3.1-flash-lite`: 100.0% Accuracy, Brier: 0.0071, ECE: 0.0585.
 
 ---
 
@@ -475,33 +459,25 @@ The analyst examines the evidence and decides what action should be taken.
 
 # 5. Database Architecture
 
-**Database:** SQLite.
+**Database:** SQLite 3 with Write-Ahead Logging (`PRAGMA journal_mode=WAL`) and foreign-key enforcement (`PRAGMA foreign_keys=ON`).
 
-The database should remain lightweight and manageable on an 8 GB RAM system.
+The database is designed to remain lightweight, robust against concurrent access, and responsive on an 8 GB RAM system.
 
-The following are proposed logical entities, not finalized SQL schemas.
+### Finalized Relational Schema
 
-| Entity          | Responsibility                            |
-| --------------- | ----------------------------------------- |
-| Alerts          | Store normalized security alerts          |
-| Indicators      | Store extracted IPs, domains and hashes   |
-| Enrichments     | Store threat intelligence lookup results  |
-| Incidents       | Represent correlated investigation groups |
-| Timeline Events | Store chronological incident events       |
-| AI Assessments  | Store AI-generated triage results         |
-| Ground Truth    | Preserve independent reference labels     |
-| Evaluations     | Store comparison results and metrics      |
+| Table | Primary Key | Foreign Keys | Key Columns | Responsibility |
+|---|---|---|---|---|
+| `timelines` | `id` (TEXT/UUID) | None | `grouping_key`, `start_time`, `end_time`, `total_events`, `correlation_type`, `correlation_reason` | Stores correlated incident timelines |
+| `alerts` | `id` (TEXT/UUID) | `timeline_id -> timelines(id)` | `source_dataset`, `source_file`, `event_type`, `timestamp`, `original_record` (JSON), `ground_truth_label` | Normalized alerts with independent ground truth |
+| `indicators` | `id` (INTEGER) | None | `indicator_type`, `value` (UNIQUE), `source`, `enrichment_data` (JSON), `first_seen`, `last_seen` | Extracted IPs, domains, hashes with cached threat intel |
+| `verdicts` | `id` (TEXT/UUID) | `timeline_id -> timelines(id)` | `severity`, `confidence_score`, `uncertainty_level`, `summary`, `reasoning` (JSON), `missing_information` (JSON), `recommended_actions` (JSON), `model_name` | AI triage decisions with model attribution and telemetry |
+| `evaluations` | `id` (TEXT/UUID) | `verdict_id -> verdicts(id)`, `timeline_id -> timelines(id)` | `ground_truth`, `llm_prediction`, `is_correct`, `category`, `confidence_score` | Statistical evaluation records (ADR-008) |
+| `yara_rules` | `rule_name` (TEXT) | None | `description`, `author`, `rule_content`, `created_at` | Compiled YARA threat hunting rules |
+| `yara_matches` | `id` (TEXT/UUID) | `rule_name -> yara_rules(rule_name)`, `timeline_id -> timelines(id)` | `matched_strings` (JSON), `detected_at` | Forensic file & memory pattern matches |
 
-### Database Requirements
+### Automated Migrations
 
-* Use stable internal identifiers.
-* Maintain relationships between records.
-* Preserve original dataset references.
-* Store timestamps consistently.
-* Avoid duplicating enrichment results unnecessarily.
-* Support reproducible evaluation.
-
-The final schema should be defined during database implementation.
+`DatabaseManager.init_db()` executes idempotent `ALTER TABLE` statements ensuring legacy database files automatically acquire new columns (`model_name`, `uncertainty_level`, `missing_information`) without requiring manual migration scripts.
 
 ---
 
@@ -672,6 +648,63 @@ These are future possibilities, not requirements for the initial implementation.
 10. Human analysts retain final decision-making authority.
 11. Each processing stage must be independently testable.
 12. Architecture changes must be documented in DECISIONS.md.
+
+---
+
+# 13. Repository Directory Structure
+
+```text
+triagelens/
+├── data/                      # Benchmark and test datasets
+│   ├── eval_benchmark_70.json # 70-timeline balanced evaluation dataset
+│   ├── eval_cache.db          # Evaluation run verdict cache
+│   └── eval_compare_cache.db  # 2-model comparison cache
+├── dashboard/                 # React 19 + TypeScript + Vite Analyst Dashboard
+│   ├── src/
+│   │   ├── components/        # Operations Console, Hunting UI, Timeline views
+│   │   ├── services/          # REST API clients
+│   │   └── types/             # Frontend TypeScript interfaces
+│   └── package.json
+├── docs/                      # Technical reports and documentation
+│   └── results/
+│       ├── evaluation_report_20261106.md # 70-timeline empirical benchmark report
+│       └── model_comparison_report.md    # 2-model comparison & calibration report
+├── scripts/                   # SOC automation and benchmarking utilities
+│   ├── generate_eval_dataset.py # Generates balanced 70-timeline benchmark
+│   ├── generate_soc_data.py   # Synthetic SOC log generator
+│   ├── run_evaluation.py      # 70-timeline evaluation benchmark runner
+│   └── compare_models.py      # 2-model evaluation & calibration comparison
+├── src/                       # Core Python backend and engine
+│   ├── api/                   # FastAPI REST endpoints
+│   │   └── server.py
+│   ├── engine/                # Core pipeline stages
+│   │   ├── database.py        # SQLite persistence, foreign keys & WAL manager
+│   │   ├── enrichment.py      # Multi-provider threat intel (VT, AbuseIPDB, URLhaus)
+│   │   ├── evaluation.py      # AccuracyTracker, calibration, metrics (ADR-008)
+│   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
+│   │   ├── intake.py          # Alert normalization and intake engine
+│   │   ├── llm.py             # Gemini DFIR triage, prompt defense, cache & protocol
+│   │   ├── timeline.py        # Identity-based event correlation & time windows
+│   │   └── yara_engine.py     # YARA rule compilation and forensic matching
+│   ├── models/                # Pydantic data schemas
+│   │   ├── alert.py
+│   │   ├── enrichment.py
+│   │   ├── evaluation.py
+│   │   ├── timeline.py
+│   │   └── triage.py
+│   └── utils/                 # Security utilities
+│       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
+└── tests/                     # Test suite (213 passing adversarial/security tests)
+    ├── test_api.py
+    ├── test_database_adversarial.py
+    ├── test_enrichment.py
+    ├── test_evaluation_adversarial.py
+    ├── test_hunting_adversarial.py
+    ├── test_intake_adversarial.py
+    ├── test_llm_adversarial.py
+    ├── test_timeline_adversarial.py
+    └── test_yara_adversarial.py
+```
 
 ---
 

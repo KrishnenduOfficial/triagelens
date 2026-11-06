@@ -411,3 +411,74 @@ def test_verdict_table_model_name_migration(tmp_path):
 
     assert "model_name" in columns
 
+
+def test_verdict_uncertainty_and_missing_information_persistence(in_memory_db):
+    """Verify uncertainty_level and missing_information are persisted and retrieved (F11)."""
+    timeline = ThreatTimeline(grouping_key="host_uncertainty_test", alerts=[], total_events=0)
+    in_memory_db.insert_timeline(timeline)
+
+    verdict = TriageVerdict(
+        timeline_id=timeline.timeline_id,
+        severity="MEDIUM",
+        confidence_score=0.74,
+        uncertainty_level="HIGH",
+        missing_information=["Parent process telemetry unobserved", "Egress network port unknown"],
+        summary="Potential lateral movement with incomplete telemetry",
+        reasoning=["Observed remote command execution"],
+        recommended_actions=["Query endpoint sensors for parent process"],
+        raw_llm_response="{}",
+        model_name="gemini-3.8-flash",
+    )
+    v_id = in_memory_db.insert_verdict(verdict)
+    retrieved = in_memory_db.get_verdict(v_id)
+
+    assert retrieved is not None
+    assert retrieved["uncertainty_level"] == "HIGH"
+    assert retrieved["missing_information"] == [
+        "Parent process telemetry unobserved",
+        "Egress network port unknown",
+    ]
+
+
+def test_verdict_table_uncertainty_columns_migration(tmp_path):
+    """Verify init_db migrates legacy verdicts table to include uncertainty_level and missing_information."""
+    db_file = str(tmp_path / "legacy_v2_verdicts.db")
+    conn = sqlite3.connect(db_file)
+    conn.execute("""
+        CREATE TABLE timelines (
+            id TEXT PRIMARY KEY,
+            grouping_key TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            total_events INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+    """)
+    conn.execute("""
+        CREATE TABLE verdicts (
+            id TEXT PRIMARY KEY,
+            timeline_id TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            confidence_score REAL NOT NULL,
+            summary TEXT NOT NULL,
+            reasoning TEXT NOT NULL,
+            recommended_actions TEXT NOT NULL,
+            raw_llm_response TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            model_name TEXT
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    db = DatabaseManager(db_path=db_file)
+    db.init_db()
+    db_conn = db.connect()
+    cursor = db_conn.execute("PRAGMA table_info(verdicts);")
+    columns = {row[1] for row in cursor.fetchall()}
+    db.close()
+
+    assert "uncertainty_level" in columns
+    assert "missing_information" in columns
+
+

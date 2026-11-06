@@ -15,7 +15,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from src.engine.llm import GeminiTriageEngine
+from src.engine.llm import GeminiTriageEngine, LLMResponseCache, TriageProvider
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -832,6 +832,76 @@ def test_f10_raw_logging_sanitizes_secrets_and_truncates(caplog):
         assert secret_aws_key not in caplog.text
         # Assert excessive text is truncated
         assert "truncated" in caplog.text or len(caplog.text) < len(unparsable_llm_text)
+
+
+def test_triage_provider_protocol_conformance():
+    """Verify GeminiTriageEngine adheres to the provider-independent TriageProvider protocol (F11)."""
+    engine = GeminiTriageEngine(api_key="mock-key")
+    assert isinstance(engine, TriageProvider)
+    assert hasattr(engine, "model")
+    assert callable(getattr(engine, "analyze_timeline"))
+
+
+def test_llm_response_cache_deduplication(sample_timeline):
+    """Verify LLMResponseCache serves identical timeline prompts without redundant API requests (F11)."""
+    engine = GeminiTriageEngine(api_key="mock-key", enable_cache=True)
+    mock_resp = build_gemini_api_response(
+        json.dumps({
+            "severity": "HIGH",
+            "confidence_score": 0.88,
+            "summary": "Suspicious activity detected",
+            "reasoning": ["Repeated unauthorized logon attempts"],
+            "recommended_actions": ["Reset user credentials"],
+        })
+    )
+
+    with patch("httpx.post", return_value=mock_resp) as mock_post:
+        # First call: cache miss, triggers API request
+        verdict_1 = engine.analyze_timeline(sample_timeline)
+        assert mock_post.call_count == 1
+        assert verdict_1 is not None
+        assert verdict_1.severity == "HIGH"
+
+        # Second call: cache hit, must NOT invoke httpx.post again
+        verdict_2 = engine.analyze_timeline(sample_timeline)
+        assert mock_post.call_count == 1
+        assert verdict_2 is not None
+        assert verdict_2.summary == verdict_1.summary
+        assert len(engine.cache) == 1
+
+        # Clear cache and verify subsequent call hits API
+        engine.cache.clear()
+        assert len(engine.cache) == 0
+        verdict_3 = engine.analyze_timeline(sample_timeline)
+        assert mock_post.call_count == 2
+
+
+def test_uncertainty_and_missing_information_parsed(sample_timeline):
+    """Verify uncertainty_level and missing_information are extracted and validated on TriageVerdict (F11)."""
+    engine = GeminiTriageEngine(api_key="mock-key", enable_cache=False)
+    mock_resp = build_gemini_api_response(
+        json.dumps({
+            "severity": "MEDIUM",
+            "confidence_score": 0.72,
+            "uncertainty_level": "MEDIUM",
+            "summary": "Suspicious execution with incomplete telemetry",
+            "reasoning": ["Command line observed without parent context"],
+            "missing_information": [
+                "Parent process name and command line unobserved",
+                "Egress firewall connection status unknown"
+            ],
+            "recommended_actions": ["Query endpoint EDR for parent process"],
+        })
+    )
+
+    with patch("httpx.post", return_value=mock_resp):
+        verdict = engine.analyze_timeline(sample_timeline)
+
+        assert verdict is not None
+        assert verdict.uncertainty_level == "MEDIUM"
+        assert len(verdict.missing_information) == 2
+        assert "Parent process name" in verdict.missing_information[0]
+
 
 
 

@@ -17,12 +17,17 @@ from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
 
 
-def create_verdict(severity: str) -> TriageVerdict:
+def create_verdict(
+    severity: str,
+    confidence_score: float = 0.9,
+    confidence: Optional[float] = None,
+) -> TriageVerdict:
     """Helper to construct a valid TriageVerdict for testing."""
+    conf = confidence if confidence is not None else confidence_score
     return TriageVerdict(
         timeline_id=uuid4(),
         severity=severity,
-        confidence_score=0.9,
+        confidence_score=conf,
         summary="Test verdict",
         reasoning=["Test finding"],
         recommended_actions=["Test action"],
@@ -593,5 +598,53 @@ def test_reproducible_evaluation_report():
     assert report1["metrics"]["accuracy"] == pytest.approx(10 / 12, 0.0001)
     assert report1["class_balance"]["positive_samples"] == 6
     assert report1["class_balance"]["negative_samples"] == 6
+
+
+def test_confidence_calibration_metrics():
+    """Verify Brier score, ECE, and calibration bins are calculated from confidence pairs (F11)."""
+    tracker = AccuracyTracker()
+
+    # Timeline 1: Confirmed attack, LLM predicts CRITICAL with 0.95 confidence (Correct -> True Positive)
+    tl1 = create_timeline([NormalizedAlert(source_dataset="ds", source_file="f", event_type="ev", original_record={"is_malicious": True})])
+    v1 = create_verdict(severity="CRITICAL", confidence=0.95)
+    tracker.evaluate(v1, tl1)
+
+    # Timeline 2: Confirmed attack, LLM predicts HIGH with 0.85 confidence (Correct -> True Positive)
+    tl2 = create_timeline([NormalizedAlert(source_dataset="ds", source_file="f", event_type="ev", original_record={"is_malicious": True})])
+    v2 = create_verdict(severity="HIGH", confidence=0.85)
+    tracker.evaluate(v2, tl2)
+
+    # Timeline 3: Confirmed benign, LLM predicts CRITICAL with 0.90 confidence (Incorrect -> False Positive)
+    tl3 = create_timeline([NormalizedAlert(source_dataset="ds", source_file="f", event_type="ev", original_record={"is_malicious": False})])
+    v3 = create_verdict(severity="CRITICAL", confidence=0.90)
+    tracker.evaluate(v3, tl3)
+
+    # Timeline 4: Confirmed benign, LLM predicts LOW with 0.10 confidence (Correct -> True Negative)
+    tl4 = create_timeline([NormalizedAlert(source_dataset="ds", source_file="f", event_type="ev", original_record={"is_malicious": False})])
+    v4 = create_verdict(severity="LOW", confidence=0.10)
+    tracker.evaluate(v4, tl4)
+
+    metrics = tracker.get_metrics()
+
+    # Verify Brier score exists and is bounded in [0.0, 1.0]
+    assert metrics["brier_score"] is not None
+    assert 0.0 <= metrics["brier_score"] <= 1.0
+
+    # Verify ECE exists and is bounded in [0.0, 1.0]
+    assert metrics["expected_calibration_error"] is not None
+    assert 0.0 <= metrics["expected_calibration_error"] <= 1.0
+    assert metrics["ece"] == metrics["expected_calibration_error"]
+
+    # Verify 5 calibration bins exist
+    assert len(metrics["calibration_bins"]) == 5
+    bin_labels = [b["bin"] for b in metrics["calibration_bins"]]
+    assert "0.8 - 1.0" in bin_labels
+    assert "0.0 - 0.2" in bin_labels
+
+    # Verify 0.8 - 1.0 bin has 3 samples (0.95, 0.85, 0.90)
+    high_bin = next(b for b in metrics["calibration_bins"] if b["bin"] == "0.8 - 1.0")
+    assert high_bin["count"] == 3
+    assert high_bin["accuracy"] == pytest.approx(2 / 3, 0.01)
+
 
 

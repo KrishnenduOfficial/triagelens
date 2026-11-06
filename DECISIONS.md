@@ -153,21 +153,25 @@ Keep API routes, business logic, and data-access responsibilities separated.
 
 ---
 
-### ADR-006: TypeScript for the Frontend
+### ADR-006: TypeScript and React 19 for the Analyst Dashboard
 
-**Status:** Accepted as the initial direction
+**Status:** Accepted
 
 **Decision:**
 
-The frontend will use TypeScript.
+The frontend will use TypeScript, React 19, Vite, Tailwind CSS, and React Router DOM in `dashboard/`.
 
 **Rationale:**
 
-* Adds static type checking.
-* Helps maintain consistency when handling API responses.
-* Suitable for building an interactive analyst dashboard.
+* Adds end-to-end static type checking matching the Pydantic API response contracts.
+* React 19 provides reactive state management and high performance on modest workstations.
+* Vite ensures fast Hot Module Replacement (HMR) and lightweight builds (< 1s build times).
+* Tailwind CSS enables a dedicated SOC-style dark mode with clear visual cues for threat severity, timeline progression, and AI accuracy metrics.
 
-**Still to decide:** Frontend framework, build tooling, and component library.
+**Consequences:**
+
+* Frontend code is isolated in `dashboard/` with standard npm/vite tooling.
+* The API contract between FastAPI and the frontend is maintained through structured JSON models.
 
 ---
 
@@ -632,23 +636,87 @@ Audit F10 identified that candidate API error responses and non-JSON LLM respons
 
 ---
 
+### ADR-025: In-Memory Response Caching, Provider Protocol Abstraction, Uncertainty Fields, and Confidence Calibration
+
+**Status:** Accepted
+
+**Decision:**
+
+To optimize LLM triage performance, decouple model backends, enhance analytical nuance, and measure probabilistic reliability:
+
+1. **In-Memory Thread-Safe Response Caching (`LLMResponseCache`):**
+   - Implemented in `src/engine/llm.py` with `threading.Lock`, configurable capacity (default 1,000 entries), and TTL expiration (default 86,400s / 24h).
+   - Cache key computed via SHA-256 fingerprint over sanitized timeline alerts and candidate model name.
+   - Eliminates redundant API calls and eliminates latency during repetitive alerts, triage reruns, or regression testing.
+
+2. **Provider-Independent Protocol (`TriageProvider`):**
+   - Defined runtime-checkable `typing.Protocol` in `src/engine/llm.py` requiring `model: str` attribute and `analyze_timeline(timeline: ThreatTimeline) -> Optional[TriageVerdict]`.
+   - Decouples pipeline orchestration and evaluation tracking from Google Gemini, enabling drop-in integration of Azure OpenAI, Anthropic, or local testing doubles.
+
+3. **Uncertainty & Missing Information Schema Fields:**
+   - Extended `TriageVerdict` with `uncertainty_level: Optional[Literal["LOW", "MEDIUM", "HIGH"]]` and `missing_information: List[str]`.
+   - Updated `DFIR_SYSTEM_PROMPT` to enforce these fields in structured JSON output.
+   - Migrated SQLite `verdicts` table with automated schema additions for backward compatibility.
+
+4. **Empirical Confidence Calibration (`AccuracyTracker`):**
+   - Extended `AccuracyTracker` with Brier score, Expected Calibration Error (ECE), and 5-bin calibration reliability curves (`0.0-0.2`, `0.2-0.4`, `0.4-0.6`, `0.6-0.8`, `0.8-1.0`).
+   - Measures how well model-reported confidence scores align with actual empirical accuracy.
+
+**Rationale:**
+
+SOC workflows require both cost efficiency and probabilistic accountability. Repeated alerts should not incur API costs, and orchestrators need to distinguish high-confidence predictions from uncertain assessments where evidence is missing.
+
+**Consequences:**
+
+* Zero redundant API calls for duplicate timelines.
+* LLM backends can be swapped without touching pipeline or evaluation code.
+* Confidence scores are mathematically calibrated against ground truth.
+
+---
+
+### ADR-026: Gemini 3 Generation Model Transition & Deprecation Lifecycle
+
+**Status:** Accepted (Empirically verified on 2026-11-06)
+
+**Decision:**
+
+To maintain uninterrupted triage operations amidst Google Gemini API model deprecations:
+
+1. **Retirement of Gemini 2.5 Endpoints:**
+   - Live API verification confirmed that `models/gemini-2.5-*` (`gemini-2.5-flash`, `gemini-2.5-flash-lite`) return HTTP 404 with upstream guidance: *"This model is no longer available to new users. Please update your code to use models/gemini-3.8-flash / models/gemini-3.5-flash-lite"*.
+   - Retired models are removed from defaults.
+
+2. **Active Operational Tiering:**
+   - Primary: `gemini-3.8-flash` (recommended flagship model, subject to quota tiering).
+   - Candidate Fallbacks: `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite` (high-throughput, reliable fallbacks).
+   - Updated `DEFAULT_FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]`.
+
+3. **2-Model Empirical Benchmark:**
+   - Benchmarked `gemini-3.5-flash-lite` vs `gemini-3.1-flash-lite` across 20 representative balanced timelines (`data/eval_benchmark_70.json`):
+     - `gemini-3.5-flash-lite`: 95.0% accuracy, 90.9% precision, 100% recall, 90.0% specificity, Brier: 0.0390, ECE: 0.0020.
+     - `gemini-3.1-flash-lite`: 100.0% accuracy, 100.0% precision, 100% recall, 100.0% specificity, Brier: 0.0071, ECE: 0.0585.
+   - Persisted to `docs/results/model_comparison_report.md`.
+
+**Rationale:**
+
+API providers deprecate and upgrade model endpoints continuously. Automated failover prevents production downtime when Google transitions preview endpoints.
+
+---
+
 ## 4. Deferred Decisions
 
-The following decisions are intentionally not finalized yet.
+The following decisions are intentionally not finalized yet or have been resolved as noted.
 
-| Area           | Decision to make                                      |
-| -------------- | ----------------------------------------------------- |
-| Database       | Exact tables, relationships, and schema               |
-| Backend        | Final API endpoint naming and response contracts      |
-| Frontend       | React or another TypeScript framework                 |
-| AI             | Exact Gemini model identifier and generation settings |
-| Dataset        | Final labelled datasets for evaluation                |
-| Correlation    | Detailed event correlation rules and time windows     |
-| Authentication | Login, user roles, and authorization design           |
-| Deployment     | Hosting platform and deployment architecture          |
-| Infrastructure | Whether Docker or containers are necessary            |
-| Detection      | Detailed YARA and MITRE ATT&CK implementation         |
-| Hunting        | Simplified KQL-to-SQLite engine implemented (ADR-015) |
+| Area           | Status / Decision |
+| -------------- | ----------------- |
+| Database       | **Resolved:** SQLite with WAL mode, foreign keys, and automated schema migrations (ADR-004, ADR-011, ADR-016, ADR-025) |
+| Backend        | **Resolved:** FastAPI REST endpoints with Pydantic schemas (ADR-005, ADR-012) |
+| Frontend       | **Resolved:** React 19 + TypeScript + Vite + Tailwind CSS in `dashboard/` (ADR-006) |
+| AI Model       | **Resolved:** Gemini 3 generation (`gemini-3.8-flash` primary, `gemini-3.5-flash-lite` & `gemini-3.1-flash-lite` fallbacks, ADR-023, ADR-026) |
+| Dataset        | **Resolved:** 70-timeline balanced benchmark dataset (`data/eval_benchmark_70.json`, ADR-024) |
+| Correlation    | **Resolved:** Identity-driven (host + user) grouping with 30-min sliding time window and 50-event cap (ADR-021) |
+| Authentication | Open: Login, user roles, and authorization design for multi-analyst SOC teams |
+| Deployment     | Open: Containerization (Docker) and hosting platform architecture |
 
 These should be decided when the relevant implementation stage is reached.
 

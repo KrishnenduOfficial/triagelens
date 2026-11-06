@@ -33,6 +33,14 @@ class TriageVerdict(BaseModel):
         default=None,
         description="The Gemini model identifier that generated this triage assessment",
     )
+    uncertainty_level: Optional[Literal["LOW", "MEDIUM", "HIGH"]] = Field(
+        default=None,
+        description="Assessed degree of analytical uncertainty based on available telemetry",
+    )
+    missing_information: List[str] = Field(
+        default_factory=list,
+        description="Key telemetry gaps or unobserved investigation leads (e.g. missing parent process or egress)",
+    )
 
 
     @field_validator("severity", mode="before")

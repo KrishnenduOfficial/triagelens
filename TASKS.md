@@ -2,8 +2,8 @@
 
 **Project:** TriageLens
 **Version:** 0.1.0
-**Development Status:** Core Pipeline Verified & Cleaned
-**Project Stage:** Phases 1–8 Core Implemented / Portfolio Preparation
+**Development Status:** Enhanced, Calibrated & Empirically Benchmarked
+**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 213 Passing Tests / Portfolio Preparation
 
 ---
 
@@ -192,11 +192,11 @@ Note: Initial installation is recorded as complete. Individual package versions 
 
 * [x] Configure Gemini API credentials.
 * [x] Implement secure environment configuration.
-* [ ] Design provider-independent LLM interface.
+* [x] Design provider-independent LLM interface (`TriageProvider` Protocol; ADR-025).
 * [x] Implement Gemini provider.
 * [x] Design structured triage prompt.
 * [x] Implement prompt injection defense and untrusted evidence delimiters (<FORENSIC_EVIDENCE>) (ADR-023).
-* [x] Implement verified model configuration and graceful candidate fallback (gemini-3.8-flash, gemini-3.5-flash-lite, gemini-2.5-flash) (ADR-023).
+* [x] Implement verified model configuration and graceful candidate fallback (`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) (ADR-023, ADR-026).
 * [x] Record responding model name on triage verdicts in memory and SQLite (ADR-023).
 * [x] Define expected AI response schema.
 * [x] Implement response validation.
@@ -204,12 +204,12 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement suggested severity assessment.
 * [x] Implement evidence extraction.
 * [x] Implement investigation recommendations.
-* [ ] Implement uncertainty reporting.
+* [x] Implement uncertainty reporting (`uncertainty_level` and `missing_information` in schema, prompt, DB migrations; ADR-025).
 * [x] Implement sensitive-data masking (enhanced with JSON-aware KV regex, recursive scrub_dict, and Luhn credit-card validation; ADR-018).
 * [x] Implement log sanitization and truncation boundaries for raw API errors and raw LLM text (ADR-024).
 * [x] Implement ground-truth and provenance isolation via allow-list serialization (ADR-017).
 * [x] Implement API timeout and error handling.
-* [ ] Implement response caching where appropriate.
+* [x] Implement response caching where appropriate (`LLMResponseCache` with SHA-256 fingerprinting, TTL, capacity bounding; ADR-025).
 * [x] Write mocked integration tests.
 * [x] Verify structured triage results.
 
@@ -248,7 +248,9 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Store evaluation results.
 * [x] Ground-truth independence verification: Automated regression tests verify zero label or provenance leakage into LLM prompts (ADR-008, ADR-017).
 * [x] Implement reproducible evaluation (ADR-022).
-* [x] Execute real evaluation benchmark run across 70 balanced enterprise timelines (docs/results/evaluation_report_20261106.md; ADR-024).
+* [x] Execute real evaluation benchmark run across 70 balanced enterprise timelines (`docs/results/evaluation_report_20261106.md`; ADR-024).
+* [x] Implement confidence calibration metrics (Brier score, ECE, 5-bin calibration curve; ADR-025).
+* [x] Execute 2-model evaluation and calibration comparison (`docs/results/model_comparison_report.md`; ADR-026).
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
 

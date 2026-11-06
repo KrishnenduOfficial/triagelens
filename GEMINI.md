@@ -330,17 +330,19 @@ The following principles are non-negotiable:
 
 ## 10. Current Project Status
 
-The core TriageLens architecture is implemented and verified:
+The core TriageLens architecture is fully implemented, verified, and empirically benchmarked:
 
 1. **Stage 1 (Alert Intake):** JSON and CSV ingestion with normalization and validation (`AlertIntakeEngine`).
-2. **Stage 2 (Threat Intel):** Multi-provider enrichment (VirusTotal, AbuseIPDB, URLhaus) with caching (`EnrichmentEngine`).
-3. **Stage 3 (Timeline Builder):** Chronological event correlation and timeline construction (`TimelineBuilder`).
-4. **Stage 4 (LLM Triage):** Cloud-based Google Gemini DFIR triage with automated candidate model failover and regex PII/secret scrubbing (`GeminiTriageEngine`).
-5. **Stage 5 (Accuracy Engine):** Independent ground-truth evaluation, confusion matrix (TP, TN, FP, FN), precision, recall, and F1 calculations (`AccuracyTracker`).
-6. **Stage 6 (Storage & Backend):** Foreign-key enforced SQLite database (`DatabaseManager`) and REST API endpoints (`FastAPI`).
-7. **Stage 7 (Analyst Dashboard):** Dark-mode TypeScript/React frontend with Operations Console and Threat Hunting UI.
+2. **Stage 2 (Threat Intel):** Multi-provider enrichment (VirusTotal, AbuseIPDB, URLhaus) with TTL caching (`EnrichmentEngine`).
+3. **Stage 3 (Timeline Builder):** Multi-key identity-driven event correlation (host + user, IP, domain), sliding time windows (30m), confirmed/potential classification, and event capping (`TimelineBuilder`).
+4. **Stage 4 (LLM Triage):** Cloud-based Google Gemini DFIR triage with `<FORENSIC_EVIDENCE>` XML isolation against prompt injection, model catalog verification, automated failover (`gemini-3.8-flash` -> `gemini-3.5-flash-lite` -> `gemini-3.1-flash-lite`), in-memory response caching (`LLMResponseCache`), provider protocol (`TriageProvider`), uncertainty telemetry (`uncertainty_level`, `missing_information`), and regex PII/secret scrubbing with Luhn defense (`GeminiTriageEngine`).
+5. **Stage 5 (Accuracy Engine):** Independent ground-truth evaluation (ADR-008), confusion matrix (TP, TN, FP, FN), precision, recall, specificity, F1-score, FPR, FNR, class balance validation, confidence calibration (Brier score, ECE, 5-bin calibration curve), and SHA-256 reproducibility digest (`AccuracyTracker`).
+6. **Stage 6 (Storage & Backend):** Foreign-key enforced SQLite database with WAL mode, automated schema migrations, and REST API endpoints (`FastAPI`, `DatabaseManager`).
+7. **Stage 7 (Analyst Dashboard):** Dark-mode TypeScript / React 19 / Vite / Tailwind CSS frontend with Operations Console and Threat Hunting UI.
 8. **Stage 8 (Threat Hunting Engine):** Parameterized KQL-to-SQLite translation engine with deep JSON extraction (`ThreatHuntingEngine`).
-9. **Test Suite:** 174 adversarial, security, and edge-case unit tests passing across all components.
+9. **Real Evaluation Run:** 70-timeline balanced benchmark dataset (`data/eval_benchmark_70.json`) evaluated with 92.8% accuracy, 96.8% precision, 97.1% specificity, 2.9% FPR, and 11.8% FNR (`docs/results/evaluation_report_20261106.md`).
+10. **2-Model Comparison & Calibration:** Empirical comparison of `gemini-3.5-flash-lite` (95.0% accuracy, Brier: 0.0390, ECE: 0.0020) vs `gemini-3.1-flash-lite` (100.0% accuracy, Brier: 0.0071, ECE: 0.0585) across 20 representative timelines (`docs/results/model_comparison_report.md`).
+11. **Test Suite:** 213 unit, adversarial, security, and edge-case tests passing across all components with zero failures.
 
 Current Priorities:
 - Audit and align all task tracking in `TASKS.md` with verifiable deliverables.

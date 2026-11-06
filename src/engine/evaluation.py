@@ -153,6 +153,7 @@ class AccuracyTracker:
         self.severity_evaluated: int = 0
         self.severity_matches: int = 0
         self.history: List[EvaluationResult] = []
+        self.confidence_pairs: List[Tuple[float, bool]] = []
         self.dataset_configs: Dict[str, DatasetGroundTruthConfig] = {}
         self._default_config = DatasetGroundTruthConfig(name="default")
 
@@ -210,6 +211,7 @@ class AccuracyTracker:
         self.severity_evaluated = 0
         self.severity_matches = 0
         self.history.clear()
+        self.confidence_pairs.clear()
 
     def _classify_alert_label(self, alert: NormalizedAlert) -> Optional[bool]:
         """Classifies an individual alert's ground truth using dataset-specific rules.
@@ -380,6 +382,10 @@ class AccuracyTracker:
             if severity_correct:
                 self.severity_matches += 1
 
+        conf = verdict.confidence_score if verdict else None
+        if conf is not None and is_correct is not None:
+            self.confidence_pairs.append((float(conf), bool(is_correct)))
+
         result = EvaluationResult(
             timeline_id=timeline.timeline_id,
             verdict_id=verdict.verdict_id,
@@ -390,16 +396,18 @@ class AccuracyTracker:
             severity_ground_truth=gt_severity,
             severity_prediction=sev,
             severity_correct=severity_correct,
+            confidence_score=conf,
         )
         self.history.append(result)
         return result
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Calculates statistical performance metrics with division-by-zero defense and class balance.
+        """Calculates statistical performance metrics with division-by-zero defense, class balance, and confidence calibration.
 
         Returns:
             Dictionary containing Accuracy, Precision, Recall, Specificity, F1-Score,
-            False Positive Rate, False Negative Rate, class balance metrics, and severity evaluation.
+            False Positive Rate, False Negative Rate, Brier score, Expected Calibration Error,
+            class balance metrics, and severity evaluation.
         """
         tp = self.true_positives
         tn = self.true_negatives
@@ -454,6 +462,55 @@ class AccuracyTracker:
             self.severity_matches / self.severity_evaluated if self.severity_evaluated > 0 else 0.0
         )
 
+        # 10. Confidence Calibration (Brier Score, ECE, Calibration Bins)
+        if self.confidence_pairs:
+            brier_score = round(
+                sum((c - (1.0 if ok else 0.0)) ** 2 for c, ok in self.confidence_pairs)
+                / len(self.confidence_pairs),
+                4,
+            )
+            bin_defs = [
+                (0.0, 0.2, "0.0 - 0.2"),
+                (0.2, 0.4, "0.2 - 0.4"),
+                (0.4, 0.6, "0.4 - 0.6"),
+                (0.6, 0.8, "0.6 - 0.8"),
+                (0.8, 1.0, "0.8 - 1.0"),
+            ]
+            calibration_bins = []
+            ece_acc = 0.0
+            total_pairs = len(self.confidence_pairs)
+
+            for low, high, label in bin_defs:
+                if high == 1.0:
+                    bin_samples = [p for p in self.confidence_pairs if low <= p[0] <= high]
+                else:
+                    bin_samples = [p for p in self.confidence_pairs if low <= p[0] < high]
+
+                count = len(bin_samples)
+                if count > 0:
+                    mean_conf = round(sum(p[0] for p in bin_samples) / count, 4)
+                    emp_acc = round(sum(1 for p in bin_samples if p[1]) / count, 4)
+                    gap = abs(mean_conf - emp_acc)
+                    ece_acc += (count / total_pairs) * gap
+                else:
+                    mean_conf = 0.0
+                    emp_acc = 0.0
+                    gap = 0.0
+
+                calibration_bins.append({
+                    "bin": label,
+                    "count": count,
+                    "mean_confidence": mean_conf,
+                    "accuracy": emp_acc,
+                    "gap": round(gap, 4),
+                })
+
+            expected_calibration_error = round(ece_acc, 4)
+        else:
+            brier_score = None
+            expected_calibration_error = None
+            calibration_bins = []
+
         return {
             "accuracy": accuracy,
             "Accuracy": accuracy,
@@ -495,6 +552,10 @@ class AccuracyTracker:
             "severity_evaluated": self.severity_evaluated,
             "severity_matches": self.severity_matches,
             "severity_accuracy": severity_accuracy,
+            "brier_score": brier_score,
+            "expected_calibration_error": expected_calibration_error,
+            "ece": expected_calibration_error,
+            "calibration_bins": calibration_bins,
         }
 
     def generate_reproducible_report(self, seed: Optional[int] = None) -> Dict[str, Any]:

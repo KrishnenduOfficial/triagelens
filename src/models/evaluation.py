@@ -38,5 +38,6 @@ class EvaluationResult(BaseModel):
     severity_ground_truth: Optional[str] = None
     severity_prediction: Optional[str] = None
     severity_correct: Optional[bool] = None
+    confidence_score: Optional[float] = None
 
 

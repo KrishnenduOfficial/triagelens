@@ -173,15 +173,21 @@ class DatabaseManager:
                     raw_llm_response TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     model_name TEXT,
+                    uncertainty_level TEXT,
+                    missing_information TEXT,
                     FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE CASCADE
                 );
             """)
 
-            # Migration: ensure model_name column exists in verdicts table
+            # Migration: ensure model_name and uncertainty columns exist in verdicts table
             cursor.execute("PRAGMA table_info(verdicts);")
             existing_verdict_cols = {row["name"] for row in cursor.fetchall()}
             if "model_name" not in existing_verdict_cols:
                 cursor.execute("ALTER TABLE verdicts ADD COLUMN model_name TEXT;")
+            if "uncertainty_level" not in existing_verdict_cols:
+                cursor.execute("ALTER TABLE verdicts ADD COLUMN uncertainty_level TEXT;")
+            if "missing_information" not in existing_verdict_cols:
+                cursor.execute("ALTER TABLE verdicts ADD COLUMN missing_information TEXT;")
 
 
             # 5. Evaluations Table
@@ -483,14 +489,16 @@ class DatabaseManager:
             reasoning_json = json.dumps(verdict.reasoning)
             actions_json = json.dumps(verdict.recommended_actions)
             model_name = getattr(verdict, "model_name", None)
+            uncertainty_level = getattr(verdict, "uncertainty_level", None)
+            missing_info_json = json.dumps(getattr(verdict, "missing_information", []))
 
             conn.execute(
                 """
                 INSERT INTO verdicts (
                     id, timeline_id, severity, confidence_score, summary,
                     reasoning, recommended_actions, raw_llm_response, created_at,
-                    model_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    model_name, uncertainty_level, missing_information
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     verdict_id_str,
@@ -503,6 +511,8 @@ class DatabaseManager:
                     verdict.raw_llm_response,
                     now_str,
                     model_name,
+                    uncertainty_level,
+                    missing_info_json,
                 ),
             )
             conn.commit()
@@ -521,6 +531,7 @@ class DatabaseManager:
             data = dict(row)
             data["reasoning"] = json.loads(data["reasoning"])
             data["recommended_actions"] = json.loads(data["recommended_actions"])
+            data["missing_information"] = json.loads(data.get("missing_information") or "[]")
             return data
 
     def get_verdict_for_timeline(
@@ -539,6 +550,7 @@ class DatabaseManager:
             data = dict(row)
             data["reasoning"] = json.loads(data["reasoning"])
             data["recommended_actions"] = json.loads(data["recommended_actions"])
+            data["missing_information"] = json.loads(data.get("missing_information") or "[]")
             return data
 
     # =====================================================================

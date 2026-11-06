@@ -4,11 +4,14 @@ Provides structured threat analysis, severity scoring, and investigative recomme
 while enforcing PII masking and defense against hallucinations.
 """
 
+import hashlib
 import json
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+import threading
+import time
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 import httpx
 from pydantic import ValidationError
 
@@ -32,10 +35,14 @@ CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matchin
 {
     "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL",
     "confidence_score": <float between 0.0 and 1.0>,
+    "uncertainty_level": "LOW" | "MEDIUM" | "HIGH",
     "summary": "<concise executive summary of observed threat activity>",
     "reasoning": [
         "<concrete analytical finding with supporting evidence>",
         "<another analytical point>"
+    ],
+    "missing_information": [
+        "<unobserved telemetry gap or key investigation lead, e.g. parent process or network egress>"
     ],
     "recommended_actions": [
         "<immediate containment or response step>",
@@ -44,6 +51,63 @@ CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matchin
 }
 Do not include any introductory remarks, markdown prose outside the JSON block, or post-analysis commentary. Output ONLY the JSON object.
 """
+
+
+@runtime_checkable
+class TriageProvider(Protocol):
+    """Provider-independent interface protocol for LLM triage engines.
+
+    Enforces interchangeable AI backends (e.g. Gemini, Azure OpenAI, Anthropic)
+    while maintaining strict input/output contracts and human-in-the-loop oversight.
+    """
+
+    model: str
+
+    def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
+        """Analyzes a ThreatTimeline and produces a structured TriageVerdict."""
+        ...
+
+
+class LLMResponseCache:
+    """Thread-safe in-memory response cache for LLM triage assessments.
+
+    Caches validated TriageVerdict objects keyed by SHA-256 hash of the sanitized
+    timeline evidence and target model. Supports bounded size and TTL expiration.
+    """
+
+    def __init__(self, max_size: int = 1000, ttl_seconds: Optional[int] = 3600) -> None:
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[str, Tuple[TriageVerdict, float]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Optional[TriageVerdict]:
+        with self._lock:
+            if key not in self._cache:
+                return None
+            verdict, timestamp = self._cache[key]
+            if self.ttl_seconds is not None and (time.time() - timestamp) > self.ttl_seconds:
+                del self._cache[key]
+                return None
+            return verdict
+
+    def set(self, key: str, verdict: TriageVerdict) -> None:
+        with self._lock:
+            if len(self._cache) >= self.max_size:
+                oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
+                del self._cache[oldest_key]
+            self._cache[key] = (verdict, time.time())
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cache)
+
+    def __bool__(self) -> bool:
+        return True
 
 
 class GeminiTriageEngine:
@@ -55,7 +119,7 @@ class GeminiTriageEngine:
     """
 
     DEFAULT_MODEL = "gemini-3.8-flash"
-    DEFAULT_FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    DEFAULT_FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 
 
     FORBIDDEN_EVALUATION_KEYS = {
@@ -145,6 +209,8 @@ class GeminiTriageEngine:
         fallback_models: Optional[list] = None,
         timeout: float = 15.0,
         scrubber: Optional[PIIScrubber] = None,
+        enable_cache: bool = True,
+        cache: Optional[LLMResponseCache] = None,
     ) -> None:
         """Initializes the GeminiTriageEngine.
 
@@ -154,6 +220,8 @@ class GeminiTriageEngine:
             fallback_models: Optional list of fallback model identifiers to try on 503/429/404.
             timeout: HTTP request timeout in seconds.
             scrubber: Optional custom PIIScrubber instance.
+            enable_cache: Whether to cache LLM responses for identical sanitized timeline inputs.
+            cache: Custom LLMResponseCache instance. Defaults to a new bounded in-memory cache.
 
         Raises:
             ValueError: If no API key is provided and GEMINI_API_KEY is not set.
@@ -175,6 +243,13 @@ class GeminiTriageEngine:
                 self.fallback_models = list(self.DEFAULT_FALLBACK_MODELS)
         self.timeout = timeout
         self.scrubber = scrubber or PIIScrubber()
+        self.enable_cache = enable_cache
+        if cache is not None:
+            self.cache = cache
+        elif enable_cache:
+            self.cache = LLMResponseCache()
+        else:
+            self.cache = None
 
     def _extract_json(self, raw_text: str) -> Optional[Dict[str, Any]]:
         """Extracts and parses a JSON object from raw LLM output.
@@ -350,6 +425,14 @@ class GeminiTriageEngine:
         # String-level regex scrubbing as second defensive layer
         sanitized_timeline_json = self.scrubber.scrub(timeline_clean_json)
 
+        # Check in-memory LLM response cache
+        cache_key = hashlib.sha256(f"{sanitized_timeline_json}:{self.model}".encode("utf-8")).hexdigest()
+        if self.enable_cache and self.cache is not None:
+            cached_verdict = self.cache.get(cache_key)
+            if cached_verdict is not None:
+                logger.debug("LLM response cache hit for key: %s", cache_key)
+                return cached_verdict
+
         # 2. Construct API request payload with explicit evidence boundary delimiters
         user_prompt = (
             "Analyze the following correlated security threat timeline and provide "
@@ -473,6 +556,17 @@ class GeminiTriageEngine:
             return None
 
         # 7. Validate against Pydantic TriageVerdict schema
+        uncertainty = parsed_dict.get("uncertainty_level")
+        if isinstance(uncertainty, str):
+            uncertainty = uncertainty.strip().upper()
+            if uncertainty not in ("LOW", "MEDIUM", "HIGH"):
+                uncertainty = None
+        missing_info = parsed_dict.get("missing_information", [])
+        if isinstance(missing_info, str):
+            missing_info = [missing_info]
+        elif not isinstance(missing_info, list):
+            missing_info = []
+
         try:
             verdict = TriageVerdict(
                 timeline_id=timeline.timeline_id,
@@ -483,7 +577,11 @@ class GeminiTriageEngine:
                 recommended_actions=parsed_dict.get("recommended_actions", []),
                 raw_llm_response=raw_llm_text,
                 model_name=answering_model,
+                uncertainty_level=uncertainty,
+                missing_information=missing_info,
             )
+            if self.enable_cache and self.cache is not None:
+                self.cache.set(cache_key, verdict)
             return verdict
         except ValidationError as val_err:
             safe_err = self._safe_log_text(str(val_err))
