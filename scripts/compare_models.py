@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
+from src.config import get_gemini_api_key
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
 from src.engine.llm import GeminiTriageEngine
@@ -304,8 +305,7 @@ A reliable SOC triage AI must not only predict the correct verdict, but its repo
 
 
 def main() -> None:
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
 

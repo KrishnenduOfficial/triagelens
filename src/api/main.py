@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from src import config
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
 from src.engine.hunting import KQLParseError, ThreatHuntingEngine
@@ -68,15 +69,7 @@ def create_app(
     )
 
     # 1. Configure CORS middleware strictly for local frontend communication
-    allowed_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    env_origins = os.getenv("ALLOWED_ORIGINS")
-    if env_origins:
-        allowed_origins.extend([o.strip() for o in env_origins.split(",") if o.strip()])
+    allowed_origins = config.get_allowed_origins()
 
     app.add_middleware(
         CORSMiddleware,
@@ -88,7 +81,7 @@ def create_app(
 
     # 2. Attach DatabaseManager and AccuracyTracker to app state
     if db is None:
-        db_path = os.getenv("DATABASE_PATH", ":memory:")
+        db_path = config.get_database_path()
         db = DatabaseManager(db_path=db_path, check_same_thread=False)
         db.init_db()
 

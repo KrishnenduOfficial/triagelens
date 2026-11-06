@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict, List, Optional
 import httpx
 
+from src.config import get_abuseipdb_api_key, get_virustotal_api_key
 from src.models.enrichment import EnrichmentResult
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ class VirusTotalProvider(ThreatIntelProvider):
             api_key: Optional VirusTotal API key. Defaults to VT_API_KEY environment variable.
             timeout: HTTP request timeout in seconds (default: 5.0).
         """
-        self.api_key = api_key or os.getenv("VT_API_KEY")
+        self.api_key = api_key or get_virustotal_api_key()
         self.timeout = timeout
         self.base_url = "https://www.virustotal.com/api/v3"
 
@@ -181,7 +182,7 @@ class AbuseIPDBProvider(ThreatIntelProvider):
             api_key: Optional AbuseIPDB API key. Defaults to ABUSEIPDB_API_KEY environment variable.
             timeout: HTTP request timeout in seconds (default: 5.0).
         """
-        self.api_key = api_key or os.getenv("ABUSEIPDB_API_KEY")
+        self.api_key = api_key or get_abuseipdb_api_key()
         self.timeout = timeout
         self.base_url = "https://api.abuseipdb.com/api/v2/check"
 

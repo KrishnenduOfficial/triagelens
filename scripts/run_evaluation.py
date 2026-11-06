@@ -17,6 +17,7 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 
+from src.config import get_gemini_api_key
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
 from src.engine.llm import GeminiTriageEngine
@@ -67,8 +68,7 @@ def run_evaluation(
     pacing_seconds: float = 2.0,
 ) -> Dict[str, Any]:
     """Executes the full evaluation run across benchmark timelines."""
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
 

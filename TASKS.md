@@ -191,7 +191,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 ### Tasks
 
 * [x] Configure Gemini API credentials.
-* [x] Implement secure environment configuration.
+* [x] Implement secure environment configuration (centralized `src/config.py` with canonical names, `VT_API_KEY` alias, and parity testing; ADR-027).
 * [x] Design provider-independent LLM interface (`TriageProvider` Protocol; ADR-025).
 * [x] Implement Gemini provider.
 * [x] Design structured triage prompt.
@@ -274,7 +274,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 ### Tasks
 
 * [x] Finalize database schema.
-* [x] Configure SQLite.
+* [x] Configure SQLite (centralized DATABASE_PATH with TRIAGELENS_DB_PATH alias, automatic directory creation, WAL mode; ADR-027).
 * [x] Implement database connection management.
 * [x] Implement alert persistence.
 * [x] Implement indicator persistence.

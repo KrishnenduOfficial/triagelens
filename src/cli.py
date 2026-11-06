@@ -18,6 +18,7 @@ from uuid import UUID
 
 from dotenv import load_dotenv
 
+from src import config
 from src.engine.database import DatabaseManager
 from src.engine.enrichment import (
     AbuseIPDBProvider,
@@ -83,7 +84,7 @@ def run_pipeline(
     Returns:
         Dictionary of final accuracy evaluation metrics.
     """
-    db_file = db_path or os.getenv("DATABASE_PATH", "triagelens.db")
+    db_file = db_path or config.get_database_path()
     logger.info("=" * 65)
     logger.info("Initializing TriageLens Pipeline")
     logger.info("Target Data Directory : %s", data_dir)
@@ -98,8 +99,8 @@ def run_pipeline(
     enrichment_engine = EnrichmentEngine()
 
     # Register threat intelligence providers (with graceful missing-key fallbacks)
-    vt_key = os.getenv("VT_API_KEY") or os.getenv("VIRUSTOTAL_API_KEY")
-    abuse_key = os.getenv("ABUSEIPDB_API_KEY")
+    vt_key = config.get_virustotal_api_key()
+    abuse_key = config.get_abuseipdb_api_key()
 
     if vt_key:
         enrichment_engine.register_provider(VirusTotalProvider(api_key=vt_key))
@@ -121,7 +122,7 @@ def run_pipeline(
     accuracy_tracker = AccuracyTracker()
 
     # Initialize LLM Engine (if key exists and not explicitly skipped)
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_key = config.get_gemini_api_key()
     triage_engine: Optional[GeminiTriageEngine] = None
 
     if not skip_llm:

@@ -703,6 +703,49 @@ API providers deprecate and upgrade model endpoints continuously. Automated fail
 
 ---
 
+### ADR-027: Centralized Configuration Management, Canonical Environment Variables, and Startup Database Resolution
+
+**Status:** Accepted
+
+**Decision:**
+
+To resolve environment variable naming drift across `.env.example`, `README.md`, and application engines, eliminate orphan variables, and ensure the FastAPI backend connects to the file database by default:
+
+1. **Centralized Configuration Module (`src/config.py`):**
+   - Automatically loads `.env` upon import via `load_dotenv()`.
+   - Centralizes retrieval of all application parameters: database path, Gemini credentials and model fallbacks, threat intelligence keys, and CORS origins.
+
+2. **Canonical Names and Deliberate Aliases:**
+   - `DATABASE_PATH` (canonical): Points to the persistent SQLite database (default: `data/triagelens.db`). `TRIAGELENS_DB_PATH` is supported as an alias. Parent directories are created automatically.
+   - `VIRUSTOTAL_API_KEY` (canonical): Supported with `VT_API_KEY` as a backward-compatible alias across `VirusTotalProvider` and the CLI.
+   - `ABUSEIPDB_API_KEY` (canonical): Used by `AbuseIPDBProvider` and the CLI.
+   - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS`: Standardized model configuration.
+   - `BACKEND_HOST`, `BACKEND_PORT`, `ALLOWED_ORIGINS`, `VITE_API_BASE_URL`: Standardized networking.
+
+3. **Orphan Key Elimination:**
+   - Removed `URLHAUS_API_KEY` from `.env.example`; documented that URLhaus operates as a public, keyless API.
+
+4. **API Database Resolution:**
+   - `src/api/main.py` initializes `db_path` via `config.get_database_path()`, resolving to the file database (`data/triagelens.db`) instead of an ephemeral `:memory:` database.
+
+5. **Safe Startup Validation (`validate_config`):**
+   - Logs configuration status with boolean indicators (`configured` / `not configured`) and never prints, logs, or returns raw API keys or secrets.
+
+6. **Parity Testing (`tests/test_config.py`):**
+   - Automated regression test validates 1:1 variable naming parity across `.env.example`, `README.md`, and code.
+
+**Rationale:**
+
+Configuration drift between documentation, template files, and code causes analyst confusion and silent failures (such as the API starting with an empty in-memory database or ignoring API keys).
+
+**Consequences:**
+
+* Existing local environments using `VT_API_KEY` or `TRIAGELENS_DB_PATH` continue working without modification.
+* New installations following `README.md` and `.env.example` connect directly to the shared file database.
+* Zero secrets are exposed in startup logs.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

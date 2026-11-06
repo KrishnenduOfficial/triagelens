@@ -227,8 +227,11 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
    GEMINI_API_KEY=your_google_gemini_api_key_here
    GEMINI_MODEL=gemini-3.8-flash
    GEMINI_FALLBACK_MODELS=gemini-3.5-flash-lite,gemini-3.1-flash-lite
-   TRIAGELENS_DB_PATH=data/triagelens.db
+   DATABASE_PATH=data/triagelens.db
+   VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
+   ABUSEIPDB_API_KEY=your_abuseipdb_api_key_here
    ```
+   *(Note: `TRIAGELENS_DB_PATH` is also recognized as an alias for `DATABASE_PATH`, and `VT_API_KEY` as an alias for `VIRUSTOTAL_API_KEY`).*
 
 ---
 
