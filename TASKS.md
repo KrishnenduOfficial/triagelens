@@ -373,19 +373,19 @@ These features should not delay the completion of the core pipeline.
 
 # 12. Phase 9 — Testing and Quality Assurance
 
-* [ ] Run complete unit test suite.
-* [ ] Run integration tests.
-* [ ] Test ingestion-to-enrichment pipeline.
-* [ ] Test enrichment-to-timeline pipeline.
-* [ ] Test timeline-to-AI pipeline.
-* [ ] Test AI-to-evaluation pipeline.
-* [ ] Verify database consistency.
-* [ ] Test API failure scenarios.
-* [ ] Test external API failure scenarios.
-* [ ] Review sensitive-data handling.
-* [ ] Test on available hardware.
-* [ ] Identify performance bottlenecks.
-* [ ] Fix high-priority issues.
+* [x] Run complete unit test suite (213 passing unit, security, and adversarial tests).
+* [x] Run integration tests (FastAPI test client with mocked external endpoints).
+* [x] Test ingestion-to-enrichment pipeline (`test_intake_adversarial.py`, `test_enrichment.py`).
+* [x] Test enrichment-to-timeline pipeline (`test_timeline_adversarial.py`).
+* [x] Test timeline-to-AI pipeline (`test_llm_adversarial.py`).
+* [x] Test AI-to-evaluation pipeline (`test_evaluation_adversarial.py`).
+* [x] Verify database consistency (`test_database_adversarial.py`: foreign keys, WAL mode, migrations).
+* [x] Test API failure scenarios (`test_api.py`: 404, 422, sanitized 500 responses).
+* [x] Test external API failure scenarios (503 high demand, 429 rate limit, 404 deprecated models, timeouts).
+* [x] Review sensitive-data handling (`PIIScrubber` with Luhn check, `_safe_log_text` secret redaction, ADR-008 prompt isolation).
+* [x] Test on available hardware (verified on Intel Core i5, 8 GB RAM development workstation).
+* [x] Identify performance bottlenecks (resolved via SQLite WAL mode, in-memory `LLMResponseCache`, and query row bounds).
+* [x] Fix high-priority issues (audits F1 through F11 fully resolved with regression tests).
 
 ### Completion Criteria
 
@@ -395,19 +395,19 @@ The complete core pipeline operates reliably on the development machine, with au
 
 # 13. Phase 10 — Portfolio Preparation
 
-* [ ] Create comprehensive README.md.
-* [ ] Document installation instructions.
-* [ ] Document environment variables.
-* [ ] Document architecture.
-* [ ] Document API usage.
-* [ ] Document supported datasets.
-* [ ] Document evaluation methodology.
-* [ ] Add architecture diagram.
-* [ ] Add dashboard screenshots.
-* [ ] Record project demonstration video.
-* [ ] Document known limitations.
-* [ ] Review GitHub repository.
-* [ ] Prepare project presentation for SOC analyst interviews.
+* [x] Create comprehensive README.md (production-ready with architecture, setup, evaluation, and limitations).
+* [x] Document installation instructions (backend Python venv and frontend npm setup).
+* [x] Document environment variables (`.env.example` and README reference table).
+* [x] Document architecture (full ASCII flow across Stages 1–8 in README.md and ARCHITECTURE.md).
+* [x] Document API usage (table of REST endpoints and interactive Swagger UI docs).
+* [x] Document supported datasets (JSON, CSV, synthetic SOC dataset, 70-timeline benchmark).
+* [x] Document evaluation methodology (ADR-008 independent ground truth, confusion matrix, Brier score, ECE).
+* [x] Add architecture diagram (ASCII pipeline flow and repository directory trees).
+* [ ] Add dashboard screenshots (deferred for manual UI screenshot capture).
+* [ ] Record project demonstration video (deferred for offline presentation recording).
+* [x] Document known limitations (internal IP/hostname/username retention, single-node SQLite, API quotas, ground-truth requirements).
+* [x] Review GitHub repository (clean git tree, no secrets, `.env` and `*.db` in `.gitignore`, remote verified).
+* [ ] Prepare project presentation for SOC analyst interviews (offline portfolio slide deck preparation).
 
 ---
 
