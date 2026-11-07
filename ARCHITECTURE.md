@@ -700,7 +700,7 @@ triagelens/
 │   └── utils/                 # Security & extraction utilities
 │       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-└── tests/                     # Test suite (254 passing adversarial, security, and unit tests)
+└── tests/                     # Test suite (263 passing adversarial, security, and unit tests)
     ├── test_api_adversarial.py
     ├── test_database_adversarial.py
     ├── test_enrichment.py

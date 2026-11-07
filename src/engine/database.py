@@ -181,6 +181,16 @@ class DatabaseManager:
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_enrichment_cache_expires ON enrichment_cache(expires_at);")
 
+            # 3c. Enrichment Daily Quotas Table (WIRE-9)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS enrichment_quotas (
+                    provider TEXT NOT NULL,
+                    date_key TEXT NOT NULL,
+                    request_count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (provider, date_key)
+                );
+            """)
+
             # 4. Triage Verdicts Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS verdicts (
@@ -562,6 +572,55 @@ class DatabaseManager:
                 ),
             )
             conn.commit()
+
+    # =====================================================================
+    # Enrichment Daily Quota Persistence (WIRE-9)
+    # =====================================================================
+
+    def get_quota_usage(self, provider: str, date_key: Optional[str] = None) -> int:
+        """Retrieves total requests recorded for a provider on a given UTC date (YYYY-MM-DD)."""
+        target_date = date_key or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        provider_norm = provider.strip().lower()
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute(
+                """
+                SELECT request_count FROM enrichment_quotas
+                WHERE provider = ? AND date_key = ?;
+                """,
+                (provider_norm, target_date),
+            )
+            row = cursor.fetchone()
+            return int(row["request_count"]) if row else 0
+
+    def increment_quota_usage(
+        self, provider: str, count: int = 1, date_key: Optional[str] = None
+    ) -> int:
+        """Increments request counter for a provider on a given UTC date (default: today)."""
+        target_date = date_key or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        provider_norm = provider.strip().lower()
+        with self._lock:
+            conn = self.connect()
+            conn.execute(
+                """
+                INSERT INTO enrichment_quotas (provider, date_key, request_count)
+                VALUES (?, ?, ?)
+                ON CONFLICT(provider, date_key) DO UPDATE SET
+                    request_count = enrichment_quotas.request_count + excluded.request_count;
+                """,
+                (provider_norm, target_date, max(0, int(count))),
+            )
+            conn.commit()
+            return self.get_quota_usage(provider_norm, target_date)
+
+    def check_quota_available(
+        self, provider: str, max_daily_quota: Optional[int], date_key: Optional[str] = None
+    ) -> bool:
+        """Checks if a provider has remaining quota for the given date. Returns True if available or quota is None/<=0."""
+        if max_daily_quota is None or max_daily_quota <= 0:
+            return True
+        current_usage = self.get_quota_usage(provider, date_key)
+        return current_usage < max_daily_quota
 
     # =====================================================================
     # Triage Verdict Persistence

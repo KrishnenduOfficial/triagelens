@@ -31,6 +31,11 @@ CANONICAL_CONFIG_VARS = [
     "BACKEND_PORT",
     "ALLOWED_ORIGINS",
     "VITE_API_BASE_URL",
+    "ENRICHMENT_WAIT_MODE",
+    "ENRICHMENT_MAX_WAIT_SECONDS",
+    "VIRUSTOTAL_DAILY_QUOTA",
+    "VIRUSTOTAL_REQUESTS_PER_MINUTE",
+    "ENRICHMENT_MAX_LOOKUPS_PER_RUN",
 ]
 
 # Supported backward-compatible aliases
@@ -158,6 +163,57 @@ def get_vite_api_base_url() -> str:
     return os.getenv("VITE_API_BASE_URL", "http://localhost:8000").strip()
 
 
+def get_enrichment_wait_mode() -> bool:
+    """Returns True if threat intelligence enrichment rate limiting is in wait mode."""
+    raw = os.getenv("ENRICHMENT_WAIT_MODE", "false").strip().lower()
+    return raw in ("true", "1", "yes", "on")
+
+
+def get_enrichment_max_wait_seconds() -> float:
+    """Returns maximum allowed wait time in seconds for rate limiter pausing (default: 60.0)."""
+    raw = os.getenv("ENRICHMENT_MAX_WAIT_SECONDS", "60.0").strip()
+    try:
+        val = float(raw)
+        return max(0.0, val)
+    except ValueError:
+        logger.warning("Invalid ENRICHMENT_MAX_WAIT_SECONDS '%s', defaulting to 60.0", raw)
+        return 60.0
+
+
+def get_virustotal_daily_quota() -> Optional[int]:
+    """Returns the VirusTotal daily request quota (default: 500 for free tier)."""
+    raw = os.getenv("VIRUSTOTAL_DAILY_QUOTA", "500").strip()
+    if not raw or raw.lower() in ("none", "null", "0", "unlimited"):
+        return None
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning("Invalid VIRUSTOTAL_DAILY_QUOTA '%s', defaulting to 500", raw)
+        return 500
+
+
+def get_virustotal_requests_per_minute() -> int:
+    """Returns the VirusTotal requests per minute limit (default: 4 for free tier)."""
+    raw = os.getenv("VIRUSTOTAL_REQUESTS_PER_MINUTE", "4").strip()
+    try:
+        val = int(raw)
+        return max(1, val)
+    except ValueError:
+        logger.warning("Invalid VIRUSTOTAL_REQUESTS_PER_MINUTE '%s', defaulting to 4", raw)
+        return 4
+
+
+def get_enrichment_max_lookups() -> Optional[int]:
+    """Returns per-run max lookups limit across all providers if configured."""
+    raw = os.getenv("ENRICHMENT_MAX_LOOKUPS_PER_RUN")
+    if not raw or raw.strip().lower() in ("none", "null", "0", "unlimited"):
+        return None
+    try:
+        return max(1, int(raw.strip()))
+    except ValueError:
+        return None
+
+
 def validate_config() -> Dict[str, Any]:
     """Validates configuration at startup and logs safe status messages.
 
@@ -173,6 +229,10 @@ def validate_config() -> Dict[str, Any]:
     urlhaus_key = get_urlhaus_api_key()
     vt_threshold = get_virustotal_min_detections()
     abuse_threshold = get_abuseipdb_min_score()
+    wait_mode = get_enrichment_wait_mode()
+    max_wait = get_enrichment_max_wait_seconds()
+    vt_quota = get_virustotal_daily_quota()
+    vt_rpm = get_virustotal_requests_per_minute()
 
     status_summary = {
         "database_path": db_path,
@@ -184,6 +244,10 @@ def validate_config() -> Dict[str, Any]:
         "urlhaus_configured": bool(urlhaus_key),
         "virustotal_min_detections": vt_threshold,
         "abuseipdb_min_score": abuse_threshold,
+        "enrichment_wait_mode": wait_mode,
+        "enrichment_max_wait_seconds": max_wait,
+        "virustotal_daily_quota": vt_quota,
+        "virustotal_requests_per_minute": vt_rpm,
     }
 
     logger.info("[Config] Target SQLite Database: %s", db_path)

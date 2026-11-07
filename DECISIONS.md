@@ -997,6 +997,77 @@ Security tools designed to measure AI error rates must maintain uncompromising s
 
 ---
 
+### ADR-035: Production Code Purity and Elimination of Testing Framework Dependencies
+
+**Status:** Accepted
+
+**Context:**
+
+An independent architectural review discovered that `unittest.mock` (`MagicMock`) was imported and dynamically inspected directly inside production code (`src/engine/enrichment.py`). This had been introduced as a workaround because certain tests registered bare `MagicMock` instances whose auto-generated attributes caused runtime dispatch failures. Production code must never import or couple itself to testing libraries, test harnesses, or mock frameworks.
+
+**Decision:**
+
+1. **Zero Mock Imports in Production Code:**
+   - Stripped all `unittest.mock` / `MagicMock` imports and inspection branches from `src/engine/enrichment.py` and all other `src/` modules.
+   - Production provider dispatch uses pure Python interface checking (`hasattr(provider, "lookup_with_status")` followed by `hasattr(provider, "lookup")`).
+
+2. **Clean Dependency Injection in Unit Tests:**
+   - Test suites use explicit test stubs (`StubThreatIntelProvider`) inheriting from `ThreatIntelProvider` rather than bare `MagicMock` instances that leak mock semantics into production dispatch logic.
+   - For integration tests, standard test-scoped monkeypatching/patching (`patch.object(VirusTotalProvider, "lookup_with_status", ...)`) is used without production code awareness.
+
+3. **Continuous Regression Enforcement:**
+   - Added automated regression test `test_no_mocking_libraries_in_production_code` in `tests/test_wire7_docs_and_health.py` that scans all `.py` files under `src/` via AST parsing and rejects any imports of `unittest.mock`, `mock`, `MagicMock`, or `pytest`.
+
+**Rationale:**
+
+Production code purity is essential for reliability, security, and professional engineering standards. A system that detects its own mocks in production code exhibits code smell and fragility. Decoupling production code from test frameworks ensures robust runtime execution and prevents testing artifacts from reaching production.
+
+**Consequences:**
+
+* `src/` contains zero imports of testing frameworks.
+* All unit and routing tests execute cleanly without network calls.
+* Any future accidental introduction of mock frameworks into `src/` will immediately fail automated tests.
+
+---
+
+### ADR-036: Enrichment Rate Limiter Wait Mode, Persisted Quotas, and Label-Free Prioritization
+
+**Status:** Accepted
+
+**Context:**
+
+The baseline threat intelligence rate limiter discarded lookups immediately upon hitting the client-side rate limit window (e.g. 4 req/min on the VirusTotal free tier), causing bulk ingest jobs and evaluations to miss intelligence. In addition, there was no persistent tracking of daily provider quotas (e.g. 500 req/day), no capability to pause lookups deterministically with testable injected clocks, and no mechanism to prioritize indicators under budget constraints without violating ADR-008.
+
+**Decision:**
+
+1. **Wait Mode with Injectable Clock and Sleep (`ProviderRateLimiter`):**
+   - Implemented `acquire_or_wait(max_wait_seconds)` supporting injectable `clock: Callable[[], float]` and `sleep_func: Callable[[float], None]`.
+   - If rate limits are saturated, calculates precise delay until the oldest timestamp elapses; if `delay <= max_wait_seconds`, pauses and acquires; otherwise aborts safely.
+
+2. **Persisted Daily Quota Storage (`DatabaseManager`):**
+   - Added `enrichment_quotas` table schema in SQLite (`provider`, `date_key`, `request_count`).
+   - Implemented `get_quota_usage`, `increment_quota_usage`, and `check_quota_available` to enforce daily budgets across process restarts.
+   - Lookups exceeding daily quota return `lookup_status="quota_exceeded"`.
+
+3. **Label-Free Indicator Prioritization (`EnrichmentEngine.prioritize_indicators`):**
+   - Strict adherence to ADR-008: prioritization ranks indicators by forensic fidelity (File Hashes = 100 > Domains = 75 > URLs = 70 > Public IPs = 50) and cross-alert frequency bonus without accessing ground-truth labels.
+
+4. **CLI and Script Limits (`--max-lookups`):**
+   - Added `--max-lookups` option to `scripts/run_evaluation.py` and `src/cli.py` to bound external lookups per run.
+   - Exposed environment variables `ENRICHMENT_WAIT_MODE`, `ENRICHMENT_MAX_WAIT_SECONDS`, `VIRUSTOTAL_DAILY_QUOTA`, and `VIRUSTOTAL_REQUESTS_PER_MINUTE`.
+
+**Rationale:**
+
+Enables reliable bulk alert triage within free-tier API quotas while preserving deterministic testability and maintaining strict non-contamination of ground truth.
+
+**Consequences:**
+
+* High-volume pipelines pause gracefully rather than dropping threat intelligence.
+* Daily quotas persist across system reboots.
+* Indicators are triaged in order of forensic value without compromising ground-truth evaluation integrity.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

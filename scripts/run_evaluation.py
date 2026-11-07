@@ -75,6 +75,7 @@ def run_evaluation_pipeline(
     results_output_dir: Optional[str] = None,
     pacing_seconds: float = 0.0,
     end_to_end: bool = False,
+    max_lookups: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Executes evaluation pipeline across threat timelines with optional enrichment and persistent storage."""
     api_key = get_gemini_api_key()
@@ -91,7 +92,7 @@ def run_evaluation_pipeline(
 
     # Optional end-to-end mode: run alerts through real EnrichmentEngine before triage
     if end_to_end:
-        enrichment_engine = EnrichmentEngine(db=db)
+        enrichment_engine = EnrichmentEngine(db=db, max_lookups_per_run=max_lookups)
         for tl in timelines:
             if not tl.enrichment_data:
                 tl.enrichment_data = []
@@ -327,6 +328,7 @@ def run_evaluation(
     results_output_dir: str = "docs/results",
     pacing_seconds: float = 2.0,
     end_to_end: bool = False,
+    max_lookups: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Executes the full evaluation run across benchmark timelines."""
     return run_evaluation_pipeline(
@@ -335,6 +337,7 @@ def run_evaluation(
         results_output_dir=results_output_dir,
         pacing_seconds=pacing_seconds,
         end_to_end=end_to_end,
+        max_lookups=max_lookups,
     )
 
 
@@ -356,6 +359,12 @@ if __name__ == "__main__":
         help="Run through real Threat Intelligence Enrichment before AI triage",
     )
     parser.add_argument(
+        "--max-lookups",
+        type=int,
+        default=None,
+        help="Maximum external threat intelligence lookups per run (default: unlimited)",
+    )
+    parser.add_argument(
         "--pacing",
         type=float,
         default=2.0,
@@ -368,4 +377,5 @@ if __name__ == "__main__":
         cache_db_path=args.db_path,
         pacing_seconds=args.pacing,
         end_to_end=args.end_to_end,
+        max_lookups=args.max_lookups,
     )

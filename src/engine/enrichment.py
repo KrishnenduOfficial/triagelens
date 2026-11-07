@@ -8,15 +8,19 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 
 from src.config import (
     get_abuseipdb_api_key,
     get_abuseipdb_min_score,
+    get_enrichment_max_wait_seconds,
+    get_enrichment_wait_mode,
     get_urlhaus_api_key,
     get_virustotal_api_key,
+    get_virustotal_daily_quota,
     get_virustotal_min_detections,
+    get_virustotal_requests_per_minute,
 )
 from src.models.enrichment import EnrichmentResult
 
@@ -48,18 +52,28 @@ def extract_retry_after(response: Any) -> Optional[float]:
 
 
 class ProviderRateLimiter:
-    """Thread-safe rate limiter supporting requests per minute and Retry-After backoffs."""
+    """Thread-safe rate limiter supporting requests per minute, Retry-After backoffs, and wait mode."""
 
-    def __init__(self, requests_per_minute: int = 60):
-        self.requests_per_minute = requests_per_minute
+    def __init__(
+        self,
+        requests_per_minute: int = 60,
+        clock: Optional[Callable[[], float]] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+    ):
+        self.requests_per_minute = max(1, requests_per_minute)
+        self.clock = clock or time.time
+        self.sleep_func = sleep_func or time.sleep
         self.retry_after_until: Optional[float] = None
         self._timestamps: collections.deque = collections.deque()
         self._lock = threading.Lock()
 
+    def _now(self) -> float:
+        return float(self.clock())
+
     def can_request(self) -> bool:
         """Returns True if the provider is not currently rate-limited."""
         with self._lock:
-            now = time.time()
+            now = self._now()
             if self.retry_after_until is not None and now < self.retry_after_until:
                 return False
             while self._timestamps and self._timestamps[0] <= now - 60.0:
@@ -69,7 +83,7 @@ class ProviderRateLimiter:
     def record_request(self) -> None:
         """Records a successful or executed request timestamp."""
         with self._lock:
-            self._timestamps.append(time.time())
+            self._timestamps.append(self._now())
 
     def record_rate_limit(self, retry_after_seconds: Optional[float] = None) -> None:
         """Penalizes the provider until Retry-After window elapses."""
@@ -79,13 +93,62 @@ class ProviderRateLimiter:
                 if retry_after_seconds is not None and retry_after_seconds > 0
                 else 60.0
             )
-            self.retry_after_until = time.time() + penalty
+            self.retry_after_until = self._now() + penalty
 
     def reset(self) -> None:
         """Resets rate limiting state."""
         with self._lock:
             self.retry_after_until = None
             self._timestamps.clear()
+
+    def acquire_or_wait(self, max_wait_seconds: float = 60.0) -> bool:
+        """Attempts to acquire a rate limit slot, pausing via sleep_func up to max_wait_seconds.
+
+        If a slot is available immediately, records the request and returns True.
+        If slots are exhausted, calculates the wait time required for the oldest slot
+        or retry_after penalty to expire. If wait_time <= max_wait_seconds, pauses via
+        self.sleep_func, prunes expired timestamps, records the request, and returns True.
+        If wait_time > max_wait_seconds, returns False without sleeping.
+        """
+        with self._lock:
+            now = self._now()
+            # Clean expired timestamps
+            while self._timestamps and self._timestamps[0] <= now - 60.0:
+                self._timestamps.popleft()
+
+            # Case 1: Slot available right now without active retry_after penalty
+            if len(self._timestamps) < self.requests_per_minute and (
+                self.retry_after_until is None or now >= self.retry_after_until
+            ):
+                self._timestamps.append(now)
+                return True
+
+            # Case 2: Must calculate wait duration
+            wait_for_window = 0.0
+            if len(self._timestamps) >= self.requests_per_minute:
+                oldest = self._timestamps[0]
+                wait_for_window = max(0.0, (oldest + 60.0) - now)
+
+            wait_for_retry = 0.0
+            if self.retry_after_until is not None and now < self.retry_after_until:
+                wait_for_retry = max(0.0, self.retry_after_until - now)
+
+            wait_time = max(wait_for_window, wait_for_retry)
+
+            if wait_time > max_wait_seconds:
+                return False
+
+            # Pause execution using injected sleep_func
+            self.sleep_func(wait_time)
+
+            # Re-check and update timestamps after sleep
+            new_now = self._now()
+            while self._timestamps and self._timestamps[0] <= new_now - 60.0:
+                self._timestamps.popleft()
+            self._timestamps.append(new_now)
+            if self.retry_after_until is not None and new_now >= self.retry_after_until:
+                self.retry_after_until = None
+            return True
 
 
 class ThreatIntelProvider(ABC):
@@ -120,17 +183,44 @@ class ThreatIntelProvider(ABC):
 class VirusTotalProvider(ThreatIntelProvider):
     """Threat intelligence provider implementing VirusTotal API v3."""
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 5.0):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        timeout: float = 5.0,
+        wait_mode: Optional[bool] = None,
+        max_wait_seconds: Optional[float] = None,
+        requests_per_minute: Optional[int] = None,
+        clock: Optional[Callable[[], float]] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+    ):
         """Initializes the VirusTotal provider.
 
         Args:
             api_key: Optional VirusTotal API key. Defaults to VT_API_KEY environment variable.
             timeout: HTTP request timeout in seconds (default: 5.0).
+            wait_mode: Whether to pause execution up to max_wait_seconds when rate limited.
+            max_wait_seconds: Maximum seconds to pause before throttling (default: 60.0).
+            requests_per_minute: Rate limit ceiling per minute (default: 4 for free tier).
+            clock: Injected clock function returning unix epoch float (for testing).
+            sleep_func: Injected sleep function taking float seconds (for testing).
         """
         self.api_key = api_key or get_virustotal_api_key()
         self.timeout = timeout
         self.base_url = "https://www.virustotal.com/api/v3"
-        self.rate_limiter = ProviderRateLimiter(requests_per_minute=4)
+        self.wait_mode = get_enrichment_wait_mode() if wait_mode is None else wait_mode
+        self.max_wait_seconds = (
+            get_enrichment_max_wait_seconds()
+            if max_wait_seconds is None
+            else max_wait_seconds
+        )
+        rpm = (
+            get_virustotal_requests_per_minute()
+            if requests_per_minute is None
+            else requests_per_minute
+        )
+        self.rate_limiter = ProviderRateLimiter(
+            requests_per_minute=rpm, clock=clock, sleep_func=sleep_func
+        )
 
     @property
     def name(self) -> str:
@@ -181,16 +271,33 @@ class VirusTotalProvider(ThreatIntelProvider):
                 lookup_status="error",
             )
 
-        if not self.rate_limiter.can_request():
-            logger.warning("VirusTotal client-side rate limit active; throttling %s", indicator)
-            return EnrichmentResult(
-                indicator=indicator,
-                indicator_type=clean_type,
-                provider=self.name,
-                is_malicious=False,
-                raw_response={"error": "Client rate limit active"},
-                lookup_status="rate_limited",
-            )
+        if self.wait_mode:
+            acquired = self.rate_limiter.acquire_or_wait(max_wait_seconds=self.max_wait_seconds)
+            if not acquired:
+                logger.warning(
+                    "VirusTotal rate limit wait exceeded %ss; throttling %s",
+                    self.max_wait_seconds,
+                    indicator,
+                )
+                return EnrichmentResult(
+                    indicator=indicator,
+                    indicator_type=clean_type,
+                    provider=self.name,
+                    is_malicious=False,
+                    raw_response={"error": "Client rate limit active (max wait exceeded)"},
+                    lookup_status="rate_limited",
+                )
+        else:
+            if not self.rate_limiter.can_request():
+                logger.warning("VirusTotal client-side rate limit active; throttling %s", indicator)
+                return EnrichmentResult(
+                    indicator=indicator,
+                    indicator_type=clean_type,
+                    provider=self.name,
+                    is_malicious=False,
+                    raw_response={"error": "Client rate limit active"},
+                    lookup_status="rate_limited",
+                )
 
         headers = {
             "x-apikey": self.api_key,
@@ -203,7 +310,8 @@ class VirusTotalProvider(ThreatIntelProvider):
                 response = httpx.get(url, headers=headers, timeout=self.timeout)
 
                 if response.status_code == 200:
-                    self.rate_limiter.record_request()
+                    if not getattr(self, "wait_mode", False):
+                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -430,7 +538,8 @@ class AbuseIPDBProvider(ThreatIntelProvider):
                 )
 
                 if response.status_code == 200:
-                    self.rate_limiter.record_request()
+                    if not getattr(self, "wait_mode", False):
+                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -638,7 +747,8 @@ class URLhausProvider(ThreatIntelProvider):
                 )
 
                 if response.status_code == 200:
-                    self.rate_limiter.record_request()
+                    if not getattr(self, "wait_mode", False):
+                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -827,13 +937,19 @@ class EnrichmentEngine:
         providers: Optional[Dict[str, ThreatIntelProvider]] = None,
         db: Optional[Any] = None,
         max_lookups_per_run: Optional[int] = None,
+        daily_quotas: Optional[Dict[str, Optional[int]]] = None,
+        wait_mode: Optional[bool] = None,
+        max_wait_seconds: Optional[float] = None,
     ):
         """Initializes the enrichment engine with caching, rate limiting, and lookup caps.
 
         Args:
             providers: Optional dictionary mapping provider names to provider instances.
-            db: Optional DatabaseManager instance for persistent cross-run caching.
+            db: Optional DatabaseManager instance for persistent cross-run caching and daily quotas.
             max_lookups_per_run: Optional cap on external lookups allowed in a single pipeline run.
+            daily_quotas: Optional dictionary mapping provider names to daily lookup quotas.
+            wait_mode: Whether to enable wait mode on auto-registered rate-limited providers.
+            max_wait_seconds: Maximum wait seconds for rate limiter pausing.
         """
         self.providers: Dict[str, ThreatIntelProvider] = {}
         self.db = db
@@ -842,6 +958,12 @@ class EnrichmentEngine:
         self.TTL_POSITIVE_SECONDS = 86400  # 24 hours
         self.TTL_NEGATIVE_SECONDS = 900    # 15 minutes
 
+        if daily_quotas is not None:
+            self.daily_quotas = {k.lower(): v for k, v in daily_quotas.items()}
+        else:
+            vt_daily = get_virustotal_daily_quota()
+            self.daily_quotas = {"virustotal": vt_daily} if vt_daily is not None else {}
+
         if providers is not None:
             for p in providers.values():
                 self.register_provider(p)
@@ -849,7 +971,13 @@ class EnrichmentEngine:
             # Register providers strictly only if usable credentials exist
             vt_key = get_virustotal_api_key()
             if vt_key:
-                self.register_provider(VirusTotalProvider(api_key=vt_key))
+                self.register_provider(
+                    VirusTotalProvider(
+                        api_key=vt_key,
+                        wait_mode=wait_mode,
+                        max_wait_seconds=max_wait_seconds,
+                    )
+                )
                 logger.info("[Enrichment] VirusTotal provider registered.")
             else:
                 logger.info("[Enrichment] VirusTotal API key not configured; skipping registration.")
@@ -919,6 +1047,7 @@ class EnrichmentEngine:
         # 3. Check per-run lookup cap
         if (
             self.max_lookups_per_run is not None
+            and self.max_lookups_per_run > 0
             and self.lookups_this_run >= self.max_lookups_per_run
         ):
             logger.warning(
@@ -935,26 +1064,42 @@ class EnrichmentEngine:
                 lookup_status="skipped",
             )
 
-        provider = self.providers.get(provider_name.lower())
+        # 4. Check persistent daily quota
+        p_name = provider_name.strip().lower()
+        if self.daily_quotas and p_name in self.daily_quotas:
+            quota = self.daily_quotas[p_name]
+            if quota is not None and quota > 0:
+                if self.db is not None and hasattr(self.db, "check_quota_available"):
+                    if not self.db.check_quota_available(p_name, max_daily_quota=quota):
+                        logger.warning(
+                            "Enrichment daily quota exceeded for provider '%s' (limit: %d). Skipping %s",
+                            provider_name,
+                            quota,
+                            indicator,
+                        )
+                        return EnrichmentResult(
+                            indicator=indicator,
+                            indicator_type=indicator_type.strip().lower(),
+                            provider=provider_name,
+                            is_malicious=False,
+                            raw_response={"error": "Daily quota exceeded", "limit": quota},
+                            lookup_status="quota_exceeded",
+                        )
+
+        provider = self.providers.get(p_name)
         if not provider:
             logger.debug("Threat intelligence provider '%s' is not registered", provider_name)
             return None
 
         self.lookups_this_run += 1
-        # Provider dispatch honoring mock setups and patches
+        # Provider dispatch without testing library dependencies
         result: Optional[EnrichmentResult] = None
-        from unittest.mock import MagicMock
-        if isinstance(provider, MagicMock):
-            if not isinstance(provider.lookup_with_status.return_value, MagicMock):
-                result = provider.lookup_with_status(indicator, indicator_type)
-            else:
-                result = provider.lookup(indicator, indicator_type)
-        elif isinstance(getattr(provider, "lookup", None), MagicMock):
-            result = provider.lookup(indicator, indicator_type)
-        elif hasattr(provider, "lookup_with_status"):
+        if hasattr(provider, "lookup_with_status"):
             result = provider.lookup_with_status(indicator, indicator_type)
-        else:
+        elif hasattr(provider, "lookup"):
             result = provider.lookup(indicator, indicator_type)
+        else:
+            result = None
 
         if result is None:
             last_res = getattr(provider, "last_result", None)
@@ -972,6 +1117,9 @@ class EnrichmentEngine:
                 )
 
         if result is not None:
+            if self.db is not None and result.lookup_status not in ("skipped", "quota_exceeded"):
+                if hasattr(self.db, "increment_quota_usage"):
+                    self.db.increment_quota_usage(p_name, count=1)
             self.cache[cache_key] = result
             if self.db is not None:
                 ttl = (
@@ -1029,3 +1177,46 @@ class EnrichmentEngine:
             if res:
                 results.append(res)
         return results
+
+    @staticmethod
+    def prioritize_indicators(
+        indicators_with_types: List[Any],
+        occurrences: Optional[Dict[str, int]] = None,
+    ) -> List[Any]:
+        """Prioritizes indicators based on forensic fidelity and alert frequency.
+
+        MANDATE (ADR-008):
+        Operates strictly without accessing, evaluating, or requiring ground truth labels.
+
+        Priority scoring:
+        - Type weights: File Hash (100) > Domain (75) > URL (70) > IP (50) > other (10)
+        - Frequency bonus: min(occurrence_count * 10, 50)
+        - Output sorted descending by score, maintaining stable ordering.
+        """
+        type_weights = {
+            "hash": 100,
+            "sha256": 100,
+            "md5": 100,
+            "sha1": 100,
+            "domain": 75,
+            "url": 70,
+            "ip": 50,
+            "ip_address": 50,
+        }
+        counts = occurrences or {}
+
+        def get_score(item: Any) -> float:
+            if isinstance(item, tuple) and len(item) >= 2:
+                ind, ind_type = item[0], item[1]
+            elif isinstance(item, dict):
+                ind, ind_type = item.get("indicator", ""), item.get("indicator_type", "")
+            else:
+                ind, ind_type = str(item), "unknown"
+
+            clean_type = (ind_type or "").strip().lower()
+            base_weight = type_weights.get(clean_type, 10)
+            freq = counts.get(ind, 1)
+            bonus = min(freq * 10, 50)
+            return base_weight + bonus
+
+        return sorted(indicators_with_types, key=get_score, reverse=True)

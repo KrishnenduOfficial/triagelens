@@ -3,7 +3,7 @@
 **Project:** TriageLens
 **Version:** 0.1.0
 **Development Status:** Enhanced, Calibrated & Empirically Benchmarked
-**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 254 Passing Tests / Portfolio Preparation
+**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 263 Passing Tests / Portfolio Preparation
 
 ---
 
@@ -143,6 +143,8 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement client-side rate limiting, Retry-After backoff, persistent SQLite caching with positive/negative TTL, per-run lookup cap, lookup status classification, and unavailable intelligence LLM defense (ADR-029).
 * [x] Implement compact normalized threat intelligence summaries (< 800 bytes, prompt injection stripping), URLhaus Auth-Key authentication, HTTP 401/403/404/422 error granularity, indicator quality gates (IPv6 & junk rejection), and configurable detection thresholds (ADR-030).
 * [x] Implement safe live connection smoke test script (scripts/check_connections.py) with zero secret exposure, response body withholding, --dry-run support, and mocked unit test verification (ADR-031).
+* [x] Eliminate mock framework imports/usage in production code (src/engine/enrichment.py), implement clean test stubs (StubThreatIntelProvider), and enforce zero test library dependencies in src/ via AST regression tests (ADR-035).
+* [x] Upgrade rate limiter to wait mode with injectable clock/sleep, add SQLite persisted daily quota counter, implement label-free indicator prioritization (ADR-008), and add --max-lookups CLI option (ADR-036).
 * [x] Write unit tests using mocked API responses.
 * [x] Verify enrichment results.
 
@@ -380,7 +382,7 @@ These features should not delay the completion of the core pipeline.
 
 # 12. Phase 9 — Testing and Quality Assurance
 
-* [x] Run complete unit test suite (254 passing unit, security, and adversarial tests).
+* [x] Run complete unit test suite (263 passing unit, security, and adversarial tests).
 * [x] Run integration tests (FastAPI test client with mocked external endpoints).
 * [x] Test ingestion-to-enrichment pipeline (`test_intake_adversarial.py`, `test_enrichment.py`).
 * [x] Test enrichment-to-timeline pipeline (`test_timeline_adversarial.py`).

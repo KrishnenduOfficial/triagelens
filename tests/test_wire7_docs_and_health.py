@@ -91,3 +91,23 @@ def test_mit_license_file_exists_and_valid():
     text = license_path.read_text(encoding="utf-8")
     assert "MIT License" in text
     assert "Permission is hereby granted, free of charge" in text
+
+
+def test_no_mocking_libraries_in_production_code():
+    """Verify that production code under src/ never imports or uses testing/mocking libraries."""
+    src_dir = Path("src")
+    assert src_dir.exists() and src_dir.is_dir()
+
+    violating_files = []
+    for py_file in src_dir.rglob("*.py"):
+        content = py_file.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        for idx, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            # Ignore comments
+            if stripped.startswith("#"):
+                continue
+            if "unittest.mock" in line or "MagicMock" in line or "from mock" in line:
+                violating_files.append((str(py_file), idx, stripped))
+
+    assert not violating_files, f"Production code must never import or reference mock libraries: {violating_files}"

@@ -72,6 +72,7 @@ def run_pipeline(
     db_path: Optional[str] = None,
     group_by: str = "auto",
     skip_llm: bool = False,
+    max_lookups: Optional[int] = None,
 ) -> Dict[str, float]:
     """Executes the complete TriageLens alert investigation and triage pipeline.
 
@@ -80,6 +81,7 @@ def run_pipeline(
         db_path: Path to SQLite database file.
         group_by: Field name used to correlate alerts into timelines.
         skip_llm: Whether to bypass the LLM triage and evaluation stages.
+        max_lookups: Maximum number of external threat intelligence lookups per run.
 
     Returns:
         Dictionary of final accuracy evaluation metrics.
@@ -96,7 +98,7 @@ def run_pipeline(
 
     # 2. Initialize Processing Engines
     intake_engine = AlertIntakeEngine()
-    enrichment_engine = EnrichmentEngine(db=db)
+    enrichment_engine = EnrichmentEngine(db=db, max_lookups_per_run=max_lookups)
     active_providers_str = ", ".join(enrichment_engine.providers.keys()) or "none"
     logger.info("[Enrichment] Active threat intelligence providers: %s", active_providers_str)
 
@@ -288,6 +290,12 @@ def main() -> None:
         help="Bypass LLM triage analysis stage (useful for offline runs)",
     )
     parser.add_argument(
+        "--max-lookups",
+        type=int,
+        default=None,
+        help="Maximum external threat intelligence lookups per run (default: unlimited)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -303,6 +311,7 @@ def main() -> None:
             db_path=args.db_path,
             group_by=args.group_by,
             skip_llm=args.skip_llm,
+            max_lookups=args.max_lookups,
         )
     except KeyboardInterrupt:
         logger.warning("\nPipeline execution cancelled by user.")
