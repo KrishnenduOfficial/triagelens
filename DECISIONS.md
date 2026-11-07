@@ -963,6 +963,40 @@ Public repositories and documentation must never diverge from the underlying imp
 
 ---
 
+### ADR-034: Benchmark Scientific Rigor, Wilson Score Intervals, and Statistical Humility
+
+**Status:** Accepted
+
+**Decision:**
+
+1. **Binomial Wilson 95% Confidence Intervals (`wilson_score_interval`):**
+   - Implemented `wilson_score_interval(successes, total, z=1.96)` in `src/engine/evaluation.py` to calculate rigorous confidence intervals for Accuracy, Precision, Recall, and Specificity.
+   - Updated `AccuracyTracker.get_metrics()` to return `accuracy_ci95`, `precision_ci95`, `recall_ci95`, and `specificity_ci95`.
+
+2. **Synthetic Telemetry and Enrichment Disclosures:**
+   - Clearly documented in `README.md` and report files that `eval_benchmark_70.json` consists of synthetic textbook MITRE ATT&CK and administrative telemetry.
+   - Disclosed that external threat intelligence enrichment was disabled for the baseline benchmark run.
+
+3. **Accurate Answering Model Attribution:**
+   - Corrected documentation and report headers to reflect that `gemini-3.5-flash-lite` generated 100% of the benchmark verdicts following initial failover from `gemini-3.8-flash`.
+
+4. **Small-Sample Prudence and Removal of Overstated Claims:**
+   - Removed "Exceeded", "perfect 100%", and "near-perfect calibration" phrasing across documentation and comparison reports.
+   - Highlighted that on $n=20$ subsets, point estimates have wide confidence intervals ([83.9%, 100.0%]) and calibration metrics (Brier, ECE) represent statistical noise.
+   - Documented that benchmark failures occurred strictly in low-evidence, 1–2 event scenarios where single indicators produced inherent ambiguity without external threat intelligence.
+
+**Rationale:**
+
+Security tools designed to measure AI error rates must maintain uncompromising scientific honesty. Overstating benchmark performance, obscuring responding model identity, or presenting small-sample noise as proven reliability undermines the core mission of TriageLens.
+
+**Consequences:**
+
+* Analysts and researchers observe realistic uncertainty intervals alongside point estimates.
+* Reports reflect the true answering model and operational constraints.
+* Failure modes are transparently documented as low-evidence ambiguity.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

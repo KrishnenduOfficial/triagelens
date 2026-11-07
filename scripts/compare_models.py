@@ -183,7 +183,7 @@ def evaluate_model(
         })
 
     metrics = tracker.get_metrics()
-    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+    avg_latency = (sum(latencies) / len(latencies)) if latencies else None
     return metrics, records, avg_latency
 
 
@@ -191,11 +191,11 @@ def generate_comparison_report(
     model_a_name: str,
     metrics_a: Dict[str, Any],
     records_a: List[Dict[str, Any]],
-    latency_a: float,
+    latency_a: Optional[float],
     model_b_name: str,
     metrics_b: Dict[str, Any],
     records_b: List[Dict[str, Any]],
-    latency_b: float,
+    latency_b: Optional[float],
     output_path: str = "docs/results/model_comparison_report.md",
 ) -> None:
     """Generates the Markdown comparison report."""
@@ -205,8 +205,21 @@ def generate_comparison_report(
     def pct(val: Optional[float]) -> str:
         return f"{val * 100:.1f}%" if val is not None else "N/A"
 
+    def ci_str(ci: Optional[Tuple[float, float]]) -> str:
+        if not ci:
+            return "N/A"
+        return f"[{ci[0]*100:.1f}%, {ci[1]*100:.1f}%]"
+
     def flt(val: Optional[float]) -> str:
         return f"{val:.4f}" if val is not None else "N/A"
+
+    latency_a_str = f"{latency_a:.2f}s" if latency_a is not None else "N/A (cached)"
+    latency_b_str = f"{latency_b:.2f}s" if latency_b is not None else "N/A (cached)"
+    latency_delta_str = (
+        f"{(latency_a - latency_b):+.2f}s"
+        if latency_a is not None and latency_b is not None
+        else "-"
+    )
 
     # Calibration table rows
     bins_a = metrics_a.get("calibration_bins", [])
@@ -234,26 +247,29 @@ def generate_comparison_report(
     md = f"""# TriageLens 2-Model Evaluation & Calibration Comparison Report
 
 **Date of Execution:** {now_str}  
-**Dataset:** `data/eval_benchmark_70.json` (Balanced Representative Split: 10 Malicious, 10 Benign)  
+**Dataset:** `data/eval_benchmark_70.json` (Balanced Representative Split: 10 Malicious, 10 Benign; Synthetic Telemetry)  
 **Evaluated Architectures:**  
 - **Model A:** `{model_a_name}` (Fast / High-throughput tier)
 - **Model B:** `{model_b_name}` (Ultra-efficient lite tier)
+
+> [!WARNING]
+> **Small-Sample Caveat ($n=20$):** This comparison uses a small sample size of 20 timelines evaluated on textbook synthetic scenarios with threat intelligence enrichment disabled. On $n=20$, a 100% accuracy score corresponds to a wide Wilson 95% confidence interval of [83.9%, 100.0%], and calibration metrics (Brier score, ECE) are sensitive to individual predictions and should be interpreted as qualitative noise rather than statistically conclusive evidence.
 
 ---
 
 ## 1. Executive Performance Comparison
 
-| Metric | Model A: `{model_a_name}` | Model B: `{model_b_name}` | Delta (A - B) | SOC Engineering Target |
-|---|---|---|---|---|
-| **Accuracy** | **{pct(metrics_a.get('accuracy'))}** | **{pct(metrics_b.get('accuracy'))}** | {((metrics_a.get('accuracy',0) - metrics_b.get('accuracy',0))*100):+.1f}% | ≥ 85.0% |
-| **Precision** | **{pct(metrics_a.get('precision'))}** | **{pct(metrics_b.get('precision'))}** | {((metrics_a.get('precision',0) - metrics_b.get('precision',0))*100):+.1f}% | ≥ 80.0% |
-| **Recall (Sensitivity)** | **{pct(metrics_a.get('recall'))}** | **{pct(metrics_b.get('recall'))}** | {((metrics_a.get('recall',0) - metrics_b.get('recall',0))*100):+.1f}% | ≥ 85.0% |
-| **Specificity (TNR)** | **{pct(metrics_a.get('specificity'))}** | **{pct(metrics_b.get('specificity'))}** | {((metrics_a.get('specificity',0) - metrics_b.get('specificity',0))*100):+.1f}% | ≥ 85.0% |
-| **F1-Score** | **{pct(metrics_a.get('f1_score'))}** | **{pct(metrics_b.get('f1_score'))}** | {((metrics_a.get('f1_score',0) - metrics_b.get('f1_score',0))*100):+.1f}% | ≥ 85.0% |
-| **False Positive Rate (FPR)** | **{pct(metrics_a.get('false_positive_rate'))}** | **{pct(metrics_b.get('false_positive_rate'))}** | {((metrics_a.get('false_positive_rate',0) - metrics_b.get('false_positive_rate',0))*100):+.1f}% | ≤ 15.0% |
-| **False Negative Rate (FNR)** | **{pct(metrics_a.get('false_negative_rate'))}** | **{pct(metrics_b.get('false_negative_rate'))}** | {((metrics_a.get('false_negative_rate',0) - metrics_b.get('false_negative_rate',0))*100):+.1f}% | ≤ 15.0% |
-| **Average Latency / Timeline** | `{latency_a:.2f}s` | `{latency_b:.2f}s` | `{(latency_a - latency_b):+.2f}s` | < 5.0s |
-| **Availability Rate** | `{pct(metrics_a.get('availability_rate'))}` | `{pct(metrics_b.get('availability_rate'))}` | - | 100% |
+| Metric | Model A: `{model_a_name}` | Model B: `{model_b_name}` | Delta (A - B) | Wilson 95% CI (A) | Wilson 95% CI (B) | Target |
+|---|---|---|---|---|---|---|
+| **Accuracy** | **{pct(metrics_a.get('accuracy'))}** | **{pct(metrics_b.get('accuracy'))}** | {((metrics_a.get('accuracy',0) - metrics_b.get('accuracy',0))*100):+.1f}% | {ci_str(metrics_a.get('accuracy_ci95'))} | {ci_str(metrics_b.get('accuracy_ci95'))} | ≥ 85.0% |
+| **Precision** | **{pct(metrics_a.get('precision'))}** | **{pct(metrics_b.get('precision'))}** | {((metrics_a.get('precision',0) - metrics_b.get('precision',0))*100):+.1f}% | {ci_str(metrics_a.get('precision_ci95'))} | {ci_str(metrics_b.get('precision_ci95'))} | ≥ 80.0% |
+| **Recall (Sensitivity)** | **{pct(metrics_a.get('recall'))}** | **{pct(metrics_b.get('recall'))}** | {((metrics_a.get('recall',0) - metrics_b.get('recall',0))*100):+.1f}% | {ci_str(metrics_a.get('recall_ci95'))} | {ci_str(metrics_b.get('recall_ci95'))} | ≥ 85.0% |
+| **Specificity (TNR)** | **{pct(metrics_a.get('specificity'))}** | **{pct(metrics_b.get('specificity'))}** | {((metrics_a.get('specificity',0) - metrics_b.get('specificity',0))*100):+.1f}% | {ci_str(metrics_a.get('specificity_ci95'))} | {ci_str(metrics_b.get('specificity_ci95'))} | ≥ 85.0% |
+| **F1-Score** | **{pct(metrics_a.get('f1_score'))}** | **{pct(metrics_b.get('f1_score'))}** | {((metrics_a.get('f1_score',0) - metrics_b.get('f1_score',0))*100):+.1f}% | N/A | N/A | ≥ 85.0% |
+| **False Positive Rate (FPR)** | **{pct(metrics_a.get('false_positive_rate'))}** | **{pct(metrics_b.get('false_positive_rate'))}** | {((metrics_a.get('false_positive_rate',0) - metrics_b.get('false_positive_rate',0))*100):+.1f}% | - | - | ≤ 15.0% |
+| **False Negative Rate (FNR)** | **{pct(metrics_a.get('false_negative_rate'))}** | **{pct(metrics_b.get('false_negative_rate'))}** | {((metrics_a.get('false_negative_rate',0) - metrics_b.get('false_negative_rate',0))*100):+.1f}% | - | - | ≤ 15.0% |
+| **Average Latency / Timeline** | `{latency_a_str}` | `{latency_b_str}` | `{latency_delta_str}` | - | - | < 5.0s |
+| **Availability Rate** | `{pct(metrics_a.get('availability_rate'))}` | `{pct(metrics_b.get('availability_rate'))}` | - | - | - | 100% |
 
 ### Confusion Matrix Counts
 

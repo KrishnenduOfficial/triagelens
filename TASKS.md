@@ -3,7 +3,7 @@
 **Project:** TriageLens
 **Version:** 0.1.0
 **Development Status:** Enhanced, Calibrated & Empirically Benchmarked
-**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 252 Passing Tests / Portfolio Preparation
+**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 254 Passing Tests / Portfolio Preparation
 
 ---
 
@@ -255,6 +255,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Execute real evaluation benchmark run across 70 balanced enterprise timelines (`docs/results/evaluation_report_20261106.md`; ADR-024).
 * [x] Implement confidence calibration metrics (Brier score, ECE, 5-bin calibration curve; ADR-025).
 * [x] Execute 2-model evaluation and calibration comparison (`docs/results/model_comparison_report.md`; ADR-026).
+* [x] Implement Wilson 95% confidence intervals (wilson_score_interval), correct answering model attribution (gemini-3.5-flash-lite), disclose synthetic telemetry/enrichment boundaries, and eliminate overstated benchmark claims (ADR-034).
 * [x] Write unit tests using known expected outcomes.
 * [x] Verify metric calculations.
 
@@ -379,7 +380,7 @@ These features should not delay the completion of the core pipeline.
 
 # 12. Phase 9 — Testing and Quality Assurance
 
-* [x] Run complete unit test suite (252 passing unit, security, and adversarial tests).
+* [x] Run complete unit test suite (254 passing unit, security, and adversarial tests).
 * [x] Run integration tests (FastAPI test client with mocked external endpoints).
 * [x] Test ingestion-to-enrichment pipeline (`test_intake_adversarial.py`, `test_enrichment.py`).
 * [x] Test enrichment-to-timeline pipeline (`test_timeline_adversarial.py`).

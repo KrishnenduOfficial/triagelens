@@ -211,23 +211,41 @@ def run_evaluation_pipeline(
         # Generate Markdown Report
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+        model_counts: Dict[str, int] = {}
+        for r in evaluation_records:
+            m = r.get("model_name")
+            if m and m != "N/A":
+                model_counts[m] = model_counts.get(m, 0) + 1
+        primary_responder = max(model_counts.items(), key=lambda x: x[1])[0] if model_counts else engine.model
+
+        def ci_str(ci: Optional[Any]) -> str:
+            if not ci:
+                return "N/A"
+            return f"[{ci[0]*100:.1f}%, {ci[1]*100:.1f}%]"
+
+        enrich_status_str = "Enabled (--end-to-end)" if end_to_end else "Disabled (raw telemetry baseline)"
+
         md_content = f"""# TriageLens Real Evaluation Run Report
 
 **Date of Execution:** {now_str}  
-**Primary Evaluated Model:** `{engine.model}`  
-**Configured Fallback Models:** `{', '.join(engine.fallback_models)}`  
-**Dataset:** `data/eval_benchmark_70.json` (70 Balanced Enterprise Timelines)  
+**Primary Answering Model:** `{primary_responder}` ({model_counts.get(primary_responder, 0)} verdicts generated)  
+**Configured Model Hierarchy:** `{engine.model}` (configured primary) -> `{', '.join(engine.fallback_models)}`  
+**Dataset:** `data/eval_benchmark_70.json` (70 Balanced Enterprise Timelines; Synthetic Telemetry)  
 **Evaluation Digest (SHA-256):** `{report_data['integrity_hash']}`  
 
 ---
 
 ## 1. Executive Summary & Configuration Settings
 
+> [!NOTE]
+> **Dataset Nature & Operational Context:** The evaluation benchmark (`data/eval_benchmark_70.json`) contains **synthetically generated telemetry** representing textbook MITRE ATT&CK patterns and benign IT administration operations. **Threat intelligence enrichment was {enrich_status_str}**.
+
 | Parameter | Configuration Value |
 |---|---|
-| **Evaluation Framework** | TriageLens AccuracyTracker (ADR-008, ADR-022) |
-| **Primary Model** | `{engine.model}` |
-| **Fallback Models** | `{', '.join(engine.fallback_models)}` |
+| **Evaluation Framework** | TriageLens AccuracyTracker (ADR-008, ADR-022, ADR-034) |
+| **Active Answering Model** | `{primary_responder}` |
+| **Configured Model Hierarchy** | `{engine.model}` -> `{', '.join(engine.fallback_models)}` |
+| **Threat Intelligence Enrichment** | **{enrich_status_str}** |
 | **Temperature** | `0.1` (Deterministic DFIR mode) |
 | **Timeout** | `30.0s` |
 | **Total Timelines Evaluated** | `{tracker.total_evaluated}` |
@@ -238,17 +256,17 @@ def run_evaluation_pipeline(
 
 ---
 
-## 2. Confusion Matrix & Performance Metrics
+## 2. Confusion Matrix & Performance Metrics (With Wilson 95% Confidence Intervals)
 
-| Metric | Measured Value | SOC Engineering Benchmark Target |
-|---|---|---|
-| **Accuracy** | **{metrics['accuracy']*100:.1f}%** | ≥ 85.0% |
-| **Precision** | **{metrics['precision']*100:.1f}%** | ≥ 80.0% |
-| **Recall (Sensitivity)** | **{metrics['recall']*100:.1f}%** | ≥ 85.0% |
-| **Specificity (True Negative Rate)** | **{spec_val_str}** | ≥ 85.0% |
-| **F1-Score** | **{metrics['f1_score']*100:.1f}%** | ≥ 85.0% |
-| **False Positive Rate (FPR)** | **{fpr_str}** | ≤ 15.0% |
-| **False Negative Rate (FNR)** | **{metrics['false_negative_rate']*100:.1f}%** | ≤ 15.0% |
+| Metric | Measured Value | Wilson 95% Confidence Interval | Sample Basis | SOC Engineering Benchmark Target |
+|---|---|---|---|---|
+| **Accuracy** | **{metrics['accuracy']*100:.1f}%** | **{ci_str(metrics.get('accuracy_ci95'))}** | {metrics['true_positives'] + metrics['true_negatives']} / {metrics['total']} | ≥ 85.0% |
+| **Precision** | **{metrics['precision']*100:.1f}%** | **{ci_str(metrics.get('precision_ci95'))}** | {metrics['true_positives']} / {metrics['true_positives'] + metrics['false_positives']} | ≥ 80.0% |
+| **Recall (Sensitivity)** | **{metrics['recall']*100:.1f}%** | **{ci_str(metrics.get('recall_ci95'))}** | {metrics['true_positives']} / {metrics['positive_samples']} | ≥ 85.0% |
+| **Specificity (True Negative Rate)** | **{spec_val_str}** | **{ci_str(metrics.get('specificity_ci95'))}** | {metrics['true_negatives']} / {metrics['negative_samples']} | ≥ 85.0% |
+| **F1-Score** | **{metrics['f1_score']*100:.1f}%** | N/A | Harmonic mean | ≥ 85.0% |
+| **False Positive Rate (FPR)** | **{fpr_str}** | - | {metrics['false_positives']} / {metrics['negative_samples']} | ≤ 15.0% |
+| **False Negative Rate (FNR)** | **{metrics['false_negative_rate']*100:.1f}%** | - | {metrics['false_negatives']} / {metrics['positive_samples']} | ≤ 15.0% |
 
 ### Confusion Matrix Counts
 - **True Positives (TP):** `{metrics['true_positives']}` (Attacks correctly triaged as Malicious)
@@ -256,6 +274,9 @@ def run_evaluation_pipeline(
 - **False Positives (FP):** `{metrics['false_positives']}` (Benign activity falsely escalated as Malicious)
 - **False Negatives (FN):** `{metrics['false_negatives']}` (Attacks missed or downgraded to Benign)
 - **Unavailable / Failed:** `{metrics['unavailable']}`
+
+#### Failure Analysis:
+Prediction errors predominantly occurred in low-evidence, 1–2 event scenarios lacking corroborating lateral movement or external threat intelligence enrichment.
 
 ---
 

@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+import math
 from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 
@@ -125,6 +126,34 @@ def generate_benign_timeline(
         correlation_type="confirmed",
         correlation_reason="benign_baseline_session",
     )
+
+
+def wilson_score_interval(
+    successes: int,
+    total: int,
+    confidence: float = 0.95,
+    z: float = 1.96,
+) -> Tuple[float, float]:
+    """Calculates the Wilson score confidence interval for a binomial proportion.
+
+    Args:
+        successes: Number of positive outcomes / successes (k).
+        total: Total number of trials (n).
+        confidence: Confidence level (default 0.95).
+        z: Quantile of normal distribution (default 1.96 for 95% confidence).
+
+    Returns:
+        (lower_bound, upper_bound) rounded to 4 decimal places.
+    """
+    if total <= 0:
+        return (0.0, 0.0)
+    p_hat = successes / total
+    denom = 1.0 + (z**2) / total
+    center = (p_hat + (z**2) / (2.0 * total)) / denom
+    margin = (z * math.sqrt((p_hat * (1.0 - p_hat) / total) + (z**2) / (4.0 * (total**2)))) / denom
+    lower = max(0.0, round(center - margin, 4))
+    upper = min(1.0, round(center + margin, 4))
+    return (lower, upper)
 
 
 class AccuracyTracker:
@@ -500,6 +529,12 @@ class AccuracyTracker:
             (total + self.unknown_count) / total_eval_stream if total_eval_stream > 0 else 1.0
         )
 
+        # 8b. Wilson 95% Confidence Intervals (ADR-034)
+        accuracy_ci95 = wilson_score_interval(tp + tn, total) if total > 0 else (0.0, 0.0)
+        precision_ci95 = wilson_score_interval(tp, tp + fp) if (tp + fp) > 0 else (0.0, 0.0)
+        recall_ci95 = wilson_score_interval(tp, tp + fn) if (tp + fn) > 0 else (0.0, 0.0)
+        specificity_ci95 = wilson_score_interval(tn, negative_samples) if specificity_valid else None
+
         # 9. Severity Performance
         severity_accuracy = (
             self.severity_matches / self.severity_evaluated if self.severity_evaluated > 0 else 0.0
@@ -558,14 +593,18 @@ class AccuracyTracker:
             "accuracy": accuracy,
             "Accuracy": accuracy,
             "accuracy_pct": round(accuracy * 100, 2),
+            "accuracy_ci95": accuracy_ci95,
             "precision": precision,
             "Precision": precision,
+            "precision_ci95": precision_ci95,
             "recall": recall,
             "Recall": recall,
+            "recall_ci95": recall_ci95,
             "specificity": specificity,
             "Specificity": specificity,
             "specificity_valid": specificity_valid,
             "specificity_pct": round(specificity * 100, 2) if specificity is not None else None,
+            "specificity_ci95": specificity_ci95,
             "f1_score": f1,
             "F1-Score": f1,
             "f1": f1,

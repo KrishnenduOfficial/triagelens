@@ -647,4 +647,65 @@ def test_confidence_calibration_metrics():
     assert high_bin["accuracy"] == pytest.approx(2 / 3, 0.01)
 
 
+def test_wilson_score_interval_hand_computed():
+    """Verify Wilson 95% score interval calculations with hand-computed statistical values."""
+    from src.engine.evaluation import wilson_score_interval
+
+    # 1. 70-timeline benchmark accuracy (64 correct / 69 verdicts)
+    # Target range: ~84.1% to ~96.9%
+    acc_lower, acc_upper = wilson_score_interval(64, 69)
+    assert pytest.approx(acc_lower, abs=0.001) == 0.8413
+    assert pytest.approx(acc_upper, abs=0.001) == 0.9687
+
+    # 2. 70-timeline benchmark recall (30 TP / 34 positive ground truth)
+    # Target range: ~73.4% to ~95.3%
+    rec_lower, rec_upper = wilson_score_interval(30, 34)
+    assert pytest.approx(rec_lower, abs=0.001) == 0.7338
+    assert pytest.approx(rec_upper, abs=0.001) == 0.9533
+
+    # 3. 70-timeline benchmark precision (30 TP / 31 positive predictions)
+    # Target range: ~83.8% to ~99.4%
+    prec_lower, prec_upper = wilson_score_interval(30, 31)
+    assert pytest.approx(prec_lower, abs=0.001) == 0.8381
+    assert pytest.approx(prec_upper, abs=0.001) == 0.9943
+
+    # 4. 70-timeline benchmark specificity (34 TN / 35 negative ground truth)
+    # Target range: ~85.5% to ~99.5%
+    spec_lower, spec_upper = wilson_score_interval(34, 35)
+    assert pytest.approx(spec_lower, abs=0.001) == 0.8547
+    assert pytest.approx(spec_upper, abs=0.001) == 0.9949
+
+    # 5. Boundary conditions
+    assert wilson_score_interval(0, 0) == (0.0, 0.0)
+    zero_low, zero_high = wilson_score_interval(0, 10)
+    assert zero_low == 0.0
+    assert pytest.approx(zero_high, abs=0.001) == 0.2775
+
+    all_low, all_high = wilson_score_interval(10, 10)
+    assert pytest.approx(all_low, abs=0.001) == 0.7225
+    assert all_high == 1.0
+
+
+def test_accuracy_tracker_get_metrics_includes_wilson_intervals():
+    """Verify AccuracyTracker.get_metrics() includes Wilson 95% confidence intervals."""
+    tracker = AccuracyTracker()
+    tracker.tp = 30
+    tracker.tn = 34
+    tracker.fp = 1
+    tracker.fn = 4
+
+    metrics = tracker.get_metrics()
+
+    assert "accuracy_ci95" in metrics
+    assert "recall_ci95" in metrics
+    assert "precision_ci95" in metrics
+    assert "specificity_ci95" in metrics
+
+    assert pytest.approx(metrics["accuracy_ci95"][0], abs=0.001) == 0.8413
+    assert pytest.approx(metrics["accuracy_ci95"][1], abs=0.001) == 0.9687
+    assert pytest.approx(metrics["recall_ci95"][0], abs=0.001) == 0.7338
+    assert pytest.approx(metrics["recall_ci95"][1], abs=0.001) == 0.9533
+
+
+
 

@@ -1,23 +1,28 @@
 # TriageLens Real Evaluation Run Report
 
 **Date of Execution:** 2026-11-06 00:38:34 UTC  
-**Primary Evaluated Model:** `gemini-3.8-flash`  
-**Configured Fallback Models:** `gemini-3.5-flash-lite, gemini-2.5-flash`  
-**Dataset:** `data/eval_benchmark_70.json` (70 Balanced Enterprise Timelines)  
+**Primary Answering Model:** `gemini-3.5-flash-lite` (100% of generated verdicts)  
+**Configured Primary / Fallback Hierarchy:** `gemini-3.8-flash` (primary configured) -> `gemini-3.5-flash-lite` (active responder) -> `gemini-2.5-flash`  
+**Dataset:** `data/eval_benchmark_70.json` (70 Synthetic Enterprise Timelines; Threat Intelligence Enrichment Disabled)  
 **Evaluation Digest (SHA-256):** `3f623a7091599f710137b0b3c248c0cf5e3eb946c8e14a89e3b7c65d2b27bac7`  
 
 ---
 
 ## 1. Executive Summary & Configuration Settings
 
+> [!NOTE]
+> **Dataset Nature & Operational Context:** The 70-timeline evaluation benchmark (`data/eval_benchmark_70.json`) contains **synthetically generated telemetry** authored inside the repository representing textbook MITRE ATT&CK patterns and benign IT administrative workflows. **Threat intelligence enrichment was disabled** during this baseline run; all evaluations reflect purely raw event triage without external IP/domain/hash reputation lookups.
+
 | Parameter | Configuration Value |
 |---|---|
-| **Evaluation Framework** | TriageLens AccuracyTracker (ADR-008, ADR-022) |
-| **Primary Model** | `gemini-3.8-flash` |
-| **Fallback Models** | `gemini-3.5-flash-lite, gemini-2.5-flash` |
+| **Evaluation Framework** | TriageLens AccuracyTracker (ADR-008, ADR-022, ADR-034) |
+| **Active Answering Model** | `gemini-3.5-flash-lite` |
+| **Configured Model Hierarchy** | `gemini-3.8-flash` -> `gemini-3.5-flash-lite` -> `gemini-2.5-flash` |
+| **Dataset Source** | Synthetic textbook enterprise telemetry (`data/eval_benchmark_70.json`) |
+| **Threat Intelligence Enrichment** | **Disabled (Off)** — raw telemetry triage baseline |
 | **Temperature** | `0.1` (Deterministic DFIR mode) |
 | **Timeout** | `30.0s` |
-| **Total Timelines Evaluated** | `69` |
+| **Total Timelines Evaluated** | `69` (64 correct, 5 misclassified, 1 unavailable) |
 | **Ground-Truth Positive (Malicious)** | `34 (49.3%)` |
 | **Ground-Truth Negative (Benign)** | `35 (50.7%)` |
 | **Class Imbalance Flag** | `False` |
@@ -25,24 +30,32 @@
 
 ---
 
-## 2. Confusion Matrix & Performance Metrics
+## 2. Confusion Matrix & Performance Metrics (With Wilson 95% Confidence Intervals)
 
-| Metric | Measured Value | SOC Engineering Benchmark Target |
-|---|---|---|
-| **Accuracy** | **92.8%** | ≥ 85.0% |
-| **Precision** | **96.8%** | ≥ 80.0% |
-| **Recall (Sensitivity)** | **88.2%** | ≥ 85.0% |
-| **Specificity (True Negative Rate)** | **97.1%** | ≥ 85.0% |
-| **F1-Score** | **92.3%** | ≥ 85.0% |
-| **False Positive Rate (FPR)** | **2.9%** | ≤ 15.0% |
-| **False Negative Rate (FNR)** | **11.8%** | ≤ 15.0% |
+| Metric | Measured Value | Wilson 95% Confidence Interval | Sample Basis | SOC Engineering Target |
+|---|---|---|---|---|
+| **Accuracy** | **92.8%** | **[84.1%, 96.9%]** | 64 / 69 | ≥ 85.0% |
+| **Precision** | **96.8%** | **[83.8%, 99.4%]** | 30 / 31 | ≥ 80.0% |
+| **Recall (Sensitivity)** | **88.2%** | **[73.4%, 95.3%]** | 30 / 34 | ≥ 85.0% |
+| **Specificity (True Negative Rate)** | **97.1%** | **[85.5%, 99.5%]** | 34 / 35 | ≥ 85.0% |
+| **F1-Score** | **92.3%** | N/A (harmonic mean) | Harmonic mean | ≥ 85.0% |
+| **False Positive Rate (FPR)** | **2.9%** | **[0.5%, 14.5%]** | 1 / 35 | ≤ 15.0% |
+| **False Negative Rate (FNR)** | **11.8%** | **[4.7%, 26.6%]** | 4 / 34 | ≤ 15.0% |
 
-### Confusion Matrix Counts
+### Confusion Matrix Counts & Error Analysis
 - **True Positives (TP):** `30` (Attacks correctly triaged as Malicious)
 - **True Negatives (TN):** `34` (Benign activity correctly triaged as Benign)
-- **False Positives (FP):** `1` (Benign activity falsely escalated as Malicious)
-- **False Negatives (FN):** `4` (Attacks missed or downgraded to Benign)
-- **Unavailable / Failed:** `1`
+- **False Positives (FP):** `1` (Benign administrative query falsely escalated as Malicious)
+- **False Negatives (FN):** `4` (Attacks missed or downgraded to Benign/Low)
+- **Unavailable / Failed:** `1` (`attack_scenario_M31-Exfiltration-ArchiveAndCurl`)
+
+#### Analysis of Misclassifications (Low-Evidence, 1–2 Event Scenarios):
+All 5 prediction errors occurred exclusively in low-evidence scenarios with 1 or 2 alerts lacking surrounding contextual activity or threat intelligence enrichment:
+1. `attack_scenario_M15-Lateral-PassTheHash` (1 alert): Isolated LogonType 9 authentication event without surrounding network artifact; triaged as standard benign administrative logon.
+2. `attack_scenario_M20-Persistence-StartupFolder` (1 alert): Creation of `launcher.vbs` without subsequent process execution; triaged as low-priority utility write.
+3. `attack_scenario_M26-PrivEsc-NamedPipe` (1 alert): Single `spoolss` NamedPipeConnect; indistinguishable from normal Windows print spooler traffic without corroborating process injection.
+4. `attack_scenario_M32-Exfiltration-DNSStash` (2 alerts): DNS queries to `dnsleak.net`; without URLhaus/VT domain enrichment, triaged as low-severity utility lookup.
+5. `benign_scenario_B10-ITAdmin-DomainJoinVerify` (1 alert): Legitimate `nltest.exe` domain controller query; triaged as active reconnaissance due to single-command ambiguity.
 
 ---
 
@@ -128,3 +141,5 @@
 1. **Class Balance Integrity:** In compliance with ADR-022, evaluation executed with exactly 50% benign and 50% malicious timelines, producing scientifically valid Specificity and False Positive Rate metrics.
 2. **Untrusted Evidence Isolation:** All timelines were transmitted within `<FORENSIC_EVIDENCE>` delimiters with zero ground truth or provenance leakage (ADR-008, ADR-017, ADR-023).
 3. **Model Resilience & Fallback:** Responding model attribution was captured and persisted in SQLite for every assessment.
+4. **Synthetic Telemetry & Enrichment Sensitivity:** This baseline benchmark was executed across synthetic textbook MITRE ATT&CK timelines without active external threat intelligence enrichment. Adding multi-provider threat intelligence enrichment directly addresses single-event ambiguous indicators (such as `dnsleak.net`).
+5. **Statistical Uncertainty & Confidence Intervals:** With $n=69$, point estimates carry measurable uncertainty ($92.8\%$ accuracy corresponds to an $84.1\% - 96.9\%$ 95% Wilson score interval; recall $88.2\%$ spans $73.4\% - 95.3\%$). Benchmark performance should always be evaluated alongside confidence intervals.

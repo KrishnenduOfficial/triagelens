@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-252_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-254_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -111,48 +111,56 @@ TriageLens operates as a modular, pipeline-driven architecture where security te
 
 TriageLens was evaluated across a balanced 70-timeline benchmark dataset (`data/eval_benchmark_70.json`: 35 Malicious, 35 Benign) spanning 9 core MITRE ATT&CK DFIR techniques (credential dumping, C2 beaconing, ransomware, lateral movement, persistence, reconnaissance, privilege escalation, defense evasion, exfiltration) and routine enterprise operations (Windows updates, Docker builds, npm installs, IT administration).
 
+> [!NOTE]
+> **Dataset & Pipeline Disclosure:** Telemetry in `eval_benchmark_70.json` consists of **synthetically generated textbook scenarios** created inside the repository. **Threat intelligence enrichment was disabled** during this baseline run to evaluate raw prompt comprehension.
+
 - **Execution Date:** 2026-11-06
-- **Primary Model:** `gemini-3.8-flash` (with automated failover to `gemini-3.5-flash-lite`)
+- **Answering Model:** `gemini-3.5-flash-lite` (generated 100% of evaluated verdicts; configured primary `gemini-3.8-flash` failed over)
 - **Evaluation Digest (SHA-256):** `3f623a7091599f710137b0b3c248c0cf5e3eb946c8e14a89e3b7c65d2b27bac7`
 - **Full Report:** [`docs/results/evaluation_report_20261106.md`](docs/results/evaluation_report_20261106.md)
 
-| Metric | Measured Value | SOC Engineering Target | Status |
-|---|---|---|---|
-| **Accuracy** | **92.8%** | ≥ 85.0% | **Exceeded** |
-| **Precision** | **96.8%** | ≥ 80.0% | **Exceeded** |
-| **Recall (Sensitivity)** | **88.2%** | ≥ 85.0% | **Exceeded** |
-| **Specificity (TNR)** | **97.1%** | ≥ 85.0% | **Exceeded** |
-| **F1-Score** | **92.3%** | ≥ 85.0% | **Exceeded** |
-| **False Positive Rate (FPR)** | **2.9%** | ≤ 15.0% | **Exceeded** |
-| **False Negative Rate (FNR)** | **11.8%** | ≤ 15.0% | **Exceeded** |
-| **Availability Rate** | **98.6%** | 100.0% | Stable |
+| Metric | Measured Value | Wilson 95% Confidence Interval | Sample Basis | SOC Engineering Target |
+|---|---|---|---|---|
+| **Accuracy** | **92.8%** | **[84.1%, 96.9%]** | 64 / 69 | ≥ 85.0% |
+| **Precision** | **96.8%** | **[83.8%, 99.4%]** | 30 / 31 | ≥ 80.0% |
+| **Recall (Sensitivity)** | **88.2%** | **[73.4%, 95.3%]** | 30 / 34 | ≥ 85.0% |
+| **Specificity (TNR)** | **97.1%** | **[85.5%, 99.5%]** | 34 / 35 | ≥ 85.0% |
+| **F1-Score** | **92.3%** | N/A (harmonic mean) | Harmonic mean | ≥ 85.0% |
+| **False Positive Rate (FPR)** | **2.9%** | **[0.5%, 14.5%]** | 1 / 35 | ≤ 15.0% |
+| **False Negative Rate (FNR)** | **11.8%** | **[4.7%, 26.6%]** | 4 / 34 | ≤ 15.0% |
+| **Availability Rate** | **98.6%** | - | 69 / 70 | 100.0% |
 
-#### Confusion Matrix Breakdown
+#### Confusion Matrix & Failure Mode Breakdown
 - **True Positives (TP):** `30` (Real attacks correctly triaged as Malicious)
 - **True Negatives (TN):** `34` (Benign operations correctly triaged as Benign)
-- **False Positives (FP):** `1` (Benign activity escalated as Malicious)
-- **False Negatives (FN):** `4` (Complex multi-stage attacks triaged as Low/Benign)
-- **Unavailable / Failed:** `1` (Handled safely without pipeline crash)
+- **False Positives (FP):** `1` (Benign administration query flagged as suspicious)
+- **False Negatives (FN):** `4` (Attacks triaged as Benign / Low severity)
+- **Unavailable / Failed:** `1` (`attack_scenario_M31-Exfiltration-ArchiveAndCurl`, handled without crash)
+
+*Failure Mode Finding:* All 5 prediction errors occurred exclusively on **low-evidence, single-event or 2-event timelines** (such as an isolated `PassTheHash` LogonType 9 event, a standalone `.vbs` creation, a single `spoolss` NamedPipeConnect, an un-enriched `dnsleak.net` query, and an `nltest.exe` domain check) where lack of surrounding telemetry or threat intelligence reputation produced inherent ambiguity.
 
 ---
 
 ### 3.2 2-Model Comparison & Confidence Calibration Benchmark
 
-TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` across 20 representative balanced timelines (10 Malicious, 10 Benign).
+TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3.5-flash-lite` against `gemini-3.1-flash-lite` across 20 representative balanced timelines (10 Malicious, 10 Benign) from the synthetic benchmark.
+
+> [!WARNING]
+> **Small-Sample Caveat ($n=20$):** With only 20 timelines evaluated, 100% observed accuracy corresponds to a wide Wilson 95% confidence interval of [83.9%, 100.0%]. Similarly, Brier score and ECE values at this sample size are subject to high variance and should be viewed as preliminary observations. Latency was not measured during this cached evaluation run.
 
 - **Full Report:** [`docs/results/model_comparison_report.md`](docs/results/model_comparison_report.md)
 
-| Metric | Model A: `gemini-3.5-flash-lite` | Model B: `gemini-3.1-flash-lite` | Target |
-|---|---|---|---|
-| **Accuracy** | **95.0%** | **100.0%** | ≥ 85.0% |
-| **Precision** | **90.9%** | **100.0%** | ≥ 80.0% |
-| **Recall** | **100.0%** | **100.0%** | ≥ 85.0% |
-| **Specificity** | **90.0%** | **100.0%** | ≥ 85.0% |
-| **F1-Score** | **95.2%** | **100.0%** | ≥ 85.0% |
-| **False Positive Rate (FPR)** | **10.0%** | **0.0%** | ≤ 15.0% |
-| **False Negative Rate (FNR)** | **0.0%** | **0.0%** | ≤ 15.0% |
-| **Brier Score** *(Lower = Better)* | **0.0390** | **0.0071** | < 0.100 |
-| **Expected Calibration Error (ECE)** | **0.0020** | **0.0585** | < 0.100 |
+| Metric | Model A: `gemini-3.5-flash-lite` | Model B: `gemini-3.1-flash-lite` | Wilson 95% CI (A) | Wilson 95% CI (B) | Target |
+|---|---|---|---|---|---|
+| **Accuracy** | **95.0%** (19/20) | **100.0%** (20/20) | [76.4%, 99.1%] | [83.9%, 100.0%] | ≥ 85.0% |
+| **Precision** | **90.9%** (10/11) | **100.0%** (10/10) | [62.3%, 98.4%] | [72.2%, 100.0%] | ≥ 80.0% |
+| **Recall** | **100.0%** (10/10) | **100.0%** (10/10) | [72.2%, 100.0%] | [72.2%, 100.0%] | ≥ 85.0% |
+| **Specificity** | **90.0%** (9/10) | **100.0%** (10/10) | [59.6%, 98.2%] | [72.2%, 100.0%] | ≥ 85.0% |
+| **F1-Score** | **95.2%** | **100.0%** | N/A | N/A | ≥ 85.0% |
+| **False Positive Rate (FPR)** | **10.0%** (1/10) | **0.0%** (0/10) | [1.8%, 40.4%] | [0.0%, 27.8%] | ≤ 15.0% |
+| **False Negative Rate (FNR)** | **0.0%** (0/10) | **0.0%** (0/10) | [0.0%, 27.8%] | [0.0%, 27.8%] | ≤ 15.0% |
+| **Brier Score** *(Lower = Better)* | **0.0390** | **0.0071** | High variance ($n=20$) | High variance ($n=20$) | < 0.100 |
+| **Expected Calibration Error (ECE)** | **0.0020** | **0.0585** | High variance ($n=20$) | High variance ($n=20$) | < 0.100 |
 
 #### 5-Bin Reliability Diagram (Probability vs Empirical Accuracy)
 
@@ -164,9 +172,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 | `0.6 - 0.8` | 0 | 0.0% | 0.0% | 1 | 75.0% | 100.0% |
 | `0.8 - 1.0` | 20 | 95.2% | **95.0%** | 19 | 95.2% | **100.0%** |
 
-*Finding:* `gemini-3.5-flash-lite` exhibits near-perfect probabilistic calibration in the high-confidence bin (`ECE = 0.0020`, 95.2% confidence vs 95.0% empirical accuracy), while `gemini-3.1-flash-lite` achieved a perfect 100% classification score with an exceptionally low Brier score (`0.0071`).
-
----
+*Observation:* Both models classified textbook attack scenarios effectively, but the small sample size ($n=20$) and synthetic nature of the data mean real-world production performance with live threat intel will show greater variance.
 
 ## 4. Technology Stack
 
@@ -181,7 +187,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Gemini communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (252 passing tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (254 passing tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind | Dark-mode SOC analyst investigation console |
 
 ---
@@ -237,7 +243,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 
 ### 5.3 Run Automated Test Suite
 
-TriageLens contains a comprehensive test suite of 252 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
+TriageLens contains a comprehensive test suite of 254 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
 
 ```bash
 pytest -v
@@ -245,7 +251,7 @@ pytest -v
 
 Expected output:
 ```text
-======================== 252 passed, 1 warning ========================
+======================== 254 passed, 1 warning ========================
 ```
 
 ---
@@ -392,7 +398,7 @@ triagelens/
 │   └── utils/                 # Security & extraction utilities
 │       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-├── tests/                     # 252 passing adversarial, security, and unit tests
+├── tests/                     # 254 passing adversarial, security, and unit tests
 │   ├── test_api_adversarial.py
 │   ├── test_database_adversarial.py
 │   ├── test_enrichment.py
