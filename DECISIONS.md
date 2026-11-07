@@ -928,6 +928,41 @@ Previously, `/api/metrics` served an in-memory `AccuracyTracker` instantiated em
 
 ---
 
+### ADR-033: API Health Check Active Verification, Route Parity Automation, and Documentation Synchronization
+
+**Status:** Accepted
+
+**Decision:**
+
+1. **Active Database Probing in Health Check (`GET /health`):**
+   - The `/health` endpoint actively validates database connectivity by executing `SELECT 1;` against `db.connection`.
+   - On success: returns HTTP 200 with `{"status": "ok", "database": "connected", "service": "triagelens-api"}`.
+   - On failure (`sqlite3.Error` or exception): logs the failure and raises HTTP 503 Service Unavailable with `{"detail": "Database unhealthy"}`.
+
+2. **Automated Documentation Route Parity (`tests/test_wire7_docs_and_health.py`):**
+   - Added an automated bidirectional test parsing the `README.md` Section 6 API table and asserting symmetric equality against `app.routes`.
+   - Replaced outdated and non-existent endpoints with the real 7 operational routes (`/health`, `/api/metrics`, `/api/timelines`, `/api/timelines/{timeline_id}`, `/api/alerts/{alert_id}`, `/api/enrichments/{indicator}`, `/api/hunt`).
+
+3. **YARA Roadmap Clarification and File Integrity:**
+   - Removed references to nonexistent files `src/engine/yara_engine.py` and `tests/test_yara_adversarial.py` from repository trees.
+   - Segregated `yara_rules` and `yara_matches` in `ARCHITECTURE.md` as planned future additions.
+
+4. **MIT License & Test Count Coherence:**
+   - Created the canonical MIT `LICENSE` file.
+   - Harmonized all documentation to reference the verified 252 tests, removing hardcoded runtimes.
+
+**Rationale:**
+
+Public repositories and documentation must never diverge from the underlying implementation. Static health checks and phantom documentation entries compromise auditability and credibility.
+
+**Consequences:**
+
+* Health probes (such as Docker, Kubernetes, or uptime monitors) reliably detect database connectivity outages.
+* Route modifications cannot occur without updating README documentation, enforced by continuous testing.
+* Test counts are strictly synchronized and verifiable via `pytest --collect-only -q`.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

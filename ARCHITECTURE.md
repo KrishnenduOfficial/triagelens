@@ -463,17 +463,23 @@ The analyst examines the evidence and decides what action should be taken.
 
 The database is designed to remain lightweight, robust against concurrent access, and responsive on an 8 GB RAM system.
 
-### Finalized Relational Schema
+### Active Relational Schema
 
 | Table | Primary Key | Foreign Keys | Key Columns | Responsibility |
 |---|---|---|---|---|
 | `timelines` | `id` (TEXT/UUID) | None | `grouping_key`, `start_time`, `end_time`, `total_events`, `correlation_type`, `correlation_reason` | Stores correlated incident timelines |
 | `alerts` | `id` (TEXT/UUID) | `timeline_id -> timelines(id)` | `source_dataset`, `source_file`, `event_type`, `timestamp`, `original_record` (JSON), `ground_truth_label` | Normalized alerts with independent ground truth |
-| `indicators` | `id` (INTEGER) | None | `indicator_type`, `value` (UNIQUE), `source`, `enrichment_data` (JSON), `first_seen`, `last_seen` | Extracted IPs, domains, hashes with cached threat intel |
+| `enrichments` | `id` (INTEGER) | None | `indicator`, `indicator_type`, `provider`, `lookup_status`, `is_malicious`, `raw_response`, `lookup_timestamp` | Extracted IPs, domains, hashes with recorded threat intel |
+| `enrichment_cache` | `cache_key` (TEXT) | None | `indicator`, `indicator_type`, `provider`, `lookup_status`, `is_malicious`, `raw_response`, `cached_at`, `expires_at` | Persistent SQLite cache with positive/negative TTL (ADR-029) |
 | `verdicts` | `id` (TEXT/UUID) | `timeline_id -> timelines(id)` | `severity`, `confidence_score`, `uncertainty_level`, `summary`, `reasoning` (JSON), `missing_information` (JSON), `recommended_actions` (JSON), `model_name` | AI triage decisions with model attribution and telemetry |
-| `evaluations` | `id` (TEXT/UUID) | `verdict_id -> verdicts(id)`, `timeline_id -> timelines(id)` | `ground_truth`, `llm_prediction`, `is_correct`, `category`, `confidence_score` | Statistical evaluation records (ADR-008) |
-| `yara_rules` | `rule_name` (TEXT) | None | `description`, `author`, `rule_content`, `created_at` | Compiled YARA threat hunting rules |
-| `yara_matches` | `id` (TEXT/UUID) | `rule_name -> yara_rules(rule_name)`, `timeline_id -> timelines(id)` | `matched_strings` (JSON), `detected_at` | Forensic file & memory pattern matches |
+| `evaluations` | `id` (INTEGER) | `verdict_id -> verdicts(id)`, `timeline_id -> timelines(id)` | `ground_truth`, `llm_prediction`, `is_correct`, `category`, `confidence_score`, `severity_prediction` | Statistical evaluation records (ADR-008, ADR-032) |
+
+### Planned Schema Additions (Future YARA Engine — Planned / Not Built)
+
+| Table | Primary Key | Foreign Keys | Key Columns | Responsibility |
+|---|---|---|---|---|
+| `yara_rules` | `rule_name` (TEXT) | None | `description`, `author`, `rule_content`, `created_at` | Compiled YARA threat hunting rules (planned extension) |
+| `yara_matches` | `id` (TEXT/UUID) | `rule_name -> yara_rules(rule_name)`, `timeline_id -> timelines(id)` | `matched_strings` (JSON), `detected_at` | Forensic file & memory pattern matches (planned extension) |
 
 ### Automated Migrations
 
@@ -607,7 +613,7 @@ The initial target is approximately eight weeks. Actual duration will depend on 
 | Weeks 1–2 | Alert intake and threat intelligence enrichment |
 | Weeks 3–4 | Timeline builder and SQL/KQL hunting queries    |
 | Weeks 5–6 | LLM triage and accuracy scoring                 |
-| Week 7    | YARA matching and dashboard                     |
+| Week 7    | Dashboard implementation & YARA matching (planned) |
 | Week 8    | README, architecture diagram and demo video     |
 
 The development sequence should prioritize a working, testable pipeline before advanced features.
@@ -676,7 +682,7 @@ triagelens/
 │   └── compare_models.py      # 2-model evaluation & calibration comparison
 ├── src/                       # Core Python backend and engine
 │   ├── api/                   # FastAPI REST endpoints
-│   │   └── server.py
+│   │   └── main.py
 │   ├── engine/                # Core pipeline stages
 │   │   ├── database.py        # SQLite persistence, foreign keys & WAL manager
 │   │   ├── enrichment.py      # Multi-provider threat intel (VT, AbuseIPDB, URLhaus)
@@ -684,18 +690,18 @@ triagelens/
 │   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
 │   │   ├── intake.py          # Alert normalization and intake engine
 │   │   ├── llm.py             # Gemini DFIR triage, prompt defense, cache & protocol
-│   │   ├── timeline.py        # Identity-based event correlation & time windows
-│   │   └── yara_engine.py     # YARA rule compilation and forensic matching
+│   │   └── timeline.py        # Identity-based event correlation & time windows
 │   ├── models/                # Pydantic data schemas
 │   │   ├── alert.py
 │   │   ├── enrichment.py
 │   │   ├── evaluation.py
 │   │   ├── timeline.py
 │   │   └── triage.py
-│   └── utils/                 # Security utilities
+│   └── utils/                 # Security & extraction utilities
+│       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-└── tests/                     # Test suite (213 passing adversarial/security tests)
-    ├── test_api.py
+└── tests/                     # Test suite (252 passing adversarial, security, and unit tests)
+    ├── test_api_adversarial.py
     ├── test_database_adversarial.py
     ├── test_enrichment.py
     ├── test_evaluation_adversarial.py
@@ -703,7 +709,7 @@ triagelens/
     ├── test_intake_adversarial.py
     ├── test_llm_adversarial.py
     ├── test_timeline_adversarial.py
-    └── test_yara_adversarial.py
+    └── test_wire7_docs_and_health.py
 ```
 
 ---

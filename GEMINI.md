@@ -342,7 +342,7 @@ The core TriageLens architecture is fully implemented, verified, and empirically
 8. **Stage 8 (Threat Hunting Engine):** Parameterized KQL-to-SQLite translation engine with deep JSON extraction (`ThreatHuntingEngine`).
 9. **Real Evaluation Run:** 70-timeline balanced benchmark dataset (`data/eval_benchmark_70.json`) evaluated with 92.8% accuracy, 96.8% precision, 97.1% specificity, 2.9% FPR, and 11.8% FNR (`docs/results/evaluation_report_20261106.md`).
 10. **2-Model Comparison & Calibration:** Empirical comparison of `gemini-3.5-flash-lite` (95.0% accuracy, Brier: 0.0390, ECE: 0.0020) vs `gemini-3.1-flash-lite` (100.0% accuracy, Brier: 0.0071, ECE: 0.0585) across 20 representative timelines (`docs/results/model_comparison_report.md`).
-11. **Test Suite:** 213 unit, adversarial, security, and edge-case tests passing across all components with zero failures.
+11. **Test Suite:** 252 unit, adversarial, security, and edge-case tests passing across all components with zero failures.
 
 Current Priorities:
 - Audit and align all task tracking in `TASKS.md` with verifiable deliverables.

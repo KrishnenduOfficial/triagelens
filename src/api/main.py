@@ -111,11 +111,29 @@ def create_app(
             },
         )
 
-    # 4. Health check endpoint
-    @app.get("/health", tags=["System"])
-    def health_check() -> Dict[str, str]:
-        """Health check endpoint."""
-        return {"status": "ok", "service": "triagelens-api"}
+    # 4. Health check endpoint (checks database connectivity)
+    @app.get(
+        "/health",
+        tags=["System"],
+        summary="System health check and database connectivity status",
+    )
+    def health_check(db: DatabaseManager = Depends(get_db)) -> Dict[str, str]:
+        """Health check endpoint verifying system responsiveness and database connectivity.
+
+        Returns 200 OK with connectivity status, or 503 Service Unavailable if the
+        database connection fails.
+        """
+        try:
+            if db is None:
+                raise RuntimeError("DatabaseManager dependency is None")
+            db.connection.execute("SELECT 1;").fetchone()
+            return {"status": "ok", "database": "connected", "service": "triagelens-api"}
+        except Exception as exc:
+            logger.error("Health check failed due to database connectivity issue: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database unhealthy",
+            )
 
     # 4. Accuracy and Metrics Endpoint
     @app.get(

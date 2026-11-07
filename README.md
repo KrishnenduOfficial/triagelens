@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-248_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-252_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -181,7 +181,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Gemini communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (213 passing tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (252 passing tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind | Dark-mode SOC analyst investigation console |
 
 ---
@@ -237,7 +237,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 
 ### 5.3 Run Automated Test Suite
 
-TriageLens contains a comprehensive test suite of 248 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
+TriageLens contains a comprehensive test suite of 252 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
 
 ```bash
 pytest -v
@@ -245,7 +245,7 @@ pytest -v
 
 Expected output:
 ```text
-======================== 248 passed, 1 warning in 18.36s ========================
+======================== 252 passed, 1 warning ========================
 ```
 
 ---
@@ -319,15 +319,13 @@ Follow this checklist to verify that the dashboard and backend reflect the CLI p
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/alerts` | List all ingested security alerts with filtering by dataset or event type |
-| `POST` | `/api/alerts` | Ingest a new normalized security alert |
-| `GET` | `/api/timelines` | List correlated incident timelines with pagination |
-| `GET` | `/api/timelines/{id}` | Retrieve a specific timeline with its chronological events and IoCs |
-| `POST` | `/api/triage/{timeline_id}` | Trigger LLM triage analysis for a timeline |
-| `GET` | `/api/triage/{timeline_id}` | Retrieve existing triage verdict, reasoning, and actions |
-| `GET` | `/api/accuracy/metrics` | Retrieve live confusion matrix, precision, recall, F1, and calibration metrics |
-| `POST` | `/api/hunt` | Execute a parameterized KQL hunting query across telemetry |
 | `GET` | `/health` | System health check and database connectivity status |
+| `GET` | `/api/metrics` | Retrieve live confusion matrix, precision, recall, F1, and calibration metrics |
+| `GET` | `/api/timelines` | Retrieve paginated correlated threat timelines |
+| `GET` | `/api/timelines/{timeline_id}` | Retrieve detailed threat timeline with alerts and LLM verdict |
+| `GET` | `/api/alerts/{alert_id}` | Retrieve normalized security alert by ID |
+| `GET` | `/api/enrichments/{indicator}` | Retrieve cached threat intelligence lookups for an indicator |
+| `POST` | `/api/hunt` | Execute parameterized KQL threat hunting query across telemetry |
 
 ---
 
@@ -384,18 +382,18 @@ triagelens/
 │   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
 │   │   ├── intake.py          # Alert normalization and intake engine
 │   │   ├── llm.py             # Gemini DFIR triage, prompt defense, cache & protocol
-│   │   ├── timeline.py        # Identity-based event correlation & time windows
-│   │   └── yara_engine.py     # YARA rule compilation and forensic matching
+│   │   └── timeline.py        # Identity-based event correlation & time windows
 │   ├── models/                # Pydantic schemas
 │   │   ├── alert.py
 │   │   ├── enrichment.py
 │   │   ├── evaluation.py
 │   │   ├── timeline.py
 │   │   └── triage.py
-│   └── utils/                 # Security utilities
+│   └── utils/                 # Security & extraction utilities
+│       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-├── tests/                     # 213 passing adversarial, security, and unit tests
-│   ├── test_api.py
+├── tests/                     # 252 passing adversarial, security, and unit tests
+│   ├── test_api_adversarial.py
 │   ├── test_database_adversarial.py
 │   ├── test_enrichment.py
 │   ├── test_evaluation_adversarial.py
@@ -403,10 +401,11 @@ triagelens/
 │   ├── test_intake_adversarial.py
 │   ├── test_llm_adversarial.py
 │   ├── test_timeline_adversarial.py
-│   └── test_yara_adversarial.py
+│   └── test_wire7_docs_and_health.py
 ├── ARCHITECTURE.md            # Complete architecture specification
-├── DECISIONS.md               # 26 Architectural Decision Records (ADRs)
+├── DECISIONS.md               # 32 Architectural Decision Records (ADRs)
 ├── GEMINI.md                  # Project identity and operational guidelines
+├── LICENSE                    # MIT License
 ├── TASKS.md                   # Task tracking and phase completion records
 └── requirements.txt           # Python dependency specification
 ```

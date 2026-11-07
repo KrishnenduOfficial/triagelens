@@ -3,7 +3,7 @@
 **Project:** TriageLens
 **Version:** 0.1.0
 **Development Status:** Enhanced, Calibrated & Empirically Benchmarked
-**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 213 Passing Tests / Portfolio Preparation
+**Project Stage:** Phases 1–8 Core Implemented & Benchmarked / 252 Passing Tests / Portfolio Preparation
 
 ---
 
@@ -296,6 +296,7 @@ Note: Initial installation is recorded as complete. Individual package versions 
 * [x] Implement API error handling.
 * [x] Implement API security and concurrency hardening (restricted CORS, SQLite WAL mode, KQL row limits, Pydantic bounds, and global 500 error sanitization; ADR-019, ADR-020).
 * [x] Implement dynamic database-derived metrics calculation for /api/metrics, end-to-end evaluation runner pipeline, and file-database verification (ADR-032).
+* [x] Implement active database health check on /health (HTTP 200 with connectivity status, HTTP 503 on failure), sync API documentation table with app.routes, and add MIT LICENSE (ADR-033).
 * [x] Test API endpoints.
 
 ### Completion Criteria
@@ -378,14 +379,14 @@ These features should not delay the completion of the core pipeline.
 
 # 12. Phase 9 — Testing and Quality Assurance
 
-* [x] Run complete unit test suite (213 passing unit, security, and adversarial tests).
+* [x] Run complete unit test suite (252 passing unit, security, and adversarial tests).
 * [x] Run integration tests (FastAPI test client with mocked external endpoints).
 * [x] Test ingestion-to-enrichment pipeline (`test_intake_adversarial.py`, `test_enrichment.py`).
 * [x] Test enrichment-to-timeline pipeline (`test_timeline_adversarial.py`).
 * [x] Test timeline-to-AI pipeline (`test_llm_adversarial.py`).
 * [x] Test AI-to-evaluation pipeline (`test_evaluation_adversarial.py`).
 * [x] Verify database consistency (`test_database_adversarial.py`: foreign keys, WAL mode, migrations).
-* [x] Test API failure scenarios (`test_api.py`: 404, 422, sanitized 500 responses).
+* [x] Test API failure scenarios (`test_api_adversarial.py`: 404, 422, sanitized 500 responses).
 * [x] Test external API failure scenarios (503 high demand, 429 rate limit, 404 deprecated models, timeouts).
 * [x] Review sensitive-data handling (`PIIScrubber` with Luhn check, `_safe_log_text` secret redaction, ADR-008 prompt isolation).
 * [x] Test on available hardware (verified on Intel Core i5, 8 GB RAM development workstation).
