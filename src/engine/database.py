@@ -5,13 +5,15 @@ foreign key enforcement, and thread-safe concurrent execution.
 """
 
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+import hashlib
 import json
 import logging
 import re
 import sqlite3
 import threading
-from typing import Any, Dict, List, Optional, Union
-from uuid import UUID
+from typing import Any, Callable, Dict, List, Optional, Union
+from uuid import UUID, uuid4
 
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
@@ -33,6 +35,7 @@ class DatabaseManager:
         db_path: str = ":memory:",
         timeout: float = 60.0,
         check_same_thread: bool = False,
+        clock: Optional[Callable[[], datetime]] = None,
     ) -> None:
         """Initializes DatabaseManager with path and concurrency settings.
 
@@ -46,6 +49,8 @@ class DatabaseManager:
         self.check_same_thread = check_same_thread
         self._lock = threading.RLock()
         self._conn: Optional[sqlite3.Connection] = None
+        self._atomic_depth = 0
+        self._clock = clock
 
     def connect(self) -> sqlite3.Connection:
         """Opens or returns the active SQLite connection with Foreign Keys enabled.
@@ -235,20 +240,27 @@ class DatabaseManager:
                     evaluated_at TEXT NOT NULL,
                     confidence_score REAL,
                     severity_prediction TEXT,
+                    severity_ground_truth TEXT,
+                    severity_correct INTEGER,
                     FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE CASCADE,
                     FOREIGN KEY (verdict_id) REFERENCES verdicts(id) ON DELETE CASCADE
                 );
             """)
 
-            # Migration: ensure confidence_score and severity_prediction columns exist in evaluations
+            # Add nullable result snapshots without guessing values for historical rows.
             cursor.execute("PRAGMA table_info(evaluations);")
             existing_eval_cols = {row["name"] for row in cursor.fetchall()}
             if "confidence_score" not in existing_eval_cols:
                 cursor.execute("ALTER TABLE evaluations ADD COLUMN confidence_score REAL;")
             if "severity_prediction" not in existing_eval_cols:
                 cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_prediction TEXT;")
+            if "severity_ground_truth" not in existing_eval_cols:
+                cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_ground_truth TEXT;")
+            if "severity_correct" not in existing_eval_cols:
+                cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_correct INTEGER;")
 
             self._migrate_unavailable_evaluations(conn)
+            self._init_provenance(conn)
 
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
@@ -258,6 +270,201 @@ class DatabaseManager:
 
             conn.commit()
             logger.info("Database schema initialized successfully.")
+
+    def _now_utc(self) -> str:
+        value = self._clock() if self._clock is not None else datetime.now(timezone.utc)
+        if value.tzinfo is None:
+            raise ValueError("Provenance clock must return an aware datetime")
+        return value.astimezone(timezone.utc).isoformat()
+
+    @contextmanager
+    def _atomic_write(self):
+        """Serialize check-and-write across connections without committing nested writes."""
+        with self._lock:
+            conn = self.connect()
+            nested = conn.in_transaction
+            name = f"provenance_{self._atomic_depth}"
+            conn.execute(f"SAVEPOINT {name}" if nested else "BEGIN IMMEDIATE")
+            self._atomic_depth += 1
+            try:
+                yield conn
+                conn.execute(f"RELEASE SAVEPOINT {name}") if nested else conn.commit()
+            except BaseException:
+                if nested:
+                    conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+                    conn.execute(f"RELEASE SAVEPOINT {name}")
+                else:
+                    conn.rollback()
+                raise
+            finally:
+                self._atomic_depth -= 1
+
+    def _init_provenance(self, conn: sqlite3.Connection) -> None:
+        """Add lineage after legacy outcome rebuilding, leaving old rows unknown."""
+        conn.execute("""CREATE TABLE IF NOT EXISTS evaluation_runs (
+            run_id TEXT PRIMARY KEY, entrypoint TEXT NOT NULL CHECK(entrypoint IN ('cli','evaluation')),
+            started_at TEXT NOT NULL, ended_at TEXT,
+            status TEXT NOT NULL CHECK(status IN ('running','completed','failed')),
+            inference_policy_hash TEXT, cohort_manifest TEXT NOT NULL,
+            quality_cohort_hash TEXT NOT NULL, failure_category TEXT
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS triage_observations (
+            observation_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, ordinal INTEGER NOT NULL CHECK(ordinal>0),
+            timeline_id TEXT NOT NULL, origin TEXT CHECK(origin IN ('fresh','cache','skipped','unknown')),
+            attempt_id TEXT UNIQUE, started_at TEXT NOT NULL, ended_at TEXT,
+            status TEXT NOT NULL CHECK(status IN ('pending','completed','skipped','interrupted')),
+            evidence_hash TEXT, inference_policy_hash TEXT, verdict_id TEXT,
+            cache_validation TEXT NOT NULL DEFAULT 'unverified' CHECK(cache_validation IN ('unverified','verified','rejected')),
+            failure_category TEXT, outcome_hash TEXT,
+            UNIQUE(run_id,ordinal),
+            FOREIGN KEY(run_id) REFERENCES evaluation_runs(run_id),
+            FOREIGN KEY(timeline_id) REFERENCES timelines(id) ON DELETE CASCADE,
+            FOREIGN KEY(verdict_id) REFERENCES verdicts(id) ON DELETE CASCADE
+        )""")
+        existing = {row['name'] for row in conn.execute('PRAGMA table_info(evaluations)')}
+        fields = {'observation_id':'TEXT REFERENCES triage_observations(observation_id)',
+                  'evaluation_context_hash':'TEXT','quality_cohort_hash':'TEXT','provenance_version':'INTEGER'}
+        for name, declaration in fields.items():
+            if name not in existing:
+                conn.execute(f'ALTER TABLE evaluations ADD COLUMN {name} {declaration}')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_observation ON evaluations(observation_id) WHERE observation_id IS NOT NULL')
+        existing_verdict = {row['name'] for row in conn.execute('PRAGMA table_info(verdicts)')}
+        for name, declaration in {'evidence_hash':'TEXT','inference_policy_hash':'TEXT',
+                                  'cache_provenance_version':'INTEGER','cache_expires_at':'TEXT'}.items():
+            if name not in existing_verdict:
+                conn.execute(f'ALTER TABLE verdicts ADD COLUMN {name} {declaration}')
+
+    def create_evaluation_run(self, entrypoint: str) -> str:
+        run_id = str(uuid4())
+        manifest = json.dumps({'kind':'ad_hoc','run_id':run_id}, sort_keys=True, separators=(',',':'))
+        cohort = hashlib.sha256(manifest.encode('utf-8')).hexdigest()
+        with self._atomic_write() as conn:
+            conn.execute("INSERT INTO evaluation_runs(run_id,entrypoint,started_at,status,cohort_manifest,quality_cohort_hash) VALUES(?,?,?,'running',?,?)",
+                         (run_id,entrypoint,self._now_utc(),manifest,cohort))
+        return run_id
+
+    def get_evaluation_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self.connect().execute('SELECT * FROM evaluation_runs WHERE run_id=?',(str(run_id),)).fetchone()
+            return dict(row) if row else None
+
+    def get_triage_observations(self, run_id: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            return [dict(row) for row in self.connect().execute('SELECT * FROM triage_observations WHERE run_id=? ORDER BY ordinal',(str(run_id),))]
+
+    def _pending_observation(self, conn, observation_id):
+        row = conn.execute('SELECT o.*,r.status AS run_status FROM triage_observations o JOIN evaluation_runs r ON r.run_id=o.run_id WHERE observation_id=?',(str(observation_id),)).fetchone()
+        if row is None:
+            raise ValueError('Unknown observation')
+        if row['status'] != 'pending' or row['run_status'] != 'running':
+            raise ValueError('Observation must be pending in a running run')
+        return row
+
+    def start_observation(self, run_id: str, ordinal: int, timeline_id: Union[UUID,str]) -> str:
+        with self._atomic_write() as conn:
+            run = conn.execute('SELECT status FROM evaluation_runs WHERE run_id=?',(str(run_id),)).fetchone()
+            if run is None or run['status'] != 'running':
+                raise ValueError('Run must be running')
+            previous = conn.execute('SELECT observation_id,timeline_id FROM triage_observations WHERE run_id=? AND ordinal=?',(str(run_id),ordinal)).fetchone()
+            if previous:
+                if previous['timeline_id'] != str(timeline_id):
+                    raise ValueError('Observation ordinal conflict')
+                return previous['observation_id']
+            observation_id = str(uuid4())
+            conn.execute("INSERT INTO triage_observations(observation_id,run_id,ordinal,timeline_id,started_at,status) VALUES(?,?,?,?,?,'pending')",
+                         (observation_id,str(run_id),ordinal,str(timeline_id),self._now_utc()))
+        return observation_id
+
+    def mark_observation_acquisition(self, observation_id: str, origin: str) -> None:
+        if origin not in ('fresh','cache','unknown'):
+            raise ValueError('Invalid acquisition origin')
+        with self._atomic_write() as conn:
+            row = self._pending_observation(conn, observation_id)
+            if row['origin'] is not None:
+                if row['origin'] != origin:
+                    raise ValueError('Acquisition origin conflict')
+                return
+            conn.execute('UPDATE triage_observations SET origin=?,attempt_id=? WHERE observation_id=?',
+                         (origin,str(uuid4()) if origin=='fresh' else None,str(observation_id)))
+
+    def skip_observation(self, observation_id: str) -> None:
+        with self._atomic_write() as conn:
+            row = self._pending_observation(conn, observation_id)
+            if row['origin'] is not None:
+                raise ValueError('Acquired work cannot be skipped')
+            conn.execute("UPDATE triage_observations SET origin='skipped',status='skipped',ended_at=? WHERE observation_id=?",
+                         (self._now_utc(),str(observation_id)))
+
+    def finish_evaluation_run(self, run_id: str) -> None:
+        with self._atomic_write() as conn:
+            run = conn.execute('SELECT status FROM evaluation_runs WHERE run_id=?',(str(run_id),)).fetchone()
+            if run is None or run['status'] != 'running':
+                raise ValueError('Run must be running')
+            if conn.execute("SELECT 1 FROM triage_observations WHERE run_id=? AND status='pending' LIMIT 1",(str(run_id),)).fetchone():
+                raise ValueError('Run has pending work')
+            conn.execute("UPDATE evaluation_runs SET status='completed',ended_at=? WHERE run_id=?",(self._now_utc(),str(run_id)))
+
+    def fail_evaluation_run(self, run_id: str) -> None:
+        with self._atomic_write() as conn:
+            now = self._now_utc()
+            conn.execute("UPDATE triage_observations SET status='interrupted',ended_at=?,failure_category='run_interrupted' WHERE run_id=? AND status='pending'",(now,str(run_id)))
+            conn.execute("UPDATE evaluation_runs SET status='failed',ended_at=?,failure_category='run_failed' WHERE run_id=? AND status='running'",(now,str(run_id)))
+
+    def finalize_observation(self, observation_id: str, result: EvaluationResult,
+                             verdict: Optional[TriageVerdict] = None,
+                             failure_category: Optional[str] = None) -> int:
+        if failure_category not in (None,'no_verdict','engine_error'):
+            raise ValueError('Invalid failure category')
+        if result.observation_id is not None and str(result.observation_id) != str(observation_id):
+            raise ValueError('Observation identity conflict')
+        with self._atomic_write() as conn:
+            row = conn.execute('SELECT * FROM triage_observations WHERE observation_id=?',(str(observation_id),)).fetchone()
+            if row is None or row['timeline_id'] != str(result.timeline_id):
+                raise ValueError('Observation timeline conflict')
+            run = self.get_evaluation_run(row['run_id'])
+            if result.quality_cohort_hash is not None and result.quality_cohort_hash != run['quality_cohort_hash']:
+                raise ValueError('Quality cohort conflict')
+            snapshot = result.model_copy(update={'observation_id':UUID(str(observation_id)),
+                                                 'provenance_version':1,'quality_cohort_hash':run['quality_cohort_hash']})
+            existing = self.get_verdict(result.verdict_id) if result.verdict_id else None
+            if verdict is not None:
+                if verdict.timeline_id != result.timeline_id or verdict.verdict_id != result.verdict_id:
+                    raise ValueError('Verdict identity conflict')
+                if existing is not None:
+                    stored = TriageVerdict(**{**existing,'verdict_id':existing['id']})
+                    if stored != verdict:
+                        raise ValueError('Verdict snapshot conflict')
+            elif existing is not None:
+                verdict = TriageVerdict(**{**existing,'verdict_id':existing['id']})
+            if result.verdict_id is not None:
+                if verdict is None or verdict.timeline_id != result.timeline_id:
+                    raise ValueError('Verdict timeline conflict')
+            digest = hashlib.sha256(json.dumps({'outcome':snapshot.model_dump(mode='json'),
+                                               'verdict':verdict.model_dump(mode='json') if verdict else None,
+                                               'failure':failure_category},sort_keys=True,separators=(',',':'),
+                                              allow_nan=False).encode('utf-8')).hexdigest()
+            if row['status'] == 'completed':
+                if row['outcome_hash'] != digest:
+                    raise ValueError('Terminal outcome conflict')
+                stored_id = conn.execute('SELECT id FROM evaluations WHERE observation_id=?',(str(observation_id),)).fetchone()
+                if stored_id is None:
+                    raise ValueError('Completed observation is missing its outcome')
+                return stored_id[0]
+            self._pending_observation(conn, observation_id)
+            if verdict is not None and existing is None:
+                self.insert_verdict(verdict)
+            evaluation_id = self.insert_evaluation(snapshot)
+            conn.execute("UPDATE triage_observations SET status='completed',origin=COALESCE(origin,'unknown'),ended_at=?,verdict_id=?,failure_category=?,outcome_hash=? WHERE observation_id=?",
+                         (self._now_utc(),str(result.verdict_id) if result.verdict_id else None,failure_category,digest,str(observation_id)))
+            return evaluation_id
+
+    def get_provenance_coverage(self) -> Dict[str, int]:
+        with self._lock:
+            conn = self.connect()
+            total = conn.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0]
+            columns = {row['name'] for row in conn.execute('PRAGMA table_info(evaluations)')}
+            legacy = total if not {'observation_id','provenance_version'}.issubset(columns) else conn.execute('SELECT COUNT(*) FROM evaluations WHERE observation_id IS NULL OR provenance_version IS NULL').fetchone()[0]
+            return {'evaluation_rows':total,'legacy_unknown':legacy,'linked':total-legacy}
 
     def _migrate_unavailable_evaluations(self, conn: sqlite3.Connection) -> None:
         """Make legacy outcome columns nullable atomically, retaining FK checks.
@@ -755,7 +962,8 @@ class DatabaseManager:
                     missing_info_json,
                 ),
             )
-            conn.commit()
+            if not self._atomic_depth:
+                conn.commit()
             return verdict_id_str
 
     def get_verdict(self, verdict_id: Union[UUID, str]) -> Optional[Dict[str, Any]]:
@@ -802,7 +1010,8 @@ class DatabaseManager:
 
         Strict Foreign Keys: timeline_id must exist in timelines,
         and a non-null verdict_id must exist in verdicts. Unavailable predictions
-        preserve SQL NULL for both verdict_id and llm_prediction.
+        preserve SQL NULL for both verdict_id and llm_prediction. Severity label,
+        prediction, and tri-state correctness are snapshots of this evaluation.
 
         Args:
             evaluation: EvaluationResult instance.
@@ -811,6 +1020,8 @@ class DatabaseManager:
             Auto-incremented integer ID.
         """
         with self._lock:
+            if evaluation.observation_id is not None and not self._atomic_depth:
+                raise ValueError('Use finalize_observation for tracked outcomes')
             conn = self.connect()
             timeline_id_str = str(evaluation.timeline_id)
             verdict_id_str = str(evaluation.verdict_id) if evaluation.verdict_id is not None else None
@@ -830,13 +1041,16 @@ class DatabaseManager:
 
             conf_val = float(evaluation.confidence_score) if evaluation.confidence_score is not None else None
             sev_pred = evaluation.severity_prediction
+            sev_correct = int(evaluation.severity_correct) if evaluation.severity_correct is not None else None
 
             cursor = conn.execute(
                 """
                 INSERT INTO evaluations (
                     timeline_id, verdict_id, ground_truth, llm_prediction,
-                    is_correct, category, evaluated_at, confidence_score, severity_prediction
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    is_correct, category, evaluated_at, confidence_score, severity_prediction,
+                    severity_ground_truth, severity_correct, observation_id,
+                    evaluation_context_hash, quality_cohort_hash, provenance_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     timeline_id_str,
@@ -848,9 +1062,16 @@ class DatabaseManager:
                     now_str,
                     conf_val,
                     sev_pred,
+                    evaluation.severity_ground_truth,
+                    sev_correct,
+                    str(evaluation.observation_id) if evaluation.observation_id else None,
+                    evaluation.evaluation_context_hash,
+                    evaluation.quality_cohort_hash,
+                    evaluation.provenance_version,
                 ),
             )
-            conn.commit()
+            if not self._atomic_depth:
+                conn.commit()
             return cursor.lastrowid
 
     def get_evaluations_for_timeline(
@@ -875,6 +1096,11 @@ class DatabaseManager:
                 data["is_correct"] = (
                     bool(data["is_correct"]) if data["is_correct"] is not None else None
                 )
+                data.setdefault("severity_ground_truth", None)
+                severity_correct = data.get("severity_correct")
+                data["severity_correct"] = bool(severity_correct) if severity_correct is not None else None
+                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version'):
+                    data.setdefault(name, None)
                 results.append(data)
             return results
 
@@ -889,6 +1115,12 @@ class DatabaseManager:
 
             conf_select = "COALESCE(e.confidence_score, v.confidence_score)" if has_conf else "v.confidence_score"
             sev_select = "COALESCE(e.severity_prediction, v.severity)" if has_sev else "v.severity"
+            severity_ground_truth_select = "e.severity_ground_truth" if "severity_ground_truth" in cols else "NULL"
+            severity_correct_select = "e.severity_correct" if "severity_correct" in cols else "NULL"
+            provenance_select = ', '.join(
+                (f'e.{name}' if name in cols else 'NULL') + f' AS {name}'
+                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version')
+            )
 
             query = f"""
                 SELECT
@@ -901,7 +1133,10 @@ class DatabaseManager:
                     e.category,
                     e.evaluated_at,
                     {conf_select} AS confidence_score,
-                    {sev_select} AS verdict_severity
+                    {sev_select} AS verdict_severity,
+                    {severity_ground_truth_select} AS severity_ground_truth,
+                    {severity_correct_select} AS severity_correct,
+                    {provenance_select}
                 FROM evaluations e
                 LEFT JOIN verdicts v ON e.verdict_id = v.id
                 ORDER BY e.id ASC;
@@ -928,6 +1163,14 @@ class DatabaseManager:
                         category=data["category"],
                         confidence_score=conf,
                         severity_prediction=sev_pred,
+                        severity_ground_truth=data["severity_ground_truth"],
+                        severity_correct=(
+                            bool(data["severity_correct"]) if data["severity_correct"] is not None else None
+                        ),
+                        observation_id=data['observation_id'],
+                        evaluation_context_hash=data['evaluation_context_hash'],
+                        quality_cohort_hash=data['quality_cohort_hash'],
+                        provenance_version=data['provenance_version'],
                     )
                 )
             return results

@@ -14,6 +14,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 import httpx
 from pydantic import ValidationError
+from src.engine.provenance import note_acquisition, traced_acquisition
 
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -643,6 +644,10 @@ class GeminiTriageEngine:
             "enrichment_data": sanitized_enrichments,
         }
 
+    def acquire_timeline(self, timeline: ThreatTimeline, *, on_acquisition):
+        """Report real cache/send origin without changing analyze_timeline callers."""
+        return traced_acquisition(self.analyze_timeline, timeline, on_acquisition)
+
     def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
         """Performs AI-assisted triage analysis on a threat timeline.
 
@@ -695,6 +700,7 @@ class GeminiTriageEngine:
         if self.enable_cache and self.cache is not None:
             cached_verdict = self.cache.get(cache_key)
             if cached_verdict is not None:
+                note_acquisition('cache')
                 logger.debug("LLM response cache hit for key: %s", cache_key)
                 return cached_verdict
 
@@ -745,6 +751,7 @@ class GeminiTriageEngine:
             candidate_payload = {**payload, "generationConfig": generation_config}
             try:
                 sender = self.request_sender if self.request_sender is not None else httpx.post
+                note_acquisition('fresh')
                 candidate_response = sender(url, headers=headers, json=candidate_payload, timeout=self.timeout)
             except httpx.TimeoutException as exc:
                 safe_exc = self._safe_log_text(str(exc))

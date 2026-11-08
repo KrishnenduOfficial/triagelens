@@ -39,5 +39,9 @@ class EvaluationResult(BaseModel):
     severity_prediction: Optional[str] = None
     severity_correct: Optional[bool] = None
     confidence_score: Optional[float] = None
+    observation_id: Optional[UUID] = None
+    evaluation_context_hash: Optional[str] = None
+    quality_cohort_hash: Optional[str] = None
+    provenance_version: Optional[int] = None
 
 

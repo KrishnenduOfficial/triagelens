@@ -406,8 +406,47 @@ unavailable-only history. Reports label unavailable predictions explicitly.
 Supported legacy schemas migrate transactionally on init_db, preserving records,
 sequence counters, indexes/triggers, and FK enforcement. Custom inbound references
 require an explicit separate migration. Historical missing failures are not inferred
-or backfilled. Severity persistence and repeated cached-evaluation weighting remain
-separate open findings. See `docs/results/unavailable_outcomes_20261108.md`.
+or backfilled. Repeated cached-evaluation weighting remains an open finding.
+See `docs/results/unavailable_outcomes_20261108.md`.
+
+### Persisted Severity Results (ADR-046)
+
+Each evaluation snapshots severity_ground_truth, severity_prediction, and
+severity_correct. Nullable correctness preserves True/False/unknown distinctly;
+readers restore these fields without re-evaluating current alerts or verdicts.
+Legacy initialization adds missing nullable columns without backfilling history.
+The unavailable-outcome migration retains these columns when rebuilding older
+NOT NULL schemas. Both readers tolerate absent fields as unknown.
+
+API severity counts therefore reconstruct the same stored results used by a run.
+Only known severity_correct values contribute to the denominator. A prediction
+can have unknown binary ground truth but known severity correctness. Unavailable
+predictions and missing severity labels do not enter severity accuracy. Historical
+unknown rows remain excluded; zero evaluated results retain the existing 0.0
+accuracy convention. See `docs/results/severity_persistence_20261108.md`.
+
+### Replay Provenance and Metric Scopes (ADR-047; stage 1 ADR-048)
+
+Accepted design separates stored history/run rows, unique verdict/context quality
+units, and completed fresh logical attempts. It adds run/observation provenance,
+idempotent outcome links, versioned evidence/inference/evaluation fingerprints,
+cache validation/expiry, and explicit API scope/coverage metadata. Independent
+labels remain evaluation-only. Legacy rows retain unknown provenance and are not
+silently deduplicated. History stays the compatibility default; dashboard display
+changes are a separate stage. The detailed schema, denominators, staged plan, and
+acceptance examples are in ADR-047. History counting is unchanged.
+
+Stage 1 adds evaluation_runs and triage_observations plus nullable evaluation
+lineage. Observations start before acquisition; atomic finalization writes verdict,
+evaluation, and terminal observation with cross-connection idempotency. New
+observations retain separate history rows; retries of one observation reuse its
+outcome. Model failures are unavailable outcomes; storage/protocol errors fail the
+run and interrupt pending work. Skips have observation metadata and no evaluation.
+Contexts store independent-label/policy digests outside prompts. Each run currently
+has an ad hoc cohort namespace; legacy rows remain unknown. Gemini reports actual
+cache/send origin via context-local hooks, while opaque providers remain unknown.
+Cache validity/fingerprints/expiry, verified reusable cohorts, and metric scopes
+remain later stages. See `docs/results/run_provenance_stage1_20261108.md`.
 
 ### Empirical Benchmarks
 
@@ -547,7 +586,7 @@ The database is designed to remain lightweight, robust against concurrent access
 | `enrichments` | `id` (INTEGER) | None | `indicator`, `indicator_type`, `provider`, `lookup_status`, `is_malicious`, `raw_response`, `lookup_timestamp` | Extracted IPs, domains, hashes with recorded threat intel |
 | `enrichment_cache` | `cache_key` (TEXT) | None | `indicator`, `indicator_type`, `provider`, `lookup_status`, `is_malicious`, `raw_response`, `cached_at`, `expires_at` | Persistent SQLite cache with positive/negative TTL (ADR-029) |
 | `verdicts` | `id` (TEXT/UUID) | `timeline_id -> timelines(id)` | `severity`, `confidence_score`, `uncertainty_level`, `summary`, `reasoning` (JSON), `missing_information` (JSON), `recommended_actions` (JSON), `model_name` | AI triage decisions with model attribution and telemetry |
-| `evaluations` | `id` (INTEGER) | `verdict_id -> verdicts(id)`, `timeline_id -> timelines(id)` | `ground_truth`, `llm_prediction`, `is_correct`, `category`, `confidence_score`, `severity_prediction` | Statistical evaluation records (ADR-008, ADR-032) |
+| `evaluations` | `id` (INTEGER) | `verdict_id -> verdicts(id)` (nullable), `timeline_id -> timelines(id)` | `ground_truth`, `llm_prediction`, `is_correct`, `category`, `confidence_score`, `severity_prediction`, `severity_ground_truth`, `severity_correct` | Statistical evaluation snapshots (ADR-008, ADR-032, ADR-045, ADR-046) |
 
 ### Planned Schema Additions (Future YARA Engine — Planned / Not Built)
 

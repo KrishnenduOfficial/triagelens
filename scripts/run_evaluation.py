@@ -28,6 +28,7 @@ from src.engine.database import DatabaseManager
 from src.engine.enrichment import EnrichmentEngine
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
 from src.engine.llm import GeminiTriageEngine
+from src.engine.provenance import evaluation_run
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
@@ -82,10 +83,16 @@ def run_evaluation_pipeline(
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
 
-    engine = GeminiTriageEngine(api_key=api_key)
     target_db = get_database_path(db_path)
     db = DatabaseManager(db_path=target_db)
-    db.init_db()
+    with evaluation_run(db, 'evaluation') as run:
+        engine = GeminiTriageEngine(api_key=api_key)
+        return _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
+                                       results_output_dir, pacing_seconds, end_to_end, max_lookups)
+
+
+def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
+                            results_output_dir, pacing_seconds, end_to_end, max_lookups):
 
     if timelines is None:
         timelines = load_benchmark_timelines(benchmark_path)
@@ -123,18 +130,25 @@ def run_evaluation_pipeline(
 
     print(f"Starting TriageLens Real Evaluation Run across {len(timelines)} timelines...")
     print(f"Model Configuration: Primary='{engine.model}', Fallbacks={engine.fallback_models}")
-    print(f"Target Database: {target_db} (end_to_end={end_to_end})")
+    print(f"Target Database: {db.db_path} (end_to_end={end_to_end})")
+    print(f"Evaluation run: {run.run_id}")
 
     evaluation_records: List[Dict[str, Any]] = []
 
     for idx, tl in enumerate(timelines, start=1):
         print(f"[{idx:02d}/{len(timelines):02d}] Evaluating timeline '{tl.correlation_reason or tl.grouping_key}'... ", end="", flush=True)
 
+        if not db.get_timeline(tl.timeline_id):
+            db.insert_timeline(tl)
+        observation_id = run.observe(tl, idx)
+        # Stage 1 records actual reuse but does not validate this legacy cache.
+        failure_category = None
         # 1. Check persistent SQLite cache for existing verdict
         cached_verdict_row = db.get_verdict_for_timeline(tl.timeline_id)
         verdict: Optional[TriageVerdict] = None
 
         if cached_verdict_row:
+            db.mark_observation_acquisition(observation_id, 'cache')
             verdict = TriageVerdict(
                 verdict_id=UUID(cached_verdict_row["id"]),
                 timeline_id=UUID(cached_verdict_row["timeline_id"]),
@@ -145,26 +159,19 @@ def run_evaluation_pipeline(
                 recommended_actions=cached_verdict_row["recommended_actions"],
                 raw_llm_response=cached_verdict_row["raw_llm_response"],
                 model_name=cached_verdict_row.get("model_name"),
+                uncertainty_level=cached_verdict_row.get('uncertainty_level'),
+                missing_information=cached_verdict_row.get('missing_information') or [],
             )
             print(f"(cached: {verdict.model_name}) -> Severity: {verdict.severity} ", end="", flush=True)
         else:
             # 2. Execute live LLM triage
-            if not db.get_timeline(tl.timeline_id):
-                db.insert_timeline(tl)
-
             t0 = time.time()
-            try:
-                verdict = engine.analyze_timeline(tl)
-            except Exception:
-                # The attempted prediction is unavailable; persist it below.
-                verdict = None
+            acquisition = run.acquire(engine, tl, observation_id)
+            verdict = acquisition.verdict
+            failure_category = acquisition.failure_category
             elapsed = time.time() - t0
 
             if verdict:
-                try:
-                    db.insert_verdict(verdict)
-                except Exception as e:
-                    print(f"[DB save err: {e}] ", end="")
                 print(f"(live: {verdict.model_name} in {elapsed:.1f}s) -> Severity: {verdict.severity} ", end="", flush=True)
             else:
                 print("(FAILED / UNAVAILABLE) ", end="", flush=True)
@@ -175,7 +182,8 @@ def run_evaluation_pipeline(
         # 3. Evaluate against independent ground truth (ADR-008)
         eval_result = tracker.evaluate(verdict, tl)
         # Persistence failures must not produce a successful but incomplete report.
-        db.insert_evaluation(eval_result)
+        run.complete(observation_id, eval_result, tl, tracker,
+                     verdict=verdict, failure_category=failure_category)
 
         status_symbol = "OK" if eval_result.is_correct else "ERR"
         print(f"[{eval_result.category}] {status_symbol}")
@@ -324,7 +332,6 @@ Prediction errors predominantly occurred in low-evidence, 1–2 event scenarios 
     print(f"F1-Score:        {metrics['f1_score']*100:.1f}%")
     print("=" * 70)
 
-    db.close()
     return metrics
 
 

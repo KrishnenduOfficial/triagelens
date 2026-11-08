@@ -1418,6 +1418,319 @@ failures, migration checks, report-label regressions, and final offline results.
 
 ---
 
+### ADR-046: Persist Severity Evaluation Snapshots with Nullable Legacy Fields
+
+**Status:** Accepted and implemented with explicit approval (2026-11-08).
+
+**Context:** Evaluation computed severity labels and correctness in memory, but
+SQLite stored only the prediction. Both read paths omitted ground-truth severity
+and correctness, so API history reported no evaluated severity results. Binary
+correctness cannot recover severity correctness: MEDIUM versus HIGH can be a true
+positive and still have the wrong severity.
+
+**Decision:** Store `severity_ground_truth TEXT` and `severity_correct INTEGER`
+alongside the existing prediction. New evaluation writes snapshot all three values.
+Correctness is 1, 0, or SQL NULL; false and unknown remain distinct. Both read paths
+restore the persisted label and tri-state correctness. Full-history reads tolerate
+missing/partially introduced columns by selecting NULL for absent fields. Retain
+the existing legacy prediction fallback to the verdict, but never derive the
+severity label or correctness from binary results or current source records.
+
+Fresh schemas include both nullable columns. Legacy init_db adds each missing
+column independently with no defaults or backfill. Existing columns, rows, IDs,
+indexes, triggers, sequences, and FK enforcement remain intact. Repeated/partial
+initialization is safe. The ADR-045 NOT NULL migration continues to preserve these
+columns when older schemas also require its table rebuild.
+
+Existing AccuracyTracker rules remain unchanged: only non-null severity_correct
+contributes to the severity denominator. Available predictions with a severity
+label can be evaluated even when their binary ground-truth label is unknown.
+Unavailable predictions preserve any known severity label but contribute no
+severity match/mismatch. Predictions lacking severity labels remain unevaluated.
+
+**Consequences:** This resolves the severity persistence finding in ADR-045.
+Historical rows remain unknown and are excluded from severity counts; the existing
+zero-denominator accuracy value is still 0.0. No historical result is invented.
+Snapshots survive later verdict/source changes. Cached replay weighting and
+WIRE-11/live WIRE-6 completion remain separate unresolved work. No operator
+databases were migrated during verification; selected databases migrate on init_db.
+
+**Verification:** 19 new cases cover round trips, False/NULL, independent severity
+and binary correctness, mixed API history, four legacy schema combinations,
+partially extended readers, snapshot stability, and actual CLI/evaluation writes.
+Complete offline suite: **470 passed, 1 warning**. Evidence:
+`docs/results/severity_persistence_20261108.md`.
+
+---
+
+### ADR-047: Replay Provenance and Explicit Metric Scopes
+
+**Status:** Accepted design (2026-11-08); stage 1 implemented under ADR-048,
+stages 2-4 pending.
+
+**Authorization:** The operator approved provenance and metric-scope design before
+implementing counting changes. This ADR specifies the intended behavior; it does
+not declare the replay defect fixed or change existing runtime metrics.
+
+**Evidence:** Offline replay auditing observed one cached correct verdict change
+history accuracy from 50% to 66.7%, availability from 2/3 to 3/4, and calibration
+samples from two to three, with no new triage invocation. Duplicate inputs within
+one run also counted twice. Re-evaluating one verdict after a ground-truth change
+legitimately changed TP to FP. A repeated unavailable item made a new inference
+attempt and must remain separately counted. SQLite reuse currently checks only
+timeline ID, so changed evidence/model configuration can reuse an old verdict.
+
+#### Counting units and compatibility
+
+Keep the append-only evaluation history. Never delete or overwrite records simply
+because verdict_id repeats. Each input occurrence has an observation identity;
+each actual logical engine invocation has a fresh attempt identity. An engine's
+internal HTTP retries/fallbacks are not separate logical inference attempts.
+
+| Scope | Counting unit | Cache replay behavior | Unavailable/skipped behavior |
+| --- | --- | --- | --- |
+| history | Persisted evaluation rows | Retained and counted as history | Terminal unavailable rows counted; skips have no evaluation |
+| run | Evaluation rows from one run | Retained; repeated occurrences visible | Terminal unavailable rows counted; skips reported separately |
+| quality | One verdict per selected evaluation context/cohort | Same verdict/context contributes once | No-verdict outcomes excluded from quality; missing labels excluded from the relevant quality denominator |
+| attempts | Completed fresh logical inference attempts | Excluded from fresh counts and availability denominator | Every fresh unavailable attempt counted; skips/interrupted work excluded and reported separately |
+
+Availability in history/run keeps ADR-045's definition and is labelled as result
+availability, not provider uptime. In attempts scope, available means a fresh
+invocation returned a valid verdict, including unknown-label outcomes. Fresh
+availability = available fresh outcomes / completed fresh attempts. Return null
+with denominator=0 and an explanatory status when there are no fresh attempts;
+do not imply live service success from a replay-only run. Quality scope reports
+no service-availability percentage. Existing empty-denominator conventions in
+legacy history/run responses remain unchanged for compatibility.
+
+Unknown binary labels can still contribute known severity correctness (ADR-046).
+Unavailable outcomes cannot become benign predictions, FP/FN, or calibration
+samples. Pending/interrupted work is coverage information, not automatically a
+proven unavailable response. Distinguish logical attempts from remote HTTP/billing
+counts. Cached replay does not demonstrate primary-model availability.
+
+#### Provenance model
+
+Use existing SQLite and models; no new service or dependency is required.
+
+| Record | Required new information for future writes |
+| --- | --- |
+| evaluation_runs (new) | UUID run_id, CLI/evaluation entry point, start/end UTC, running/completed/failed status, requested inference-policy fingerprint, immutable cohort declaration/manifest reference or snapshot and digest |
+| triage_observations (new) | UUID observation_id, run_id, ordinal unique within run, timeline_id, acquisition origin (fresh/cache/skipped), fresh attempt_id when applicable, start/end timestamps, pending/completed/skipped/interrupted status, evidence/config fingerprints, nullable verdict reference and sanitized failure category |
+| evaluations (existing) | Nullable observation_id with a unique non-null index, evaluation-context fingerprint, quality-cohort fingerprint, provenance version; retain existing outcome and severity snapshots |
+| verdicts (existing) | Nullable evidence fingerprint, inference-policy fingerprint, cache provenance version, and UTC cache expiry; retain existing actual model attribution |
+
+Create the run/observation before invoking triage; finalize the observation and
+evaluation atomically after a terminal outcome. A persistence retry uses the same
+observation identity and cannot append the same evaluation twice. A deliberate
+new inference retry gets a new attempt/observation identity. Repeated input entries
+get separate ordinals. A skipped item records observation metadata but no outcome.
+Interrupted runs remain identifiable; do not invent an unavailable verdict for
+unfinished work. Atomic finalization must reject inconsistent duplicate writes.
+This is not a guarantee of exactly-once remote execution across process crashes.
+
+For quality aggregation, select one canonical evaluation per non-null
+(verdict_id, evaluation_context_hash) within an explicitly selected cohort. Reuse
+of this pair must have identical outcome/severity snapshots; conflicting values
+are a data-integrity error, not a reason to select an arbitrary latest row. Keep
+all observations for audit/run views. Never collapse unavailable rows using their
+null verdict IDs. Never deduplicate by timeline_id alone.
+
+#### Fingerprints and truth isolation
+
+Use versioned deterministic canonical JSON plus SHA-256; no Python process hash.
+Serialize with sorted keys, explicit separators, UTF-8, and finite JSON values.
+Persist the canonicalization version. Do not log raw evidence, credentials, or
+private evaluation labels as part of diagnostic fingerprint output.
+
+* Evidence fingerprint: final sanitized evidence sent to the model, excluding
+  synthetic timeline identity/constant grouping placeholders, but including ordered
+  forensic events, actual time window, and compact intelligence. Sanitization and
+  summary-layout versions are part of the cache contract. A cross-timeline cache
+  lookup is out of scope initially; keep the timeline relationship as well.
+* Inference-policy fingerprint: requested model, allowed fallback order/policy,
+  prompt digest/version, response schema, effective generation settings, and
+  sanitizer/serialization versions. Exclude keys, secrets, transport timeouts, and
+  independent ground truth. Persist the actual answering model separately.
+* Evaluation-context fingerprint: immutable snapshot of binary/severity labels,
+  evaluator version, and effective dataset label/severity rules. Missing, false,
+  and unknown must remain distinct. Changing labels or evaluation rules creates a
+  new context; it does not force a fresh model call when evidence is unchanged.
+* Quality-cohort fingerprint: immutable dataset-manifest revision/digest, evaluator
+  and label-policy versions, and inference policy. The manifest binds each logical
+  case/evidence identity to its resolved evaluation context. Different cases may
+  have different labels and context hashes within one cohort; the manifest fixes
+  which context belongs to each case. A changed label requires a new cohort
+  declaration/revision, not an extra competing context silently added to the old
+  cohort. A subset replay may reference the same original manifest/cohort.
+  Without a declared reusable manifest, create a run-local ad hoc cohort and label
+  it accordingly. Do not automatically pool unrelated ad hoc runs as a benchmark.
+
+Evaluation fingerprints and labels are evaluation-only metadata. They must never
+enter the model prompt, evidence fingerprint, or inference-policy/cache key.
+Stored severity outcomes remain snapshots; changing source labels does not mutate
+earlier evaluations. Two different contexts can legitimately evaluate one verdict,
+but their quality metrics must not be silently combined.
+
+#### Cache validity boundary
+
+Both persistent and in-memory reuse must identify cache origin accurately. A
+cached result is reusable only when its recorded evidence and inference policy
+match, its schema/provenance version is supported, it is unexpired, and its actual
+answering model is permitted by the current request policy. Primary-only mode
+cannot reuse a fallback result as primary success. Cache decisions should use a
+shared provider-facing acquisition result rather than infer origin from repeated
+verdict IDs. Keep existing analyze_timeline compatibility through an adapter if
+the provider protocol gains acquisition metadata.
+
+Persistent expiry uses the existing one-hour response-cache lifetime as its
+initial default, with injected UTC clocks and a configurable cache policy; expiry
+is fixed when the verdict is generated and never refreshed merely by replay.
+Old verdicts without matching provenance/expiry cannot establish a verified hit;
+they remain historical records but are cache misses for new verified requests.
+Do not attach a current fingerprint to an unverified historical verdict. This
+cache-validity correction is a distinct implementation step before verified
+replay-aware scopes are advertised.
+
+#### API contract and statistical interpretation
+
+Introduce explicit scope selection on /api/metrics: history (compatibility
+default), run (requires run_id), quality (requires cohort identifier bound to its
+immutable case/context manifest), and attempts (requires run_id or explicit policy
+cohort). Quality selection must include all eligible case-specific contexts in
+that manifest, not filter the entire dataset to one row's label/context hash.
+Reject conflicting context assignments for the same logical case within a cohort.
+Existing top-level history metric keys remain available. Add metadata
+identifying scope, counting unit, legacy coverage, cache/fresh/skipped/interrupted
+counts, applicable denominators, and cohort/context selection. Unknown/invalid
+scope combinations return validation errors instead of silently changing scope.
+No arbitrary latest-run or latest-label selection is allowed.
+
+Run and quality summaries can be displayed together but are labelled separately.
+Switching the dashboard's default presentation requires an explicit later change;
+do not silently alter existing clients' metric meaning. A canonical quality row
+is selected by stable persisted identity, never current mutable labels. The same
+canonical selection must feed confusion, calibration, severity, and intervals.
+Availability uses its own documented attempt/result denominator.
+
+Wilson intervals remain subject to their sampling assumptions. Deduplicating
+cache replays removes duplicate weighting; it does not prove independent cases.
+Multiple fresh verdicts for the same evidence can still be correlated. Expose
+unique-evidence coverage and repeated-evidence counts, and do not describe a
+narrower interval from replayed/repeated evidence as new independent validation.
+
+#### Legacy migration and staged implementation
+
+Add nullable metadata and new tables/indexes without rewriting old snapshots.
+Existing rows lacking provenance are legacy_unknown, not assumed fresh/cache.
+History retains them; quality/attempt scopes exclude unverifiable rows and disclose
+the excluded count. Do not retroactively fabricate run IDs, context hashes, cache
+origin, or fresh availability. Enforce FK/idempotency constraints for new records
+without disabling existing integrity checks or removing historical rows.
+
+1. Add provenance storage, run/observation lifecycle, idempotent terminal writes,
+   provider acquisition metadata, and legacy coverage. Keep history counting.
+2. Correct and test cache identity/expiry for both acquisition paths. Record
+   verified fresh/cache origin; preserve fallback attribution and truth isolation.
+3. Add explicit metric scopes with one shared selection layer, coverage metadata,
+   and fresh-attempt availability. Preserve default history behavior.
+4. Update operator reports and dashboard labels/selection separately; verify
+   compatibility before changing any default display.
+
+Each stage needs failing offline regressions first, meaningful migration checks,
+and the full network-isolated suite. No stage is implemented by accepting this ADR.
+
+#### Acceptance examples
+
+* Initial correct + incorrect + unavailable outcomes: two unique quality verdicts,
+  accuracy=1/2; three completed fresh attempts, availability=2/3.
+* Replay the correct cached verdict: history gains a row; quality remains 1/2;
+  no fresh attempt is added and fresh availability stays 2/3.
+* Supply the same cached item twice in a run: two replay observations, one quality
+  contribution for its verdict/context, zero fresh attempts.
+* Change an independent ground-truth label only: reuse may remain valid; create
+  a distinct evaluation context and revised/ad hoc cohort without overwriting the
+  previous snapshot. A mixed benign/malicious cohort retains both kinds of labels.
+* Retry an unavailable item: a new fresh attempt and unavailable outcome are
+  retained; never deduplicate the two failures through their null verdict IDs.
+* Change evidence, requested model policy, prompt/schema, or expiry: the old
+  verdict cannot be used as a verified replay. A new invocation is required.
+* Legacy/partially migrated data, interrupted runs, duplicate persistence writes,
+  mixed unknown/unavailable/severity states, and concurrent workers have explicit
+  regression coverage. Existing source records and prompt-isolation tests survive.
+
+**Remaining status:** Stage 1 is implemented under ADR-048; replay counting/cache
+validity are not fixed. WIRE-11 and operator/live WIRE-6 remain unresolved. Earlier severity work
+and its 470-test verification are preserved independently of this design.
+
+---
+
+### ADR-048: Run/Observation Lifecycle and Atomic Outcome Finalization
+
+**Status:** Accepted and implemented with explicit stage-1 approval (2026-11-08).
+
+**Scope:** Implement ADR-047 stage 1 while preserving current row-based history
+metrics. Do not activate cache validation, quality deduplication, new API scopes,
+or dashboard changes from later stages.
+
+**Decision:** Add evaluation_runs and triage_observations with UUID identities,
+unique ordinals per run, nullable unique fresh-attempt IDs, timestamps, lifecycle
+status, acquisition origin, sanitized failure category, and future fingerprint
+slots. Add nullable observation/context/cohort/version metadata to evaluations and
+reserved nullable cache-provenance fields to verdicts. Legacy rows stay unlinked
+and unknown; no old row receives a fabricated run or cache origin.
+
+Runners create a run before processing and an observation before each triage
+acquisition. Completed, failed, skipped, and interrupted states remain distinct.
+Skipped/inactive CLI triage records an observation but no evaluation. A missing
+CLI input directory now fails the run rather than returning a successful zero
+summary. Model failures remain Unavailable outcomes; storage/protocol failures
+propagate and mark pending observations interrupted. Normal and exceptional exits
+close the database. Hard process death can leave running/pending records, which
+remain incomplete; initialization never marks another worker's active run failed.
+
+Finalization locks with BEGIN IMMEDIATE (or a nested savepoint), checks observation,
+timeline, cohort, and verdict identity/snapshots, and atomically persists verdict,
+evaluation, and completed observation. A unique evaluation-observation index and
+canonical outcome digest make identical retries idempotent across connections.
+Conflicting retries raise instead of replacing history. Nested verdict/evaluation
+writers defer commit to finalization. Direct unlinked writes remain supported;
+linked writes must use the atomic finalizer. Fresh attempts are UUIDs minted once
+before an observed send; fallback HTTP calls share that logical attempt identity.
+
+Gemini gains an optional acquisition method and context-local notification hooks
+at actual memory-cache-return and HTTP-send boundaries. Existing analyze_timeline
+callers and the base provider protocol remain compatible. Persistent SQLite hits
+are recorded as cache origin but unverified. Opaque providers use unknown origin
+and no fresh-attempt ID; do not infer origin from repeated verdict IDs. Explicit
+acquisition providers must notify before work and return consistent metadata.
+A provenance-storage failure before sending blocks the send.
+
+The recorder stores a versioned SHA-256 evaluation-context digest of resolved
+binary/severity labels and effective dataset policies. These values never enter
+model prompts or cache keys. Each run has a distinct ad hoc cohort namespace;
+reusable manifest/cohort validation remains later-stage work. Evidence/inference
+fingerprints and verdict expiry are reserved NULL until stage 2 can establish
+them faithfully. No current fingerprint is attached to an old cached verdict.
+Cache validation remains unverified in this stage. get_provenance_coverage reports
+legacy versus linked evaluation rows; linked does not mean verified cache/quality
+eligibility or known fresh origin.
+
+**Consequences:** A replay in another observation still adds a history row. A
+retry of the same observation does not. Existing API/current-run metric shapes
+and denominators remain unchanged. Logical attempt IDs are not provider billing
+counts or exactly-once remote-execution guarantees. Crash recovery, cache validity,
+reusable cohort validation, scoped metrics, and dashboard changes remain pending.
+
+**Verification:** 26 new offline cases cover lifecycle, atomic rollback, concurrent
+finalization, identical/conflicting retries, injected clocks, skips/interrupts,
+legacy unknowns, real send/memory/persistent-cache origins, fallback attribution,
+before-send storage failure, prompt isolation, and CLI/API history compatibility.
+Full suite: **496 passed, 1 warning**. Evidence:
+`docs/results/run_provenance_stage1_20261108.md`.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

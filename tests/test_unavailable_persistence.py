@@ -108,7 +108,8 @@ def test_legacy_migration_preserves_rows_ids_sequence_indexes_and_foreign_keys(t
 def test_failed_legacy_migration_rolls_back_table_rebuild(db):
     conn = db.connection
     conn.execute("DROP TABLE evaluations")
-    conn.execute("CREATE TABLE evaluations(id INTEGER PRIMARY KEY AUTOINCREMENT, timeline_id TEXT NOT NULL, verdict_id TEXT NOT NULL, ground_truth INTEGER, llm_prediction INTEGER NOT NULL, is_correct INTEGER, category TEXT NOT NULL, evaluated_at TEXT NOT NULL, confidence_score REAL, severity_prediction TEXT, FOREIGN KEY(timeline_id) REFERENCES timelines(id), FOREIGN KEY(verdict_id) REFERENCES verdicts(id))")
+    # Keep the old NOT NULL constraints under test, with current writer columns.
+    conn.execute("CREATE TABLE evaluations(id INTEGER PRIMARY KEY AUTOINCREMENT, timeline_id TEXT NOT NULL, verdict_id TEXT NOT NULL, ground_truth INTEGER, llm_prediction INTEGER NOT NULL, is_correct INTEGER, category TEXT NOT NULL, evaluated_at TEXT NOT NULL, confidence_score REAL, severity_prediction TEXT, severity_ground_truth TEXT, severity_correct INTEGER, observation_id TEXT, evaluation_context_hash TEXT, quality_cohort_hash TEXT, provenance_version INTEGER, FOREIGN KEY(timeline_id) REFERENCES timelines(id), FOREIGN KEY(verdict_id) REFERENCES verdicts(id))")
     conn.commit()
     tl = timeline()
     db.insert_timeline(tl)

@@ -26,8 +26,10 @@ timeout defaults, answer validation, and safe HTTP 429/503 failure reporting (AD
 Live verification still returned Gemini HTTP 429; WIRE-11 remains unresolved.
 Do not close it based on the local corrections or a successful fallback.
 
-Latest verification with the built-in pytest network guard: **451 passed,
-1 warning**. Unavailable-outcome persistence and availability reconstruction are
+Latest verification with the built-in pytest network guard: **496 passed,
+1 warning**. Replay provenance stage 1 is fixed (ADR-048), verified by 26 new
+offline cases with history counting preserved. Severity-result persistence is fixed (ADR-046), verified by 19 new
+offline cases. Unavailable-outcome persistence and availability reconstruction are
 fixed (ADR-045), verified by 19 new offline cases. Shared database-path resolution
 is fixed (ADR-044), verified by 27
 new offline cases. Per-attempt daily-quota enforcement is fixed (ADR-043), verified by
@@ -44,10 +46,27 @@ and request-correction cases also pass. Live WIRE-11 remains unresolved.
   labels, skipped triage, API-only unavailable history, migration rollback and
   preservation, storage failure reporting, and generated report labels.
   Evidence: `docs/results/unavailable_outcomes_20261108.md`.
-* [ ] WIRE-6 severity follow-up: persist/reconstruct severity evaluation fields;
-  the repeated-run audit reproduced their loss after a SQLite round trip.
-* [ ] Repeated evaluation policy: cached replay adds another evaluation row;
-  define unique-prediction versus attempt/run reporting before changing weighting.
+* [x] WIRE-6 severity follow-up: snapshot severity ground truth and tri-state
+  correctness alongside prediction; restore both reader paths and API counts.
+  Add nullable columns to supported legacy schemas without guessing historical
+  values; preserve unavailable migration compatibility, IDs, indexes/triggers,
+  sequences, FK checks, and all rollback assertions.
+  Evidence: `docs/results/severity_persistence_20261108.md`.
+* [x] Replay provenance and metric-scope design accepted (ADR-047): preserve run
+  history, separate quality units from fresh attempts, require explicit contexts,
+  preserve legacy unknowns, and validate cache identity before verified reuse.
+  Stage 1 is implemented separately; runtime history counting is unchanged.
+* [x] Replay implementation stage 1 (ADR-048): provenance/run/observation storage,
+  idempotent atomic outcomes, acquisition-origin hooks, legacy coverage, skipped
+  and interrupted states, and safe database closure. Opaque providers remain
+  unknown; cache hits are unverified; each run currently has an ad hoc namespace.
+  Evidence: `docs/results/run_provenance_stage1_20261108.md`.
+* [ ] Replay implementation stage 2: evidence/model-policy/expiry validation and
+  shared fresh/cache acquisition metadata, including the in-memory path.
+* [ ] Replay implementation stage 3: explicit history/run/quality/attempt metric
+  scopes with coverage and denominator metadata; history remains the default.
+* [ ] Replay implementation stage 4: operator/dashboard scope presentation and
+  compatibility verification before changing any default display.
 * [x] WIRE-6 path follow-up: resolve CLI/API/evaluation database targets through
   one project-root-based helper, normalize blank environment settings, reject blank
   explicit overrides and ambiguous Windows partial paths, create parents, and

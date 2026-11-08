@@ -29,6 +29,7 @@ from src.engine.enrichment import (
 from src.engine.evaluation import AccuracyTracker
 from src.engine.intake import AlertIntakeEngine
 from src.engine.llm import GeminiTriageEngine
+from src.engine.provenance import evaluation_run
 from src.engine.timeline import TimelineBuilder
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
@@ -95,6 +96,11 @@ def run_pipeline(
 
     # 1. Initialize SQLite Database
     db = DatabaseManager(db_path=db_file, check_same_thread=False)
+    with evaluation_run(db, 'cli') as run:
+        return _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups)
+
+
+def _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups):
 
     # 2. Initialize Processing Engines
     intake_engine = AlertIntakeEngine()
@@ -123,7 +129,7 @@ def run_pipeline(
 
     with db:
         # Ensure database tables exist
-        db.init_db()
+        logger.info('Evaluation run: %s', run.run_id)
 
         # =================================================================
         # Stage 1: Alert Intake
@@ -134,7 +140,7 @@ def run_pipeline(
 
         if not os.path.exists(data_dir):
             logger.error("Data directory '%s' does not exist.", data_dir)
-            return accuracy_tracker.get_metrics()
+            raise FileNotFoundError('Pipeline input directory does not exist')
 
         for batch in intake_engine.ingest_directory(data_dir, batch_size=100):
             for alert in batch:
@@ -197,6 +203,7 @@ def run_pipeline(
         verdicts_generated = 0
 
         for idx, tl in enumerate(timelines, start=1):
+            observation_id = run.observe(tl, idx)
             logger.info(
                 "Processing Timeline [%d/%d]: '%s' (%d events)",
                 idx,
@@ -206,19 +213,11 @@ def run_pipeline(
             )
 
             if triage_engine:
-                verdict: Optional[TriageVerdict] = None
-                try:
-                    verdict = triage_engine.analyze_timeline(tl)
-                except Exception as exc:
-                    logger.warning(
-                        "Resilient exception during AI triage for timeline '%s': %s",
-                        tl.timeline_id,
-                        exc,
-                    )
+                acquisition = run.acquire(triage_engine, tl, observation_id)
+                verdict = acquisition.verdict
 
                 if verdict:
                     verdicts_generated += 1
-                    db.insert_verdict(verdict)
                     logger.info(
                         "  -> AI Verdict: Severity=%s | Confidence=%.2f | Summary: %s",
                         verdict.severity,
@@ -230,13 +229,15 @@ def run_pipeline(
                     logger.warning("  -> AI triage produced no verdict (rate limit, timeout, or schema rejection).")
                 # Every attempted triage contributes an outcome, even without a verdict.
                 eval_result = accuracy_tracker.evaluate(verdict, tl)
-                db.insert_evaluation(eval_result)
+                run.complete(observation_id, eval_result, tl, accuracy_tracker,
+                             verdict=verdict, failure_category=acquisition.failure_category)
                 logger.info(
                     "  -> Ground Truth Evaluation: Category='%s' | Match=%s",
                     eval_result.category,
                     eval_result.is_correct,
                 )
             else:
+                db.skip_observation(observation_id)
                 logger.info("  -> AI Triage bypassed (LLM engine inactive).")
 
     # =================================================================

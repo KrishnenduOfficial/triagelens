@@ -1,13 +1,36 @@
 # GEMINI.md â€” TriageLens
 ## Current verification update — 2026-11-08
 
+Replay provenance stage 1 is implemented (ADR-048): run/observation lifecycle,
+atomic idempotent outcomes, actual cache/send origin hooks, opaque-provider unknown
+origin, and legacy coverage. Replays still add history rows; same-observation write
+retries do not. Cache hits remain unverified and fingerprints/expiry are reserved
+for stage 2. Ad hoc cohort namespaces do not implement verified quality scopes.
+The latest offline suite reports **496 passed, 1 warning**, with 26 new cases.
+See `docs/results/run_provenance_stage1_20261108.md`. WIRE-11 remains unresolved.
+
+Replay provenance and metric-scope design is accepted in ADR-047.
+History/run observations, unique verdict/context quality units, and completed
+fresh attempts have separate counting rules. Legacy provenance remains unknown;
+cache reuse needs evidence/model-policy/expiry validation. Staged implementation
+continues in stages 2-4; history counting and API behavior remain unchanged by
+stage 1. The earlier design-only task made no runtime changes.
+
+Severity evaluation snapshots now persist and reconstruct through SQLite/API
+(ADR-046). The label and True/False/unknown correctness survive round trips;
+legacy schemas gain nullable columns without historical backfill. Known binary
+correctness is not substituted for severity correctness. That task's offline suite
+reports **470 passed, 1 warning**, with 19 new cases. See
+`docs/results/severity_persistence_20261108.md`. Cached replay weighting remains
+open; WIRE-11 and operator/live WIRE-6 completion remain unresolved.
+
 Unavailable triage outcomes now persist with null verdict/prediction values in
 CLI and evaluation runs (ADR-045). API availability reconstructs those outcomes;
 skipped/inactive CLI triage is excluded. Supported legacy schemas migrate under a
 savepoint with FK checks enabled; custom inbound references are refused. Historical
-missing failures are not backfilled. The latest offline suite reports **451 passed,
+missing failures are not backfilled. That task's offline suite reported **451 passed,
 1 warning**, with 19 new cases. See `docs/results/unavailable_outcomes_20261108.md`.
-Severity persistence and cached replay weighting remain separate open findings.
+Cached replay weighting remains a separate open finding.
 Latest operator evidence is smoke HTTP 200 followed by primary-only HTTP 429,
 with no valid verdict; its exact quota window is not shown. WIRE-11 remains paused.
 
