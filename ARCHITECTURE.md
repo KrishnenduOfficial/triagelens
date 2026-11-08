@@ -425,7 +425,7 @@ predictions and missing severity labels do not enter severity accuracy. Historic
 unknown rows remain excluded; zero evaluated results retain the existing 0.0
 accuracy convention. See `docs/results/severity_persistence_20261108.md`.
 
-### Replay Provenance and Metric Scopes (ADR-047; stage 1 ADR-048)
+### Replay Provenance and Metric Scopes (ADR-047; stages 1-2 ADR-048/049)
 
 Accepted design separates stored history/run rows, unique verdict/context quality
 units, and completed fresh logical attempts. It adds run/observation provenance,
@@ -445,8 +445,24 @@ run and interrupt pending work. Skips have observation metadata and no evaluatio
 Contexts store independent-label/policy digests outside prompts. Each run currently
 has an ad hoc cohort namespace; legacy rows remain unknown. Gemini reports actual
 cache/send origin via context-local hooks, while opaque providers remain unknown.
-Cache validity/fingerprints/expiry, verified reusable cohorts, and metric scopes
-remain later stages. See `docs/results/run_provenance_stage1_20261108.md`.
+Verified reusable cohorts and metric scopes remain later stages. See
+`docs/results/run_provenance_stage1_20261108.md`.
+
+Stage 2 prepares one sanitized request and hashes model-visible evidence plus the
+complete inference policy/template/schema. Memory and SQLite acquisition use a
+shared validator for provenance version, identity, answering-model eligibility,
+fixed expiry, fresh schema validation, and body digest. Memory returns detached
+snapshots; persistent acquisition does not bypass SQLite through memory. Legacy
+or rejected entries cause fresh triage without rewriting old records. Expiry is
+generation-based, bounded by configured TTL, and rejects exact deadlines/future
+generation. UTC and memory-age clocks are injectable. No label/evaluation hash
+or credential enters the inference cache contract or model prompt.
+
+Observations record verified cache hits or rejected candidates followed by fresh
+acquisition. Fresh verdict provenance is persisted atomically; existing provenance
+cannot be rewritten. Historical API lookup stays separate and both evaluation
+scripts use shared cache acquisition. History counts and metric shapes are unchanged.
+See `docs/results/verdict_cache_validity_20261108.md`.
 
 ### Empirical Benchmarks
 

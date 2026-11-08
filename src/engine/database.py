@@ -20,6 +20,7 @@ from src.models.enrichment import EnrichmentResult
 from src.models.evaluation import EvaluationResult
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
+from src.engine.verdict_cache import CacheProvenance
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +331,8 @@ class DatabaseManager:
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_observation ON evaluations(observation_id) WHERE observation_id IS NOT NULL')
         existing_verdict = {row['name'] for row in conn.execute('PRAGMA table_info(verdicts)')}
         for name, declaration in {'evidence_hash':'TEXT','inference_policy_hash':'TEXT',
-                                  'cache_provenance_version':'INTEGER','cache_expires_at':'TEXT'}.items():
+                                  'cache_provenance_version':'INTEGER','cache_expires_at':'TEXT',
+                                  'cache_generated_at':'TEXT','cache_verdict_hash':'TEXT'}.items():
             if name not in existing_verdict:
                 conn.execute(f'ALTER TABLE verdicts ADD COLUMN {name} {declaration}')
 
@@ -375,17 +377,24 @@ class DatabaseManager:
                          (observation_id,str(run_id),ordinal,str(timeline_id),self._now_utc()))
         return observation_id
 
-    def mark_observation_acquisition(self, observation_id: str, origin: str) -> None:
+    def mark_observation_acquisition(self, observation_id: str, origin: str,
+                                     cache_validation: str = 'unverified', contract=None) -> None:
         if origin not in ('fresh','cache','unknown'):
             raise ValueError('Invalid acquisition origin')
+        if cache_validation not in ('unverified','verified','rejected'):
+            raise ValueError('Invalid cache validation state')
+        if cache_validation=='verified' and (origin!='cache' or contract is None):
+            raise ValueError('Verified cache origin requires a contract')
+        evidence_hash = contract.evidence_hash if contract else None
+        policy_hash = contract.inference_policy_hash if contract else None
         with self._atomic_write() as conn:
             row = self._pending_observation(conn, observation_id)
             if row['origin'] is not None:
-                if row['origin'] != origin:
+                if (row['origin'],row['cache_validation'],row['evidence_hash'],row['inference_policy_hash']) != (origin,cache_validation,evidence_hash,policy_hash):
                     raise ValueError('Acquisition origin conflict')
                 return
-            conn.execute('UPDATE triage_observations SET origin=?,attempt_id=? WHERE observation_id=?',
-                         (origin,str(uuid4()) if origin=='fresh' else None,str(observation_id)))
+            conn.execute('UPDATE triage_observations SET origin=?,attempt_id=?,cache_validation=?,evidence_hash=?,inference_policy_hash=? WHERE observation_id=?',
+                         (origin,str(uuid4()) if origin=='fresh' else None,cache_validation,evidence_hash,policy_hash,str(observation_id)))
 
     def skip_observation(self, observation_id: str) -> None:
         with self._atomic_write() as conn:
@@ -412,7 +421,8 @@ class DatabaseManager:
 
     def finalize_observation(self, observation_id: str, result: EvaluationResult,
                              verdict: Optional[TriageVerdict] = None,
-                             failure_category: Optional[str] = None) -> int:
+                             failure_category: Optional[str] = None,
+                             cache_provenance: Optional[CacheProvenance] = None) -> int:
         if failure_category not in (None,'no_verdict','engine_error'):
             raise ValueError('Invalid failure category')
         if result.observation_id is not None and str(result.observation_id) != str(observation_id):
@@ -441,6 +451,7 @@ class DatabaseManager:
                     raise ValueError('Verdict timeline conflict')
             digest = hashlib.sha256(json.dumps({'outcome':snapshot.model_dump(mode='json'),
                                                'verdict':verdict.model_dump(mode='json') if verdict else None,
+                                               'cache':cache_provenance.as_record() if cache_provenance else None,
                                                'failure':failure_category},sort_keys=True,separators=(',',':'),
                                               allow_nan=False).encode('utf-8')).hexdigest()
             if row['status'] == 'completed':
@@ -453,10 +464,46 @@ class DatabaseManager:
             self._pending_observation(conn, observation_id)
             if verdict is not None and existing is None:
                 self.insert_verdict(verdict)
+            if cache_provenance is not None:
+                if verdict is None:
+                    raise ValueError('Cache provenance requires a verdict')
+                self._store_cache_provenance(conn,verdict.verdict_id,cache_provenance,existing is not None)
             evaluation_id = self.insert_evaluation(snapshot)
             conn.execute("UPDATE triage_observations SET status='completed',origin=COALESCE(origin,'unknown'),ended_at=?,verdict_id=?,failure_category=?,outcome_hash=? WHERE observation_id=?",
                          (self._now_utc(),str(result.verdict_id) if result.verdict_id else None,failure_category,digest,str(observation_id)))
             return evaluation_id
+
+    def _store_cache_provenance(self, conn, verdict_id, provenance, existed):
+        if not isinstance(provenance,CacheProvenance):
+            raise ValueError('Invalid verdict cache provenance')
+        if existed:
+            row = conn.execute('SELECT * FROM verdicts WHERE id=?',(str(verdict_id),)).fetchone()
+            try:
+                if CacheProvenance.from_record(row)==provenance:
+                    return
+            except (ValueError,TypeError,KeyError,OverflowError):
+                pass
+            raise ValueError('Existing verdict cache provenance cannot be rewritten')
+        fields = provenance.as_record()
+        assignments = ','.join(f'{name}=?' for name in fields)
+        conn.execute(f'UPDATE verdicts SET {assignments} WHERE id=?',(*fields.values(),str(verdict_id)))
+
+    def persist_cached_verdict(self, verdict: TriageVerdict, provenance=None) -> None:
+        """Cache-only writers retain history without creating evaluation rows."""
+        with self._atomic_write() as conn:
+            existing = self.get_verdict(verdict.verdict_id)
+            if existing is None:
+                self.insert_verdict(verdict)
+            elif TriageVerdict(**{**existing,'verdict_id':existing['id']}) != verdict:
+                raise ValueError('Verdict snapshot conflict')
+            if provenance is not None:
+                self._store_cache_provenance(conn,verdict.verdict_id,provenance,existing is not None)
+
+    def get_verdict_cache_candidates(self, timeline_id):
+        """Raw candidates for validation; historical display uses its existing getter."""
+        with self._lock:
+            return [dict(row) for row in self.connect().execute(
+                'SELECT * FROM verdicts WHERE timeline_id=? ORDER BY created_at DESC,id DESC',(str(timeline_id),))]
 
     def get_provenance_coverage(self) -> Dict[str, int]:
         with self._lock:

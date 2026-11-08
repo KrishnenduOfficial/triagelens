@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-496_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-529_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -187,7 +187,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Gemini communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (496 passing tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (529 passing tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind | Dark-mode SOC analyst investigation console |
 
 ---
@@ -259,7 +259,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 
 ### 5.3 Run Automated Test Suite
 
-TriageLens contains 496 unit, adversarial, security, and regression test cases.
+TriageLens contains 529 unit, adversarial, security, and regression test cases.
 External providers use injected stubs or test-scoped mocks. An autouse guard in
 `tests/conftest.py` rejects real HTTP/TCP attempts; local credentials do not enable
 live calls. The end-to-end enrichment case verifies both credential states while
@@ -307,10 +307,20 @@ CLI and evaluation runs now record run IDs, observation lifecycles, acquisition
 origin, and atomic outcome links. Retrying the same observation cannot duplicate
 its evaluation; a separate replay observation still adds a history row. Skips
 have no evaluation, and interrupted work is distinguished from unavailable model
-results. Opaque providers retain unknown origin and cache hits remain unverified.
-Legacy evaluations keep unknown provenance. Cache validation and scoped quality
-metrics are later stages; default API history counting is unchanged. See the
+results. Opaque providers retain unknown origin. Legacy evaluations keep unknown
+provenance. Scoped quality metrics remain a later stage; default API history
+counting is unchanged. See the
 [stage-1 verification](docs/results/run_provenance_stage1_20261108.md).
+
+Verdict caches now validate sanitized evidence, complete inference policy, actual
+answering-model eligibility, schema/provenance version, body integrity, and fixed
+expiry. A label-only change can reuse inference; a changed prompt/model policy
+cannot. Memory snapshots are detached from returned objects. Legacy entries lacking
+provenance remain historical records but require fresh triage before verified reuse.
+The default one-hour TTL is configurable in the engine and bounded by any shorter
+supplied memory-cache TTL. Replays do not renew expiry. Both evaluation scripts
+share validation; historical API display and history counting are preserved. See
+the [stage-2 verification](docs/results/verdict_cache_validity_20261108.md).
 
 Provider `intel_summary` objects stay strictly below 800 UTF-8 bytes as formatted
 inside the final prompt's evidence JSON. The shared limiter accounts for escaping,
@@ -326,7 +336,7 @@ pytest -v
 
 Expected output:
 ```text
-======================== 496 passed, 1 warning ========================
+======================== 529 passed, 1 warning ========================
 ```
 
 ---
@@ -516,7 +526,7 @@ triagelens/
 │   └── utils/                 # Security & extraction utilities
 │       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-├── tests/                     # 496 passing adversarial, security, and unit test cases
+├── tests/                     # 529 passing adversarial, security, and unit test cases
 │   ├── test_api_adversarial.py
 │   ├── test_database_adversarial.py
 │   ├── test_enrichment.py

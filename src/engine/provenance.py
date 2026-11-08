@@ -9,6 +9,7 @@ import logging
 from typing import Callable, Optional
 
 from src.models.triage import TriageVerdict
+from src.engine.verdict_cache import CacheContract, CacheProvenance
 
 logger = logging.getLogger(__name__)
 _ACQUISITION = ContextVar('triage_acquisition', default=None)
@@ -19,6 +20,19 @@ class AcquisitionOutcome:
     verdict: Optional[TriageVerdict]
     origin: str = 'unknown'
     failure_category: Optional[str] = None
+    cache_provenance: Optional[CacheProvenance] = None
+    cache_validation: str = 'unverified'
+    cache_contract: Optional[CacheContract] = None
+
+
+def acquisition_trace():
+    return _ACQUISITION.get()
+
+
+def note_cache_state(validation, contract, provenance=None):
+    trace = _ACQUISITION.get()
+    if trace is not None:
+        trace.update(cache_validation=validation,cache_contract=contract,cache_provenance=provenance)
 
 
 def note_acquisition(origin: str) -> None:
@@ -31,8 +45,9 @@ def note_acquisition(origin: str) -> None:
         trace['origin'] = origin
 
 
-def traced_acquisition(analyze: Callable, timeline, callback: Callable[[str], None]) -> AcquisitionOutcome:
-    trace = {'origin':'unknown','callback':callback}
+def traced_acquisition(analyze: Callable, timeline, callback: Callable[[str], None], persistent_cache=None) -> AcquisitionOutcome:
+    trace = {'origin':'unknown','callback':callback,'persistent_cache':persistent_cache,
+             'cache_validation':'unverified','cache_contract':None,'cache_provenance':None}
     token = _ACQUISITION.set(trace)
     try:
         try:
@@ -40,8 +55,10 @@ def traced_acquisition(analyze: Callable, timeline, callback: Callable[[str], No
         except AcquisitionPersistenceError:
             raise
         except Exception:
-            return AcquisitionOutcome(None, trace['origin'], 'engine_error')
-        return AcquisitionOutcome(verdict, trace['origin'], None if verdict is not None else 'no_verdict')
+            return AcquisitionOutcome(None,trace['origin'],'engine_error',None,
+                                      trace['cache_validation'],trace['cache_contract'])
+        return AcquisitionOutcome(verdict,trace['origin'],None if verdict is not None else 'no_verdict',
+                                  trace['cache_provenance'],trace['cache_validation'],trace['cache_contract'])
     finally:
         _ACQUISITION.reset(token)
 
@@ -50,7 +67,7 @@ class AcquisitionPersistenceError(RuntimeError):
     """Fail acquisition rather than misclassifying failed provenance storage."""
 
 
-def acquire_triage(engine, timeline, callback) -> AcquisitionOutcome:
+def acquire_triage(engine, timeline, callback, persistent_cache=None) -> AcquisitionOutcome:
     observed = None
 
     def persist_origin(origin):
@@ -63,7 +80,10 @@ def acquire_triage(engine, timeline, callback) -> AcquisitionOutcome:
 
     acquire = getattr(engine, 'acquire_timeline', None)
     if callable(acquire):
-        result = acquire(timeline, on_acquisition=persist_origin)
+        kwargs = {'on_acquisition':persist_origin}
+        if getattr(engine,'supports_persistent_cache',False) is True:
+            kwargs['persistent_cache']=persistent_cache
+        result = acquire(timeline, **kwargs)
         if not isinstance(result, AcquisitionOutcome):
             raise TypeError('Acquisition provider must return AcquisitionOutcome')
         if result.origin not in ('fresh','cache','unknown'):
@@ -90,13 +110,19 @@ class RunRecorder:
     def __init__(self, db, entrypoint):
         self.db = db
         self.run_id = db.create_evaluation_run(entrypoint)
+        self._acquisitions = {}
 
     def observe(self, timeline, ordinal):
         return self.db.start_observation(self.run_id, ordinal, timeline.timeline_id)
 
     def acquire(self, engine, timeline, observation_id):
-        return acquire_triage(engine, timeline,
-                              lambda origin:self.db.mark_observation_acquisition(observation_id, origin))
+        def record(origin):
+            trace = acquisition_trace() or {}
+            self.db.mark_observation_acquisition(observation_id,origin,
+                cache_validation=trace.get('cache_validation','unverified'),contract=trace.get('cache_contract'))
+        outcome = acquire_triage(engine,timeline,record,persistent_cache=self.db)
+        self._acquisitions[observation_id]=outcome
+        return outcome
 
     def complete(self, observation_id, result, timeline, tracker, verdict=None, failure_category=None):
         # Independent label/policy metadata stays exclusively in the evaluation layer.
@@ -111,7 +137,9 @@ class RunRecorder:
                                 'policies':sorted(policies,key=lambda policy:json.dumps(policy,sort_keys=True))})
         run = self.db.get_evaluation_run(self.run_id)
         snapshot = result.model_copy(update={'evaluation_context_hash':context,'quality_cohort_hash':run['quality_cohort_hash']})
-        return self.db.finalize_observation(observation_id,snapshot,verdict=verdict,failure_category=failure_category)
+        acquisition = self._acquisitions.get(observation_id)
+        return self.db.finalize_observation(observation_id,snapshot,verdict=verdict,failure_category=failure_category,
+                                            cache_provenance=acquisition.cache_provenance if acquisition else None)
 
 
 @contextmanager

@@ -26,8 +26,9 @@ timeout defaults, answer validation, and safe HTTP 429/503 failure reporting (AD
 Live verification still returned Gemini HTTP 429; WIRE-11 remains unresolved.
 Do not close it based on the local corrections or a successful fallback.
 
-Latest verification with the built-in pytest network guard: **496 passed,
-1 warning**. Replay provenance stage 1 is fixed (ADR-048), verified by 26 new
+Latest verification with the built-in pytest network guard: **529 passed,
+1 warning**. Stage-2 cache validity is fixed (ADR-049), verified by 33 new offline
+cases with history preserved. Replay provenance stage 1 is fixed (ADR-048), verified by 26 new
 offline cases with history counting preserved. Severity-result persistence is fixed (ADR-046), verified by 19 new
 offline cases. Unavailable-outcome persistence and availability reconstruction are
 fixed (ADR-045), verified by 19 new offline cases. Shared database-path resolution
@@ -59,10 +60,13 @@ and request-correction cases also pass. Live WIRE-11 remains unresolved.
 * [x] Replay implementation stage 1 (ADR-048): provenance/run/observation storage,
   idempotent atomic outcomes, acquisition-origin hooks, legacy coverage, skipped
   and interrupted states, and safe database closure. Opaque providers remain
-  unknown; cache hits are unverified; each run currently has an ad hoc namespace.
+  unknown; stage-1 hits were unverified; each run currently has an ad hoc namespace.
   Evidence: `docs/results/run_provenance_stage1_20261108.md`.
-* [ ] Replay implementation stage 2: evidence/model-policy/expiry validation and
-  shared fresh/cache acquisition metadata, including the in-memory path.
+* [x] Replay implementation stage 2 (ADR-049): shared prepared evidence/policy
+  contracts, schema/body/provenance validation, fixed UTC expiry and injected clocks,
+  immutable memory snapshots, verified/rejected acquisition metadata, and safe
+  legacy misses. Both evaluation scripts share validation; API history is unchanged.
+  Evidence: `docs/results/verdict_cache_validity_20261108.md`.
 * [ ] Replay implementation stage 3: explicit history/run/quality/attempt metric
   scopes with coverage and denominator metadata; history remains the default.
 * [ ] Replay implementation stage 4: operator/dashboard scope presentation and

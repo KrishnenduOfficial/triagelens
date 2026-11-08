@@ -1,20 +1,28 @@
 # GEMINI.md â€” TriageLens
 ## Current verification update — 2026-11-08
 
+Stage-2 verdict cache validity is enforced (ADR-049). Memory/SQLite use shared
+evidence/policy/schema/provenance/model/expiry checks and detached snapshots.
+Invalid/legacy entries refresh without overwriting history; labels alone do not
+invalidate inference reuse. Valid hits are verified; history counting is unchanged.
+The latest offline suite reports **529 passed, 1 warning**, with 33 new cases.
+See `docs/results/verdict_cache_validity_20261108.md`. Stages 3-4, reusable cohort
+validation, and WIRE-11 remain unresolved; no live requests were made.
+
 Replay provenance stage 1 is implemented (ADR-048): run/observation lifecycle,
 atomic idempotent outcomes, actual cache/send origin hooks, opaque-provider unknown
 origin, and legacy coverage. Replays still add history rows; same-observation write
-retries do not. Cache hits remain unverified and fingerprints/expiry are reserved
-for stage 2. Ad hoc cohort namespaces do not implement verified quality scopes.
-The latest offline suite reports **496 passed, 1 warning**, with 26 new cases.
+retries do not. Those initial hooks did not verify cache validity; ADR-049 now does.
+Ad hoc cohort namespaces do not implement verified quality scopes.
+That task's offline suite reported **496 passed, 1 warning**, with 26 new cases.
 See `docs/results/run_provenance_stage1_20261108.md`. WIRE-11 remains unresolved.
 
 Replay provenance and metric-scope design is accepted in ADR-047.
 History/run observations, unique verdict/context quality units, and completed
 fresh attempts have separate counting rules. Legacy provenance remains unknown;
 cache reuse needs evidence/model-policy/expiry validation. Staged implementation
-continues in stages 2-4; history counting and API behavior remain unchanged by
-stage 1. The earlier design-only task made no runtime changes.
+continues in stages 3-4; history counting and metric API behavior remain unchanged.
+The earlier design-only task made no runtime changes.
 
 Severity evaluation snapshots now persist and reconstruct through SQLite/API
 (ADR-046). The label and True/False/unknown correctness survive round trips;

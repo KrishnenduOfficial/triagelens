@@ -4,17 +4,19 @@ Provides structured threat analysis, severity scoring, and investigative recomme
 while enforcing PII masking and defense against hallucinations.
 """
 
-import hashlib
 import json
 import logging
+import math
 import os
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
 import httpx
 from pydantic import ValidationError
-from src.engine.provenance import note_acquisition, traced_acquisition
+from src.engine.provenance import (AcquisitionPersistenceError, acquisition_trace,
+                                   note_acquisition, note_cache_state, traced_acquisition)
+from src.engine.verdict_cache import CacheContract, CacheProvenance, fingerprint, validated_candidate
 
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -22,6 +24,7 @@ from src.models.triage import TriageVerdict
 from src.utils.masking import PIIScrubber
 
 logger = logging.getLogger(__name__)
+CACHE_PREPARATION_VERSION = 1
 
 DFIR_SYSTEM_PROMPT = """You are an elite Tier-3 Digital Forensics and Incident Response (DFIR) security analyst.
 Your mission is to perform automated security alert triage and threat analysis on chronological timelines.
@@ -74,32 +77,52 @@ class TriageProvider(Protocol):
 class LLMResponseCache:
     """Thread-safe in-memory response cache for LLM triage assessments.
 
-    Caches validated TriageVerdict objects keyed by SHA-256 hash of the sanitized
-    timeline evidence and target model. Supports bounded size and TTL expiration.
+    Stores serialized verdict snapshots with optional immutable provenance under
+    prepared contract keys. Engine acquisition additionally validates that provenance.
+    Supports bounded size, injected memory-age clocks, and strict TTL expiration.
     """
 
-    def __init__(self, max_size: int = 1000, ttl_seconds: Optional[int] = 3600) -> None:
+    def __init__(self, max_size: int = 1000, ttl_seconds: Optional[int] = 3600,
+                 clock: Optional[Callable[[], float]] = None) -> None:
+        if max_size < 1:
+            raise ValueError('Cache size must be positive')
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
-        self._cache: Dict[str, Tuple[TriageVerdict, float]] = {}
+        self.clock = clock if clock is not None else time.monotonic
+        self._cache = {}
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Optional[TriageVerdict]:
+        return self.lookup(key)[0]
+
+    def lookup(self, key):
+        """Return a detached validated snapshot, provenance, and rejection indicator."""
         with self._lock:
             if key not in self._cache:
-                return None
-            verdict, timestamp = self._cache[key]
-            if self.ttl_seconds is not None and (time.time() - timestamp) > self.ttl_seconds:
+                return None, None, False
+            try:
+                encoded, timestamp, provenance = self._cache[key]
+                expired = self.ttl_seconds is not None and (self.clock()-timestamp)>=self.ttl_seconds
+            except (ValueError,TypeError):
                 del self._cache[key]
-                return None
-            return verdict
+                return None, None, True
+            if expired:
+                del self._cache[key]
+                return None, None, True
+            try:
+                return TriageVerdict.model_validate(json.loads(encoded)), provenance, False
+            except (ValueError,TypeError):
+                del self._cache[key]
+                return None, None, True
 
-    def set(self, key: str, verdict: TriageVerdict) -> None:
+    def set(self, key: str, verdict: TriageVerdict, provenance=None) -> None:
+        snapshot = TriageVerdict.model_validate(verdict.model_dump(mode='json'))
+        encoded = json.dumps(snapshot.model_dump(mode='json'),allow_nan=False)
         with self._lock:
             if len(self._cache) >= self.max_size:
                 oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
                 del self._cache[oldest_key]
-            self._cache[key] = (verdict, time.time())
+            self._cache[key] = (encoded, self.clock(), provenance)
 
     def clear(self) -> None:
         with self._lock:
@@ -421,6 +444,8 @@ class GeminiTriageEngine:
         cache: Optional[LLMResponseCache] = None,
         request_sender: Optional[Callable[..., httpx.Response]] = None,
         include_error_details: bool = True,
+        cache_ttl_seconds: float = 3600,
+        utc_clock: Optional[Callable[[], float]] = None,
     ) -> None:
         """Initializes the GeminiTriageEngine.
 
@@ -434,6 +459,8 @@ class GeminiTriageEngine:
             cache: Custom LLMResponseCache instance. Defaults to a new bounded in-memory cache.
             request_sender: Optional injected HTTP POST callable; defaults to httpx.post.
             include_error_details: Include sanitized error text in logs. Diagnostics disable it.
+            cache_ttl_seconds: Positive finite cache policy lifetime (default: one hour).
+            utc_clock: Optional epoch-seconds clock for cache validity and generation dates.
 
         Raises:
             ValueError: If no API key is provided and GEMINI_API_KEY is not set.
@@ -456,6 +483,10 @@ class GeminiTriageEngine:
         self.timeout = timeout
         self.request_sender = request_sender
         self.include_error_details = include_error_details
+        if not math.isfinite(cache_ttl_seconds) or cache_ttl_seconds <= 0:
+            raise ValueError('Verdict cache TTL must be positive and finite')
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.utc_clock = utc_clock if utc_clock is not None else time.time
         self.scrubber = scrubber or PIIScrubber()
         self.enable_cache = enable_cache
         if cache is not None:
@@ -644,9 +675,12 @@ class GeminiTriageEngine:
             "enrichment_data": sanitized_enrichments,
         }
 
-    def acquire_timeline(self, timeline: ThreatTimeline, *, on_acquisition):
+    supports_persistent_cache = True
+
+    def acquire_timeline(self, timeline: ThreatTimeline, *, on_acquisition, persistent_cache=None):
         """Report real cache/send origin without changing analyze_timeline callers."""
-        return traced_acquisition(self.analyze_timeline, timeline, on_acquisition)
+        return traced_acquisition(self.analyze_timeline, timeline, on_acquisition,
+                                  persistent_cache=persistent_cache)
 
     def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
         """Performs AI-assisted triage analysis on a threat timeline.
@@ -695,15 +729,6 @@ class GeminiTriageEngine:
                 entry["intel_summary"] = _bound_enrichment_summary(entry["intel_summary"])
         sanitized_timeline_json = json.dumps(final_payload, indent=2, ensure_ascii=True, default=str)
 
-        # Check in-memory LLM response cache
-        cache_key = hashlib.sha256(f"{sanitized_timeline_json}:{self.model}".encode("utf-8")).hexdigest()
-        if self.enable_cache and self.cache is not None:
-            cached_verdict = self.cache.get(cache_key)
-            if cached_verdict is not None:
-                note_acquisition('cache')
-                logger.debug("LLM response cache hit for key: %s", cache_key)
-                return cached_verdict
-
         # 2. Construct API request payload with explicit evidence boundary delimiters
         user_prompt = (
             "Analyze the following correlated security threat timeline and provide "
@@ -741,13 +766,71 @@ class GeminiTriageEngine:
             if fb not in candidate_models:
                 candidate_models.append(fb)
 
+        # Both cache layers validate the exact prepared evidence and inference policy.
+        generation_by_model = {}
+        for candidate in candidate_models:
+            generation = dict(payload['generationConfig'])
+            if not candidate.removeprefix('models/').startswith(('gemini-3.','gemini-3-')):
+                generation['temperature']=0.1
+            generation_by_model[candidate]=generation
+        evidence = {key:value for key,value in final_payload.items() if key not in ('timeline_id','grouping_key')}
+        try:
+            if not math.isfinite(self.utc_clock()):
+                raise ValueError('Cache clock must be finite')
+            effective_ttl = self.cache_ttl_seconds
+            if self.cache is not None and self.cache.ttl_seconds is not None:
+                effective_ttl = min(effective_ttl,float(self.cache.ttl_seconds))
+            if not math.isfinite(effective_ttl):
+                raise ValueError('Cache TTL must be finite')
+            contract = CacheContract(str(timeline.timeline_id),fingerprint(evidence),fingerprint({
+                'provider':'gemini/v1beta','preparation_version':CACHE_PREPARATION_VERSION,
+                'models':candidate_models,'generation':generation_by_model,
+                'system_instruction':payload['systemInstruction'],
+                'user_template':user_prompt.replace(sanitized_timeline_json,'<EVIDENCE_JSON>',1),
+                'schema':TriageVerdict.model_json_schema(),
+            }),tuple(candidate_models),effective_ttl)
+        except (ValueError,TypeError,OverflowError):
+            logger.error('Prepared cache contract is invalid; request withheld.')
+            return None
+        trace = acquisition_trace()
+        persistent = trace.get('persistent_cache') if trace is not None else None
+        rejection = False
+        if self.enable_cache and effective_ttl>0:
+            if persistent is not None:
+                try:
+                    candidates = persistent.get_verdict_cache_candidates(timeline.timeline_id)
+                except Exception as exc:
+                    raise AcquisitionPersistenceError('Persistent cache lookup failed') from exc
+                for row in candidates:
+                    try:
+                        stamp = CacheProvenance.from_record(row)
+                    except (ValueError,TypeError,KeyError,OverflowError):
+                        rejection = True
+                        continue
+                    cached = validated_candidate(row,stamp,contract,self.utc_clock())
+                    if cached is not None:
+                        note_cache_state('verified',contract,stamp)
+                        note_acquisition('cache')
+                        return cached
+                    rejection = True
+            elif self.cache is not None:
+                cached, stamp, rejected = self.cache.lookup(contract.key)
+                rejection |= rejected
+                if cached is not None:
+                    validated = validated_candidate(cached,stamp,contract,self.utc_clock())
+                    if validated is not None:
+                        note_cache_state('verified',contract,stamp)
+                        note_acquisition('cache')
+                        return validated
+                    rejection = True
+        validation = 'rejected' if rejection else 'unverified'
+        note_cache_state(validation,contract)
+
         response = None
         answering_model = None
         for candidate in candidate_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:generateContent"
-            generation_config = dict(payload["generationConfig"])
-            if not candidate.removeprefix("models/").startswith(("gemini-3.", "gemini-3-")):
-                generation_config["temperature"] = 0.1
+            generation_config = dict(generation_by_model[candidate])
             candidate_payload = {**payload, "generationConfig": generation_config}
             try:
                 sender = self.request_sender if self.request_sender is not None else httpx.post
@@ -856,8 +939,10 @@ class GeminiTriageEngine:
                 uncertainty_level=uncertainty,
                 missing_information=missing_info,
             )
-            if self.enable_cache and self.cache is not None:
-                self.cache.set(cache_key, verdict)
+            if self.enable_cache and self.cache is not None and effective_ttl>0:
+                stamp = CacheProvenance.create(contract,verdict,self.utc_clock())
+                self.cache.set(contract.key,verdict,stamp)
+                note_cache_state(validation,contract,stamp)
             return verdict
         except ValidationError as val_err:
             safe_err = self._safe_log_text(str(val_err))

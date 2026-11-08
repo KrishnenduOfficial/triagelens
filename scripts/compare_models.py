@@ -13,6 +13,7 @@ Outputs report to docs/results/model_comparison_report.md.
 """
 
 from datetime import datetime, timezone
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,7 @@ from src.config import get_gemini_api_key
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
 from src.engine.llm import GeminiTriageEngine
+from src.engine.provenance import acquire_triage
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
@@ -102,7 +104,12 @@ def evaluate_model(
 
     engine = GeminiTriageEngine(api_key=api_key, model=model_name, fallback_models=[])
     db = DatabaseManager(db_path=cache_db_path)
-    db.init_db()
+    with closing(db):
+        db.init_db()
+        return _evaluate_model_with_db(model_name,timelines,pacing_seconds,engine,db)
+
+
+def _evaluate_model_with_db(model_name,timelines,pacing_seconds,engine,db):
 
     tracker = AccuracyTracker()
     tracker.register_dataset_config(DatasetGroundTruthConfig(
@@ -122,43 +129,22 @@ def evaluate_model(
     for idx, tl in enumerate(timelines, start=1):
         print(f"[{idx:02d}/{len(timelines):02d}] {tl.correlation_reason[:45]:<45} ... ", end="", flush=True)
 
-        # Check model-specific cache
-        cached_row = db.get_verdict_for_timeline(tl.timeline_id)
-        verdict: Optional[TriageVerdict] = None
+        if not db.get_timeline(tl.timeline_id):
+            db.insert_timeline(tl)
+        t0 = time.time()
+        acquisition = acquire_triage(engine,tl,lambda origin:None,persistent_cache=db)
+        acquisition_elapsed = time.time()-t0
+        verdict = acquisition.verdict
         elapsed = 0.0
-
-        if cached_row and cached_row.get("model_name") == model_name:
-            verdict = TriageVerdict(
-                verdict_id=UUID(cached_row["id"]),
-                timeline_id=UUID(cached_row["timeline_id"]),
-                severity=cached_row["severity"],
-                confidence_score=cached_row["confidence_score"],
-                uncertainty_level=cached_row.get("uncertainty_level"),
-                summary=cached_row["summary"],
-                reasoning=cached_row["reasoning"],
-                missing_information=cached_row.get("missing_information", []),
-                recommended_actions=cached_row["recommended_actions"],
-                raw_llm_response=cached_row["raw_llm_response"],
-                model_name=cached_row.get("model_name"),
-            )
+        if verdict:
+            db.persist_cached_verdict(verdict,acquisition.cache_provenance)
+        if verdict and acquisition.origin=='cache':
             print(f"(cached) -> {verdict.severity} ", end="", flush=True)
         else:
-            try:
-                if not db.get_timeline(tl.timeline_id):
-                    db.insert_timeline(tl)
-            except Exception:
-                pass
-
-            t0 = time.time()
-            verdict = engine.analyze_timeline(tl)
-            elapsed = time.time() - t0
+            elapsed = acquisition_elapsed
             latencies.append(elapsed)
 
             if verdict:
-                try:
-                    db.insert_verdict(verdict)
-                except Exception as e:
-                    print(f"[db err: {e}] ", end="")
                 print(f"({elapsed:.1f}s) -> {verdict.severity} ", end="", flush=True)
             else:
                 print("(FAILED) ", end="", flush=True)

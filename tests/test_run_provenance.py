@@ -280,7 +280,7 @@ def test_acquisition_storage_failure_stops_http_and_marks_run_failed(monkeypatch
                 tl, _, _ = outcome(db)
                 observation_id = run.observe(tl,1)
 
-                def fail(*args):
+                def fail(*args,**kwargs):
                     raise sqlite3.OperationalError('offline storage failure')
 
                 monkeypatch.setattr(db,'mark_observation_acquisition',fail)
@@ -357,7 +357,8 @@ def test_real_runners_persist_lifecycle_but_keep_history_metrics(monkeypatch,tmp
         observations = [db.get_triage_observations(row['run_id'])[0] for row in runs]
         assert [row['origin'] for row in observations] == (['fresh','cache'] if runner=='evaluation' else ['fresh','fresh'])
         assert len(calls) == (1 if runner=='evaluation' else 2)
-        assert all(row['cache_validation']=='unverified' for row in observations)
+        assert [row['cache_validation'] for row in observations] == (
+            ['unverified','verified'] if runner=='evaluation' else ['unverified','unverified'])
         assert len({row.quality_cohort_hash for row in db.get_all_evaluations()}) == 2
         with TestClient(create_app(db=db)) as client:
             response = client.get('/api/metrics')

@@ -1465,8 +1465,8 @@ Complete offline suite: **470 passed, 1 warning**. Evidence:
 
 ### ADR-047: Replay Provenance and Explicit Metric Scopes
 
-**Status:** Accepted design (2026-11-08); stage 1 implemented under ADR-048,
-stages 2-4 pending.
+**Status:** Accepted design (2026-11-08); stages 1-2 implemented under ADR-048/049,
+stages 3-4 pending.
 
 **Authorization:** The operator approved provenance and metric-scope design before
 implementing counting changes. This ADR specifies the intended behavior; it does
@@ -1659,8 +1659,9 @@ and the full network-isolated suite. No stage is implemented by accepting this A
   mixed unknown/unavailable/severity states, and concurrent workers have explicit
   regression coverage. Existing source records and prompt-isolation tests survive.
 
-**Remaining status:** Stage 1 is implemented under ADR-048; replay counting/cache
-validity are not fixed. WIRE-11 and operator/live WIRE-6 remain unresolved. Earlier severity work
+**Remaining status:** Stages 1-2 are implemented under ADR-048/049. Cache validity
+is enforced; replay weighting remains unchanged pending stage 3. WIRE-11 and
+operator/live WIRE-6 remain unresolved. Earlier severity work
 and its 470-test verification are preserved independently of this design.
 
 ---
@@ -1728,6 +1729,80 @@ legacy unknowns, real send/memory/persistent-cache origins, fallback attribution
 before-send storage failure, prompt isolation, and CLI/API history compatibility.
 Full suite: **496 passed, 1 warning**. Evidence:
 `docs/results/run_provenance_stage1_20261108.md`.
+
+---
+
+### ADR-049: Shared Verdict Cache Contract and Verified Acquisition
+
+**Status:** Accepted and implemented with explicit stage-2 approval (2026-11-08).
+
+**Context:** SQLite evaluation reuse checked only timeline ID; comparison reuse
+also checked model name, but neither validated evidence, expiry, or provenance.
+Memory keys omitted prompt/fallback policy, exposed mutable cached objects, and
+served at the exact TTL deadline. Stage-1 metadata truthfully marked hits unverified.
+
+**Decision:** Gemini prepares the sanitized/masked/bounded request once and builds
+a shared versioned contract. Evidence hashes exclude synthetic timeline/grouping
+identity while retaining ordered events, time window, and compact intelligence.
+Lookup still requires the same timeline ID. Policy hashes include provider API,
+preparation version, ordered model/fallback policy, effective per-model generation
+settings, actual system instruction and user-message template, and response schema.
+Independent labels/provenance, credentials, and transport timeout are excluded.
+
+Memory and persistent acquisition share one validator: supported provenance version,
+matching evidence/policy, same timeline, allowed actual answering model, finite aware
+UTC generation/expiry, valid deadline, fresh schema validation, and immutable verdict
+digest must all pass. Future-dated generation, unsupported/missing metadata,
+malformed JSON/schema, disallowed fallback models, and modified bodies are misses.
+Primary-only requests cannot reuse fallback results. Ground-truth-only changes do
+not invalidate inference caches; evaluation contexts still track revised labels.
+
+The default lifetime is one hour, configurable by cache_ttl_seconds. A shorter
+supplied memory-cache TTL also bounds the persistent contract. Non-positive memory
+TTL disables verified reuse/writes. Engine policy TTL must be positive and finite.
+Use injected UTC clocks for provenance/deadlines and an injected monotonic clock
+for memory age. Expire at now >= deadline; cache reads never renew expiry. Invalid
+UTC clocks withhold requests. Candidate reuse is also bounded by the current TTL,
+so a later longer policy cannot extend an older fixed deadline.
+
+Memory stores serialized snapshots and returns newly validated detached models,
+protecting against caller mutation. With a persistent store, SQLite is the
+authoritative acquisition source; memory cannot bypass a rejected/deleted stored
+candidate. Search historical candidates for a valid contract without rewriting
+them. Keep get_verdict_for_timeline for historical API display, separate from raw
+cache-candidate retrieval. Cache-disabled diagnostics bypass both cache layers.
+
+Fresh validated verdicts receive evidence/policy hashes, provenance version,
+generation/expiry UTC values, and a verdict digest. Stage 1's reserved fields are
+used; cache_generated_at and cache_verdict_hash are added as nullable fields.
+Finalization stores cache metadata atomically with verdict/outcome/observation.
+Existing verdict provenance cannot be promoted or rewritten. Cache-only comparison
+writes use the same metadata protection and add no evaluation rows.
+
+Acquisition traces return the immutable provenance and validation state; observation
+callbacks persist contract identity before a send or verified cache return.
+Accepted hits are verified; an invalid candidate followed by fresh acquisition is
+rejected; a fresh acquisition with no candidate remains unverified (not a cache
+hit). Opaque providers remain unknown and cannot use SQLite as a verified cache
+without the acquisition capability. Lookup/storage failures propagate rather than
+pretending the cache was a clean miss. Both evaluation scripts use shared acquisition;
+the comparison connection closes on success/error and cache persistence is fail-fast.
+
+**Compatibility:** Keep every historical verdict/evaluation and default history
+counting. A replay still adds a distinct evaluation observation; no quality
+deduplication or new API scopes are introduced. Old NULL provenance is not backfilled
+or attached to the current request: the first eligible request needs fresh triage.
+Historical API display remains available even for unverified records. Legacy cache
+API get/set remain usable; engine reuse additionally requires verified provenance.
+
+**Verification:** 33 new offline cases plus existing acquisition/diagnostic/history
+tests pass. A stage-1 assertion now requires verified provenance for validated
+SQLite replay, preserving origin/count assertions. Full suite: **529 passed,
+1 warning**. See `docs/results/verdict_cache_validity_20261108.md`.
+
+**Remaining work:** Stage-3 scoped quality/attempt metrics, reusable manifest/cohort
+validation, stage-4 presentation, WIRE-11, and operator/live WIRE-6 completion remain
+pending. No live API calls or operator database migrations were run for this fix.
 
 ---
 

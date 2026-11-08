@@ -141,36 +141,15 @@ def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
         if not db.get_timeline(tl.timeline_id):
             db.insert_timeline(tl)
         observation_id = run.observe(tl, idx)
-        # Stage 1 records actual reuse but does not validate this legacy cache.
-        failure_category = None
-        # 1. Check persistent SQLite cache for existing verdict
-        cached_verdict_row = db.get_verdict_for_timeline(tl.timeline_id)
-        verdict: Optional[TriageVerdict] = None
-
-        if cached_verdict_row:
-            db.mark_observation_acquisition(observation_id, 'cache')
-            verdict = TriageVerdict(
-                verdict_id=UUID(cached_verdict_row["id"]),
-                timeline_id=UUID(cached_verdict_row["timeline_id"]),
-                severity=cached_verdict_row["severity"],
-                confidence_score=cached_verdict_row["confidence_score"],
-                summary=cached_verdict_row["summary"],
-                reasoning=cached_verdict_row["reasoning"],
-                recommended_actions=cached_verdict_row["recommended_actions"],
-                raw_llm_response=cached_verdict_row["raw_llm_response"],
-                model_name=cached_verdict_row.get("model_name"),
-                uncertainty_level=cached_verdict_row.get('uncertainty_level'),
-                missing_information=cached_verdict_row.get('missing_information') or [],
-            )
+        # A shared prepared contract validates memory and SQLite candidates.
+        t0 = time.time()
+        acquisition = run.acquire(engine, tl, observation_id)
+        verdict = acquisition.verdict
+        failure_category = acquisition.failure_category
+        elapsed = time.time() - t0
+        if verdict and acquisition.origin=='cache':
             print(f"(cached: {verdict.model_name}) -> Severity: {verdict.severity} ", end="", flush=True)
         else:
-            # 2. Execute live LLM triage
-            t0 = time.time()
-            acquisition = run.acquire(engine, tl, observation_id)
-            verdict = acquisition.verdict
-            failure_category = acquisition.failure_category
-            elapsed = time.time() - t0
-
             if verdict:
                 print(f"(live: {verdict.model_name} in {elapsed:.1f}s) -> Severity: {verdict.severity} ", end="", flush=True)
             else:
