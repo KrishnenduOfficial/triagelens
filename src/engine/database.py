@@ -329,6 +329,18 @@ class DatabaseManager:
             if name not in existing:
                 conn.execute(f'ALTER TABLE evaluations ADD COLUMN {name} {declaration}')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_observation ON evaluations(observation_id) WHERE observation_id IS NOT NULL')
+        conn.execute("""CREATE TABLE IF NOT EXISTS metric_cohorts (
+            cohort_id TEXT PRIMARY KEY, manifest TEXT NOT NULL
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS metric_run_cohorts (
+            run_id TEXT PRIMARY KEY REFERENCES evaluation_runs(run_id),
+            cohort_id TEXT NOT NULL REFERENCES metric_cohorts(cohort_id)
+        )""")
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_metric_cohort_runs ON metric_run_cohorts(cohort_id)')
+        for table in ('metric_cohorts', 'metric_run_cohorts'):
+            for operation in ('UPDATE', 'DELETE'):
+                conn.execute(f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{operation.lower()} "
+                             f"BEFORE {operation} ON {table} BEGIN SELECT RAISE(ABORT,'Immutable metric cohort'); END")
         existing_verdict = {row['name'] for row in conn.execute('PRAGMA table_info(verdicts)')}
         for name, declaration in {'evidence_hash':'TEXT','inference_policy_hash':'TEXT',
                                   'cache_provenance_version':'INTEGER','cache_expires_at':'TEXT',
@@ -336,14 +348,91 @@ class DatabaseManager:
             if name not in existing_verdict:
                 conn.execute(f'ALTER TABLE verdicts ADD COLUMN {name} {declaration}')
 
-    def create_evaluation_run(self, entrypoint: str) -> str:
+    def create_evaluation_run(self, entrypoint: str, cohort_id: Optional[str] = None) -> str:
         run_id = str(uuid4())
         manifest = json.dumps({'kind':'ad_hoc','run_id':run_id}, sort_keys=True, separators=(',',':'))
         cohort = hashlib.sha256(manifest.encode('utf-8')).hexdigest()
         with self._atomic_write() as conn:
             conn.execute("INSERT INTO evaluation_runs(run_id,entrypoint,started_at,status,cohort_manifest,quality_cohort_hash) VALUES(?,?,?,'running',?,?)",
                          (run_id,entrypoint,self._now_utc(),manifest,cohort))
+            if cohort_id is not None:
+                self.bind_metric_cohort(run_id, cohort_id)
         return run_id
+
+    def metric_snapshot(self):
+        """Copy metrics and coverage under one SQLite snapshot, including across writers."""
+        with self._lock:
+            conn = self.connect()
+            conn.execute('SAVEPOINT metric_read_snapshot')
+            try:
+                rows = [dict(row) for row in conn.execute('SELECT * FROM evaluations ORDER BY id')]
+                snapshot = {
+                    'rows': rows, 'history': self.get_all_evaluations(),
+                    'runs': {row['run_id']: dict(row) for row in conn.execute('SELECT * FROM evaluation_runs')},
+                    'observations': {row['observation_id']: dict(row) for row in conn.execute('SELECT * FROM triage_observations')},
+                    'cohorts': {row['cohort_id']: row['manifest'] for row in conn.execute('SELECT * FROM metric_cohorts')},
+                    'bindings': {row['run_id']: row['cohort_id'] for row in conn.execute('SELECT * FROM metric_run_cohorts')},
+                }
+                return snapshot
+            finally:
+                conn.execute('RELEASE SAVEPOINT metric_read_snapshot')
+
+    def register_metric_cohort(self, manifest) -> str:
+        """Register an immutable declaration; identical canonical input is idempotent."""
+        from src.engine.metric_scopes import MetricSelectionError, canonical, fingerprint, normalize_manifest, run_manifest
+        normalized = normalize_manifest(manifest)
+        cohort_id = fingerprint(normalized)
+        with self._atomic_write() as conn:
+            existing = conn.execute('SELECT manifest FROM metric_cohorts WHERE cohort_id=?', (cohort_id,)).fetchone()
+            if existing:
+                if existing['manifest'] != canonical(normalized):
+                    raise MetricSelectionError('Cohort manifest integrity failure')
+                return cohort_id
+            if normalized['kind'] == 'ad_hoc':
+                observed = run_manifest(self.metric_snapshot(), normalized['source_run_id'])
+                observed['revision'] = normalized['revision']
+                if observed != normalized:
+                    raise MetricSelectionError('Ad hoc manifest must match its terminal source run')
+            conn.execute('INSERT OR IGNORE INTO metric_cohorts(cohort_id,manifest) VALUES(?,?)',
+                         (cohort_id, canonical(normalized)))
+        return cohort_id
+
+    def get_metric_cohort(self, cohort_id):
+        from src.engine.metric_scopes import MetricSelectionError
+        with self._lock:
+            row = self.connect().execute('SELECT manifest FROM metric_cohorts WHERE cohort_id=?', (cohort_id,)).fetchone()
+            if row is None:
+                raise MetricSelectionError('Unknown or undeclared quality cohort', 404)
+            return json.loads(row['manifest'])
+
+    def bind_metric_cohort(self, run_id, cohort_id):
+        """A declared/subset replay run binds before observations; never retag history."""
+        from src.engine.metric_scopes import MetricSelectionError
+        with self._atomic_write() as conn:
+            manifest = self.get_metric_cohort(cohort_id)
+            run = self.get_evaluation_run(run_id)
+            if run is None:
+                raise MetricSelectionError('Unknown run', 404)
+            if run['status'] != 'running' or conn.execute('SELECT 1 FROM triage_observations WHERE run_id=? LIMIT 1', (run_id,)).fetchone():
+                raise MetricSelectionError('Bind cohort before run observations')
+            existing = conn.execute('SELECT cohort_id FROM metric_run_cohorts WHERE run_id=?', (run_id,)).fetchone()
+            if existing and existing[0] != cohort_id:
+                raise MetricSelectionError('Run already has an immutable cohort binding')
+            conn.execute('INSERT OR IGNORE INTO metric_run_cohorts(run_id,cohort_id) VALUES(?,?)', (run_id,cohort_id))
+            conn.execute('UPDATE evaluation_runs SET inference_policy_hash=? WHERE run_id=?',
+                         (manifest['inference_policy_hash'],run_id))
+
+    def declare_run_cohort(self, run_id) -> str:
+        """Explicitly freeze known terminal outcomes as an ad hoc cohort, retaining snapshots."""
+        from src.engine.metric_scopes import run_manifest
+        with self._atomic_write() as conn:
+            existing = conn.execute('SELECT cohort_id FROM metric_run_cohorts WHERE run_id=?', (run_id,)).fetchone()
+            if existing:
+                return existing[0]
+            manifest = run_manifest(self.metric_snapshot(), run_id)
+            cohort_id = self.register_metric_cohort(manifest)
+            conn.execute('INSERT INTO metric_run_cohorts(run_id,cohort_id) VALUES(?,?)', (run_id,cohort_id))
+            return cohort_id
 
     def get_evaluation_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:

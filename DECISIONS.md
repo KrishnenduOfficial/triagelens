@@ -1806,6 +1806,76 @@ pending. No live API calls or operator database migrations were run for this fix
 
 ---
 
+### ADR-050 - Explicit metric scopes and validated cohort selection
+
+**Status:** Accepted and implemented - 2026-11-08 (ADR-047 stage 3)
+
+**Authorization:** The operator approved implementing stage-3 metric scopes with
+validated cohort selection after the offline audit.
+
+**Context:** The metric endpoint ignored selector parameters and always returned
+history. Run-local cohort hashes were namespaces rather than dataset declarations;
+one case could have competing contexts, and distinct observations could disagree
+on one canonical verdict/context snapshot. Existing history formulas remain valid
+for their original evaluation-row counting unit.
+
+**Decision:** Add `src/engine/metric_scopes.py` as the shared Python/API selector.
+`scope=history` remains the default with the same top-level metric values and
+in-memory fallback when persisted history is empty. `run` requires run_id;
+`quality` requires cohort_id; `attempts` requires exactly one of run_id/cohort_id.
+Invalid/ambiguous selectors return 422, unknown identities 404, and member or
+canonical-result integrity conflicts 409. Explicit scopes never fall back.
+
+History/run count persisted occurrences. Quality selects exactly one identical
+snapshot per verdict/context pair in a validated cohort, excluding no-verdict and
+unverifiable outcomes. All quality statistics use that same selection. Attempts
+count completed fresh logical acquisitions with attempt identity, retaining fresh
+unavailable outcomes. Unknown binary labels can still contribute known severity
+and availability. Pending/interrupted/skipped work is disclosed, not inferred as
+unavailable. Quality availability is null; attempts availability is null without
+completed fresh work. Preserve history/run empty conventions and Wilson formulas.
+
+**Cohorts:** Add `metric_cohorts` (canonical versioned JSON addressed by SHA-256)
+and `metric_run_cohorts` (immutable run bindings), with foreign keys and SQL guards
+against UPDATE/DELETE. The manifest fixes dataset revision, evaluator/label-policy
+versions, inference policy, and each case's evidence/context hashes. Case identity
+is the persisted timeline UUID; cross-timeline equivalence is not inferred.
+Different benign/malicious contexts remain members of one manifest. Competing
+assignments for the same case are rejected; label revisions require a new manifest.
+
+Register reusable declarations explicitly and bind runs before observations.
+A terminal run can instead be explicitly frozen as an ad hoc cohort from its
+verifiable completed outcomes. This freeze is not a reconstructed complete dataset;
+interrupted/skipped work stays disclosed, and empty/ambiguous/unverifiable runs
+cannot be certified. Subsequent subset replays can bind the original cohort.
+Membership is checked at selection, preserving incompatible outcomes in history
+while failing the cohort view. Do not rewrite original run namespaces or outcome
+snapshots, backfill missing provenance, auto-pool runs, or automatically register
+old namespaces as cohorts. A fresh acquisition need not have cache-hit validation;
+only replay eligibility requires verified acquisition. Historical quality does not
+expire when a cache TTL passes.
+
+**Consistency and coverage:** Copy evaluations, reconstruction, runs, observations,
+and cohort declarations/bindings under one SQLite read transaction and process
+the detached snapshot. Add selection source/unit, run status, cohort/policy/context
+metadata, denominators, legacy exclusions, acquisition/lifecycle coverage, missing
+cases/outcomes, and unique/repeated evidence. Detect conflicting canonical results
+instead of taking a first/latest row. Deduplication does not prove independence or
+provider uptime. Evaluation-only manifests never enter prompts or cache keys.
+
+**Verification:** 49 new offline cases; complete suite **578 passed, 1 warning**.
+Real engine/cache acquisition uses an injected HTTP sender; concurrent reads use
+two real WAL connections. No existing test was removed, skipped, or weakened.
+See `docs/results/metric_scopes_20261108.md` for schema, commands, and evidence.
+
+**Limitations:** Declaration/binding is an evaluation-layer Python operation, not
+an unauthenticated public write endpoint. Existing runners retain their current
+default metric output; scoped Python/API access is explicit. Stage-4 dashboard
+presentation, live WIRE-11, and operator/live WIRE-6 completion remain pending.
+No live requests or operator database migrations were run.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

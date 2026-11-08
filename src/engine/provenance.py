@@ -107,9 +107,10 @@ def _fingerprint(value):
 
 
 class RunRecorder:
-    def __init__(self, db, entrypoint):
+    def __init__(self, db, entrypoint, cohort_id=None):
         self.db = db
-        self.run_id = db.create_evaluation_run(entrypoint)
+        self.run_id = (db.create_evaluation_run(entrypoint) if cohort_id is None else
+                       db.create_evaluation_run(entrypoint, cohort_id=cohort_id))
         self._acquisitions = {}
 
     def observe(self, timeline, ordinal):
@@ -143,10 +144,10 @@ class RunRecorder:
 
 
 @contextmanager
-def evaluation_run(db, entrypoint):
+def evaluation_run(db, entrypoint, cohort_id=None):
     try:
         db.init_db()
-        run = RunRecorder(db, entrypoint)
+        run = RunRecorder(db, entrypoint, cohort_id=cohort_id)
         try:
             yield run
             db.finish_evaluation_run(run.run_id)

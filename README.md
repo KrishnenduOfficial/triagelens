@@ -308,8 +308,7 @@ origin, and atomic outcome links. Retrying the same observation cannot duplicate
 its evaluation; a separate replay observation still adds a history row. Skips
 have no evaluation, and interrupted work is distinguished from unavailable model
 results. Opaque providers retain unknown origin. Legacy evaluations keep unknown
-provenance. Scoped quality metrics remain a later stage; default API history
-counting is unchanged. See the
+provenance. Default API history counting is unchanged. See the
 [stage-1 verification](docs/results/run_provenance_stage1_20261108.md).
 
 Verdict caches now validate sanitized evidence, complete inference policy, actual
@@ -321,6 +320,50 @@ The default one-hour TTL is configurable in the engine and bounded by any shorte
 supplied memory-cache TTL. Replays do not renew expiry. Both evaluation scripts
 share validation; historical API display and history counting are preserved. See
 the [stage-2 verification](docs/results/verdict_cache_validity_20261108.md).
+
+Metric scopes are explicit (ADR-050):
+
+| Request | Counting unit |
+| --- | --- |
+| `/api/metrics` or `?scope=history` | All persisted evaluation rows, including replays and legacy rows |
+| `?scope=run&run_id=<UUID>` | Evaluation occurrences in that run |
+| `?scope=quality&cohort_id=<SHA256>` | One identical verdict/context snapshot per validated cohort |
+| `?scope=attempts&run_id=<UUID>` | Completed fresh logical inference attempts in that run |
+| `?scope=attempts&cohort_id=<SHA256>` | Completed fresh attempts in runs bound to that immutable policy/case cohort |
+
+Existing history metric keys and memory fallback remain compatible; explicit scopes
+never fall back to unrelated history or memory. `selection` describes source, unit,
+coverage, applicable denominators, and inference/context selection. Invalid,
+conflicting, unknown, or repeated query parameters return 422; unknown run/cohort
+identifiers return 404; conflicting canonical snapshots or member bindings return
+409. The selector is `cohort_id`, not the old run-local `quality_cohort_hash` namespace.
+
+Quality has `availability_rate: null`. Attempts return null with
+`no_completed_fresh_attempts` when their denominator is zero; unavailable fresh
+outcomes count, while replay, pending, skipped, and interrupted work do not.
+History/run retain their earlier empty-denominator convention. Cache expiry controls
+future reuse, not past evaluation eligibility. Coverage discloses repeated evidence;
+deduplication does not establish independent samples or provider uptime.
+
+Cohort registration is an evaluation-only Python storage operation, not a public
+write endpoint. For a terminal run with verifiable stage-2 provenance:
+
+```python
+from src.engine.metric_scopes import scoped_metrics
+
+cohort_id = db.declare_run_cohort(run_id)
+quality = scoped_metrics(db, scope="quality", cohort_id=cohort_id)
+```
+
+This explicitly freezes known completed cases as an ad hoc cohort. It does not
+reconstruct missing or unfinished dataset members. A reusable declared dataset
+manifest can be registered before running with `db.register_metric_cohort(manifest)`;
+pass its ID to `evaluation_run(db, "evaluation", cohort_id=cohort_id)` or
+`RunRecorder(db, "evaluation", cohort_id=cohort_id)` before any observations. Subset
+replays retain that original declaration. Membership is validated during scoped
+selection; a mismatched run remains in history and makes cohort selection fail.
+See the [manifest schema and stage-3 verification](docs/results/metric_scopes_20261108.md).
+Dashboard scope controls remain stage 4; its default display is unchanged.
 
 Provider `intel_summary` objects stay strictly below 800 UTF-8 bytes as formatted
 inside the final prompt's evidence JSON. The shared limiter accounts for escaping,

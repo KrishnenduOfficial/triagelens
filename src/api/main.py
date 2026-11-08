@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src import config
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
+from src.engine.metric_scopes import MetricSelectionError, scoped_metrics
 from src.engine.hunting import KQLParseError, ThreatHuntingEngine
 
 logger = logging.getLogger(__name__)
@@ -142,19 +143,26 @@ def create_app(
         summary="Retrieve AI triage accuracy and performance metrics",
     )
     def get_metrics(
+        request: Request,
+        scope: str = Query(default="history"),
+        run_id: Optional[str] = Query(default=None),
+        cohort_id: Optional[str] = Query(default=None),
         tracker: AccuracyTracker = Depends(get_tracker),
         db: DatabaseManager = Depends(get_db),
     ) -> Dict[str, Any]:
-        """Returns the current confusion matrix and statistical evaluation metrics:
+        """Select history (default), one run, unique cohort quality, or fresh attempts.
 
-        TP, TN, FP, FN, Precision, Recall, Accuracy, and F1-Score.
-        Dynamically computes from stored database evaluations when present.
+        run requires run_id; quality requires cohort_id; attempts requires exactly
+        one of those selectors. Explicit scopes never use the memory fallback.
+        The selection object documents units, coverage, and denominators.
         """
-        if db is not None:
-            db_tracker = AccuracyTracker.from_database(db)
-            if db_tracker.total_evaluated > 0 or db_tracker.history:
-                return db_tracker.get_metrics()
-        return tracker.get_metrics()
+        allowed = {'scope', 'run_id', 'cohort_id'}
+        if any(key not in allowed or len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+            raise HTTPException(status_code=422, detail="Unknown or repeated metric selector")
+        try:
+            return scoped_metrics(db, scope=scope, run_id=run_id, cohort_id=cohort_id, fallback_tracker=tracker)
+        except MetricSelectionError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from None
 
     # 5. Timelines List Endpoint (with strict pagination validation)
     @app.get(

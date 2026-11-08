@@ -1,13 +1,24 @@
 # GEMINI.md â€” TriageLens
 ## Current verification update — 2026-11-08
 
+Stage-3 metric scopes and validated cohort selection are implemented (ADR-050).
+Default history keys/counting and memory fallback remain; run, quality, and attempts
+require explicit validated selectors. Quality deduplicates identical verdict/context
+snapshots within immutable case/evidence/context/policy manifests; conflicts fail.
+Attempts count completed fresh logical acquisitions, with null availability when
+none exist. New immutable cohort/run bindings preserve all prior snapshots; terminal
+runs can be explicitly frozen as ad hoc cohorts. Missing provenance is never invented.
+One SQLite read snapshot supplies metrics and coverage. Latest offline verification:
+**578 passed, 1 warning**, including 49 new cases. See
+`docs/results/metric_scopes_20261108.md`. Stage 4 and WIRE-11 remain unresolved.
+
 Stage-2 verdict cache validity is enforced (ADR-049). Memory/SQLite use shared
 evidence/policy/schema/provenance/model/expiry checks and detached snapshots.
 Invalid/legacy entries refresh without overwriting history; labels alone do not
 invalidate inference reuse. Valid hits are verified; history counting is unchanged.
-The latest offline suite reports **529 passed, 1 warning**, with 33 new cases.
-See `docs/results/verdict_cache_validity_20261108.md`. Stages 3-4, reusable cohort
-validation, and WIRE-11 remain unresolved; no live requests were made.
+The stage-2 verification reported **529 passed, 1 warning**, with 33 new cases.
+See `docs/results/verdict_cache_validity_20261108.md`. Stage 3 adds explicit cohort
+validation above; stage 4 and WIRE-11 remain unresolved. No live requests were made.
 
 Replay provenance stage 1 is implemented (ADR-048): run/observation lifecycle,
 atomic idempotent outcomes, actual cache/send origin hooks, opaque-provider unknown
@@ -21,7 +32,8 @@ Replay provenance and metric-scope design is accepted in ADR-047.
 History/run observations, unique verdict/context quality units, and completed
 fresh attempts have separate counting rules. Legacy provenance remains unknown;
 cache reuse needs evidence/model-policy/expiry validation. Staged implementation
-continues in stages 3-4; history counting and metric API behavior remain unchanged.
+continues in stage 4; history counting remains unchanged, with stage-3 API selectors
+and additive selection metadata described above.
 The earlier design-only task made no runtime changes.
 
 Severity evaluation snapshots now persist and reconstruct through SQLite/API

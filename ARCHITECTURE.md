@@ -45,6 +45,34 @@ API state selects its database at startup, so configuration changes require a
 restart. Path consistency is verified offline with real CLI persistence and API
 reads; live primary-model verification remains blocked under WIRE-11.
 
+## Metric Scopes and Cohort Selection (ADR-050)
+
+Metric scope selection (ADR-050) lives in `src/engine/metric_scopes.py`, shared by
+Python callers and `GET /api/metrics`. History remains evaluation-row based; run
+selects occurrences; quality selects canonical verdict/context pairs within an
+explicit immutable case/evidence/context/policy manifest; attempts select completed
+fresh logical acquisitions. All statistics and coverage derive from one SQLite
+read snapshot. Invalid selector combinations fail, and explicit scopes never use
+unrelated global or in-memory metrics.
+
+`metric_cohorts` stores canonical versioned manifests addressed by SHA-256.
+`metric_run_cohorts` immutably binds runs to declarations, with foreign keys and
+UPDATE/DELETE guards. Binding a declared/subset run happens before observations.
+An explicit terminal-run freeze can create an ad hoc declaration from persisted,
+verifiable completed outcomes. These side tables do not rewrite evaluation
+snapshots, original run namespaces, or unknown historical provenance. A declared
+manifest may include unevaluated cases, disclosed as missing coverage. Ad hoc
+manifests cover known completed cases only, with interrupted/skipped work disclosed.
+
+One canonical quality selection feeds confusion, severity, calibration, and Wilson
+intervals; conflicting snapshots or manifest member assignments fail selection.
+Past quality does not expire with a verdict cache TTL. Quality availability is
+null; attempts availability is null without completed fresh attempts. Default
+history/run empty conventions remain compatible. Coverage distinguishes replay,
+fresh, unknown, skipped, pending, interrupted, legacy, and repeated evidence.
+Truth/cohort metadata never enters model prompts or inference/cache fingerprints.
+Stage-4 dashboard scope presentation remains separate.
+
 ## Core Design Philosophy
 
 * Lightweight infrastructure.
@@ -425,7 +453,7 @@ predictions and missing severity labels do not enter severity accuracy. Historic
 unknown rows remain excluded; zero evaluated results retain the existing 0.0
 accuracy convention. See `docs/results/severity_persistence_20261108.md`.
 
-### Replay Provenance and Metric Scopes (ADR-047; stages 1-2 ADR-048/049)
+### Replay Provenance and Metric Scopes (ADR-047; stages 1-3 ADR-048/049/050)
 
 Accepted design separates stored history/run rows, unique verdict/context quality
 units, and completed fresh logical attempts. It adds run/observation provenance,
@@ -445,7 +473,7 @@ run and interrupt pending work. Skips have observation metadata and no evaluatio
 Contexts store independent-label/policy digests outside prompts. Each run currently
 has an ad hoc cohort namespace; legacy rows remain unknown. Gemini reports actual
 cache/send origin via context-local hooks, while opaque providers remain unknown.
-Verified reusable cohorts and metric scopes remain later stages. See
+Stage 3 now supplies explicit validated cohort bindings and scoped selection. See
 `docs/results/run_provenance_stage1_20261108.md`.
 
 Stage 2 prepares one sanitized request and hashes model-visible evidence plus the
@@ -461,7 +489,8 @@ or credential enters the inference cache contract or model prompt.
 Observations record verified cache hits or rejected candidates followed by fresh
 acquisition. Fresh verdict provenance is persisted atomically; existing provenance
 cannot be rewritten. Historical API lookup stays separate and both evaluation
-scripts use shared cache acquisition. History counts and metric shapes are unchanged.
+scripts use shared cache acquisition. Stage 2 preserves history counts and metric
+shapes; stage 3 adds explicit scopes and additive selection metadata as described above.
 See `docs/results/verdict_cache_validity_20261108.md`.
 
 ### Empirical Benchmarks

@@ -26,8 +26,9 @@ timeout defaults, answer validation, and safe HTTP 429/503 failure reporting (AD
 Live verification still returned Gemini HTTP 429; WIRE-11 remains unresolved.
 Do not close it based on the local corrections or a successful fallback.
 
-Latest verification with the built-in pytest network guard: **529 passed,
-1 warning**. Stage-2 cache validity is fixed (ADR-049), verified by 33 new offline
+Latest verification with the built-in pytest network guard: **578 passed,
+1 warning**. Stage-3 metric scopes and validated cohorts are fixed (ADR-050),
+verified by 49 new offline cases. Stage-2 cache validity is fixed (ADR-049), verified by 33 new offline
 cases with history preserved. Replay provenance stage 1 is fixed (ADR-048), verified by 26 new
 offline cases with history counting preserved. Severity-result persistence is fixed (ADR-046), verified by 19 new
 offline cases. Unavailable-outcome persistence and availability reconstruction are
@@ -67,8 +68,12 @@ and request-correction cases also pass. Live WIRE-11 remains unresolved.
   immutable memory snapshots, verified/rejected acquisition metadata, and safe
   legacy misses. Both evaluation scripts share validation; API history is unchanged.
   Evidence: `docs/results/verdict_cache_validity_20261108.md`.
-* [ ] Replay implementation stage 3: explicit history/run/quality/attempt metric
-  scopes with coverage and denominator metadata; history remains the default.
+* [x] Replay implementation stage 3 (ADR-050): explicit history/run/quality/attempt
+  scopes, strict selectors, one SQLite read snapshot, immutable manifests and run
+  bindings, canonical quality integrity checks, fresh-attempt availability, and
+  coverage/denominator metadata. History remains the default; legacy records and
+  outcome snapshots are preserved. Ad hoc freeze is explicit, never automatic.
+  Evidence: `docs/results/metric_scopes_20261108.md`.
 * [ ] Replay implementation stage 4: operator/dashboard scope presentation and
   compatibility verification before changing any default display.
 * [x] WIRE-6 path follow-up: resolve CLI/API/evaluation database targets through
