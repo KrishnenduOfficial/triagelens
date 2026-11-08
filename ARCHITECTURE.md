@@ -41,7 +41,7 @@ construction. Concrete transports own generation settings, credentials, endpoint
 response extraction and additional validation. The retired provider transport,
 credentials, exports and diagnostic tools have been removed (ADR-055).
 
-Groq sends eight model-authored assessment fields under strict JSON schema (ADR-056).
+Groq sends nine model-authored assessment fields under strict JSON schema (ADR-057).
 Application-generated IDs and answering-model provenance cannot be authored by the
 model. A non-stop finish reason, refusal, tool call, mismatched model or invalid
 assessment is unavailable. Configured fallback is attempted only at the existing
@@ -51,12 +51,12 @@ generation settings, preventing Gemini/Groq cache reuse. Historical records and
 history metric counting are preserved. Provider replacement itself required no
 backfill; the later ADR-056 migration adds nullable disposition/policy snapshots.
 
-## Versioned Assessment Contract (ADR-056)
+## Versioned Assessment Contract (ADR-056, ADR-057)
 
-`src/engine/triage_policy.py` defines application-owned `triage-v1`. Disposition
+`src/engine/triage_policy.py` defines application-owned `triage-v2`. Disposition
 is MALICIOUS/BENIGN/UNDETERMINED, independently of severity as response priority.
 Groq locally requires a nonblank summary, at least one nonblank reason/action,
-nonblank gap entries, and HIGH uncertainty with a gap for UNDETERMINED. Empty gaps
+nonblank gap entries, and HIGH uncertainty with a blocking gap for UNDETERMINED. Empty gaps
 remain permitted for other dispositions. Policy identity is attached by the engine,
 never authored by the model. Confidence means correctness of the selected binary
 disposition; abstention confidence is excluded from calibration.
@@ -66,6 +66,24 @@ cleanup, authorized analyst review, scoped actions, and justified emergency
 containment when ongoing harm makes full acquisition impractical. This is model
 guidance plus structural checks, not semantic certification or automatic response.
 The dashboard repeats the review/preservation warning beside recommendations.
+
+`src/models/evidence.py` defines strict `evidence-basis-v1` support, observation,
+hypothesis, gap and reference objects. Request-local E/I IDs are assigned after
+isolation, scrubbing and summary budgeting. References resolve only to existing
+non-null scalar fields in those records; declared basis/disposition, blocking gaps,
+decision/observation references and the duplicated missing-information descriptions
+must agree. Invalid relationships become unavailable, without automatic repair.
+The normalized assessment is stored while its raw response remains unchanged.
+Existing scalar references do not establish semantic correctness.
+
+Verdicts store nullable `evidence_basis`, application-owned `evidence_context`
+and `evidence_contract_version`. The captured sanitized map is immutable evidence
+for citation display, independent of later source-timeline changes. Cache returns
+revalidate relationships and require matching current context, policy and contract.
+Old rows keep nulls and old terminal hashes; no backfill or rescoring occurs.
+API-only `missing_information_recorded` is derived before SQL NULL is normalized;
+it never enters verdict hashes or inference. The actual timeline view shows gaps,
+uncertainty, basis and saved-value citations, with legacy and malformed states.
 
 One captured system prompt is used for both the actual request and cache contract;
 policy version is also hashed. Changed policies invalidate reuse while retaining
@@ -80,6 +98,12 @@ severity. Metrics disclose explicit, legacy-proxy and unrecorded basis counts.
 New evaluation contexts/cohorts identify `AccuracyTracker-disposition-v1`; existing
 `AccuracyTracker-v1` manifests and terminal hashes remain valid. A cohort cannot
 mix the two binary evaluator rules. Run/History counting units are unchanged.
+V2 keeps `AccuracyTracker-disposition-v1`, since binary scoring is unchanged.
+Additive metrics disclose labelled available outcomes, binary predictions, labelled
+abstentions, unknown-truth available responses and labelled binary coverage. Unknown
+truth and unavailable results do not enter that coverage denominator. No available
+labelled outcomes yields null coverage. These diagnostics do not change accuracy,
+availability or calibration formulas. Live v2 acceptance/quality remains unmeasured.
 
 `scripts/diagnose_groq.py` checks one synthetic full triage, bypassing cache and
 fallback. Its dry run makes no request; optional traces use shared allow-listed
@@ -446,7 +470,7 @@ Groq chat completions (`https://api.groq.com/openai/v1/chat/completions`):
 4. **Response Caching:** Check `LLMResponseCache` using SHA-256 fingerprint of sanitized timeline alerts and candidate model before making external requests (ADR-025).
 5. **API Invocation:** Transmit system/user messages and strict JSON schema to Groq. Only explicitly configured fallbacks are tried upon HTTP 429, 503, 404 or transport failures.
 6. **Safe Failure Reporting:** Withhold upstream error bodies and exception details from Groq logs; report status/category without exposing telemetry or credentials.
-7. **Strict Schema Parsing:** Require exact JSON with eight model-authored fields, local strict types/ranges/content checks, expected model identity and a completed answer. Reject prose, fences, truncation, refusals and tool calls.
+7. **Strict Schema Parsing:** Require exact JSON with nine model-authored fields, local strict types/ranges/content and evidence-relationship checks, expected model identity and a completed answer. Reject prose, fences, truncation, refusals and tool calls.
 8. **Verdict Attribution:** Store answering `model_name`, `uncertainty_level`, and `missing_information` in `TriageVerdict` and persist to SQLite.
 
 ### Expected Output Schema
@@ -468,9 +492,21 @@ Each triage assessment produces a structured `TriageVerdict`:
   ],
   "recommended_actions": [
     "Authorized, scoped investigation/preservation step; cleanup only after preservation"
-  ]
+  ],
+  "evidence_basis": {
+    "kind": "insufficient_evidence",
+    "decision_refs": [], "observations": [], "hypotheses": [],
+    "gaps": [{
+      "category": "process_context", "description": "Telemetry gap or investigative lead",
+      "required_evidence": "Process/context records needed to determine intent",
+      "blocks_disposition": true
+    }]
+  }
 }
 ```
+
+The schema sketch's insufficient-evidence example requires UNDETERMINED/HIGH;
+ADR-057 specifies the binary-support variants and all cross-field relationships.
 
 ### Provider Abstraction (`TriageProvider`)
 

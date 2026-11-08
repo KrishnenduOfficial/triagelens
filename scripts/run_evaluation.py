@@ -234,6 +234,9 @@ unrecorded `{metrics['prediction_basis_unknown_count']}`.
 **Assessment policies:** `{', '.join(sorted({r['policy_version'] or 'unrecorded' for r in evaluation_records}))}`.
 **Undetermined dispositions:** `{metrics['abstained']}`; total unscored binary
 outcomes (including unknown truth): `{metrics['unknown']}`.
+**Labelled binary coverage:** `{metrics['labelled_binary']} / {metrics['labelled_available']}`
+available labelled outcomes; labelled abstentions `{metrics['labelled_abstained']}`;
+available outcomes with unknown truth `{metrics['unknown_ground_truth']}`.
 Abstention is an available result, excluded from binary accuracy and calibration.
 Confidence measures binary correctness under the recorded policy, not severity
 or recommendation safety. Legacy confidence targets may be unrecorded. Compare

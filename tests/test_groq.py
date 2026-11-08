@@ -20,7 +20,12 @@ from src.models.timeline import ThreatTimeline
 MODEL = "openai/gpt-oss-120b"
 ASSESSMENT = {"disposition": "BENIGN", "severity": "LOW", "confidence_score": 0.7, "summary": "Synthetic alert",
               "reasoning": ["Routine process"], "recommended_actions": ["Review telemetry"],
-              "uncertainty_level": "HIGH", "missing_information": ["Parent process"]}
+              "uncertainty_level": "HIGH", "missing_information": ["Parent process"],
+              "evidence_basis": {
+                  "kind": "benign_support", "decision_refs": [{"evidence_id":"E1","field_path":["event_type"]}],
+                  "observations": [{"statement":"Observed event type", "refs":[{"evidence_id":"E1","field_path":["event_type"]}]}],
+                  "hypotheses": [], "gaps": [{"category":"process_context", "description":"Parent process",
+                      "required_evidence":"Parent process record", "blocks_disposition":False}]}}
 
 
 def completion(assessment=None, *, model=MODEL, finish="stop"):

@@ -53,10 +53,11 @@ export function validateMetricResponse(value: unknown, query: MetricQuery): asse
       !["accuracy", "precision", "recall", "f1_score", "false_positive_rate", "false_negative_rate"].every(key => rate(value[key]))) {
     throw new Error("Invalid metric response; numeric results are missing or malformed.");
   }
-  for (const key of ["unavailable", "severity_evaluated", "severity_matches"]) {
+  for (const key of ["unavailable", "severity_evaluated", "severity_matches", "labelled_available",
+    "labelled_binary", "labelled_abstained", "unknown_ground_truth"]) {
     if (value[key] !== undefined && !count(value[key])) throw new Error("Invalid metric count.");
   }
-  for (const key of ["availability_rate", "severity_accuracy", "brier_score", "expected_calibration_error"]) {
+  for (const key of ["availability_rate", "severity_accuracy", "brier_score", "expected_calibration_error", "labelled_binary_coverage"]) {
     if (value[key] !== undefined && value[key] !== null && !rate(value[key])) throw new Error("Invalid metric rate.");
   }
   const selection = value.selection;

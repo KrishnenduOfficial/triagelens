@@ -14,11 +14,20 @@ from scripts.run_evaluation import load_benchmark_timelines
 
 
 def assessment(**updates):
-    return {"disposition": "MALICIOUS", "severity": "LOW", "confidence_score": 0.8,
+    data = {"disposition": "MALICIOUS", "severity": "LOW", "confidence_score": 0.8,
             "summary": "Observed session discovery; intent assessed separately from urgency.",
             "reasoning": ["Observed command invocation; authorization is not verified."],
             "recommended_actions": ["Have an authorized analyst preserve relevant logs before cleanup."],
             "uncertainty_level": "MEDIUM", "missing_information": ["Authorization baseline"], **updates}
+    disposition = data['disposition']
+    ref = {"evidence_id":"E1", "field_path":["event_type"]}
+    data['evidence_basis'] = {
+        "kind": {"BENIGN":"benign_support", "UNDETERMINED":"insufficient_evidence"}.get(disposition, "malicious_support"),
+        "decision_refs":[ref], "observations":[{"statement":"Observed event type", "refs":[ref]}],
+        "hypotheses":[], "gaps":[{"category":"authorization", "description":item,
+            "required_evidence":"Authorization baseline record", "blocks_disposition":disposition == "UNDETERMINED"}
+            for item in data['missing_information']]}
+    return data
 
 
 def response(data):
@@ -187,7 +196,7 @@ def test_operator_reports_disclose_new_contract_and_abstention(tmp_path, monkeyp
     assert metrics["tp"] == metrics["abstained"] == metrics["unknown"] == 1
     assert metrics["explicit_disposition_count"] == 2 and metrics["total"] == 1
     report = (output / "groq_evaluation_report.md").read_text(encoding="utf-8")
-    assert "Undetermined" in report and "triage-v1" in report
+    assert "Undetermined" in report and POLICY_VERSION in report
     assert "not severity" in report and "explicit disposition `2`" in report
     comparison = output / "comparison.md"
     compare_models.generate_comparison_report(model_a_name="offline-A", metrics_a=metrics,

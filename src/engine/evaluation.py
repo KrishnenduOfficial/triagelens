@@ -598,6 +598,8 @@ class AccuracyTracker:
             expected_calibration_error = None
             calibration_bins = []
 
+        labelled = [r for r in self.history if r.ground_truth is not None and r.category != "Unavailable"]
+        labelled_binary = sum(r.llm_prediction is not None for r in labelled)
         return {
             "accuracy": accuracy,
             "Accuracy": accuracy,
@@ -634,6 +636,11 @@ class AccuracyTracker:
             "total": total,
             "unknown": self.unknown_count,
             "abstained": sum(r.disposition == "UNDETERMINED" for r in self.history),
+            "labelled_available": len(labelled),
+            "labelled_binary": labelled_binary,
+            "labelled_abstained": sum(r.disposition == "UNDETERMINED" for r in labelled),
+            "labelled_binary_coverage": labelled_binary / len(labelled) if labelled else None,
+            "unknown_ground_truth": sum(r.ground_truth is None and r.category != "Unavailable" for r in self.history),
             "explicit_disposition_count": sum(r.prediction_basis == "explicit_disposition_v1" for r in self.history),
             "legacy_severity_proxy_count": sum(r.prediction_basis == "legacy_severity_proxy" for r in self.history),
             "prediction_basis_unknown_count": sum(r.prediction_basis is None for r in self.history),

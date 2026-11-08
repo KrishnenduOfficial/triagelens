@@ -2,16 +2,16 @@
 
 import json
 import math
-from typing import Annotated, Literal
+from copy import deepcopy
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from src import config
 from src.engine.llm import TriageEngineBase
 from src.engine.triage_policy import POLICY_VERSION
 from src.models.triage import Disposition, SeverityLevel
-
-NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from src.models.evidence import EvidenceBasis, NonBlank, EVIDENCE_CONTRACT_VERSION
 
 
 class GroqAssessment(BaseModel):
@@ -26,13 +26,11 @@ class GroqAssessment(BaseModel):
     reasoning: list[NonBlank] = Field(min_length=1)
     missing_information: list[NonBlank]
     recommended_actions: list[NonBlank] = Field(min_length=1)
+    evidence_basis: EvidenceBasis
 
     @model_validator(mode="after")
     def require_abstention_explanation(self):
-        if self.disposition == "UNDETERMINED" and (
-            self.uncertainty_level != "HIGH" or not self.missing_information
-        ):
-            raise ValueError("Undetermined disposition requires high uncertainty and concrete gaps")
+        self.evidence_basis.validate_decision(self.disposition, self.uncertainty_level, self.missing_information)
         return self
 
 
@@ -47,6 +45,7 @@ class GroqTriageEngine(TriageEngineBase):
     PROVIDER_ID = "groq/openai/v1/chat/completions"
     PROVIDER_LABEL = "Groq"
     POLICY_VERSION = POLICY_VERSION
+    EVIDENCE_CONTRACT_VERSION = EVIDENCE_CONTRACT_VERSION
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     # Deliberately limited to models documented to support strict structured output.
     SUPPORTED_MODELS = frozenset({"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"})
@@ -80,8 +79,27 @@ class GroqTriageEngine(TriageEngineBase):
             settings["reasoning_effort"] = "low"
         return settings
 
-    def _verdict_metadata(self, assessment):
-        return {"disposition": assessment["disposition"], "policy_version": self.POLICY_VERSION}
+    def _prepare_evidence(self, payload):
+        context = {}
+        for name, prefix in (("events", "E"), ("enrichment_data", "I")):
+            for index, record in enumerate(payload[name], 1):
+                identifier = f"{prefix}{index}"
+                record["evidence_id"] = identifier
+                context[identifier] = deepcopy(record)
+        return context
+
+    def _verdict_metadata(self, assessment, evidence_context):
+        return {"disposition": assessment["disposition"], "policy_version": self.POLICY_VERSION,
+                "evidence_basis": assessment["evidence_basis"], "evidence_context": evidence_context,
+                "evidence_contract_version": self.EVIDENCE_CONTRACT_VERSION}
+
+    def _cache_compatible(self, verdict, evidence_context):
+        data = verdict.model_dump(mode="json")
+        assessment = {name: data[name] for name in GroqAssessment.model_fields}
+        return (self._normalize_assessment(assessment) == assessment
+                and verdict.policy_version == self.POLICY_VERSION
+                and verdict.evidence_contract_version == self.EVIDENCE_CONTRACT_VERSION
+                and verdict.evidence_context == evidence_context)
 
     def _prepare_request(self, candidate, user_prompt, generation, system_prompt):
         return (
@@ -118,9 +136,8 @@ class GroqTriageEngine(TriageEngineBase):
         except (TypeError, ValueError):
             return None
 
-    def _validate_assessment(self, assessment):
+    def _normalize_assessment(self, assessment):
         try:
-            GroqAssessment.model_validate(assessment)
-            return True
+            return GroqAssessment.model_validate(assessment).model_dump(mode="json")
         except (ValidationError, ValueError, TypeError):
-            return False
+            return None

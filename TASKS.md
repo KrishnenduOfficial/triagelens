@@ -65,9 +65,22 @@ resume. Prior benchmark reports and stored outcomes retain historical attributio
   explicit inference-policy/cohort identity. Six valid responses include one
   unlabelled abstention, but review found a high-confidence false negative and
   unsupported assertions; this is not a semantic-safety sign-off.
-- [ ] Audit evidence-qualified conclusions and abstention consistency offline.
-  M23 is explicitly BENIGN despite missing authorization context; the sparse TCP/443
-  response abstains but still invents TLS. Containment qualification also needs review.
+- [x] Audit evidence-qualified conclusions and abstention consistency offline.
+  Six saved completions replay with matching request fingerprints; structural
+  probes reproduce missing sufficiency/claim checks. Abstention accounting and
+  label isolation remain correct. The analyst view omits stored uncertainty/gaps;
+  telemetry context projection also needs a separately scoped review. See the
+  [audit and proposed contract](docs/results/evidence_abstention_audit_20261108.md)
+  (228 targeted regressions passed; 14 local probes, zero network attempts).
+- [x] Agree the versioned evidence-basis contract and uncertainty/gap presentation
+  before runtime changes (ADR-057). Target `triage-v2` / `evidence-basis-v1` adds
+  referenced observations, hypotheses and blocking gaps, with legacy-safe display.
+- [x] Implement and verify ADR-057 offline: active `triage-v2` / `evidence-basis-v1`,
+  deterministic references/basis checks, immutable sanitized snapshots, nullable
+  legacy migration/cache validation, visible uncertainty/gaps/citations, and labelled
+  coverage disclosure. Existing scoring identities and history counts are preserved.
+- [ ] Perform a separately bounded `triage-v2` live acceptance and quality check;
+  offline structural validation does not certify factual support or action safety.
 - [ ] Evaluate untouched cases after addressing the development findings. Preserve
   labels, earlier scores and policy attribution; do not tune to hidden intent.
 - [ ] Measure Groq prompt-injection resistance and availability; report sample size and scope.
@@ -87,11 +100,12 @@ these without a scoped request. Human analysts retain final response authority.
 
 ## Verification rules
 
-Latest offline verification: **652 backend tests passed**, with one existing
-Starlette/HTTPX deprecation warning; **49 dashboard tests passed** and production
+Latest offline verification: **728 backend tests passed**, with one existing
+Starlette/HTTPX deprecation warning; **79 dashboard tests passed** and production
 build succeeded. Local Markdown
 link checks and `git diff --check` passed. Removed-provider tests explain the change
-from the pre-retirement 688-case suite; ADR-056 adds 33 backend cases. Those offline checks made no provider
+from the pre-retirement 688-case suite; ADR-056 added 33 backend cases and ADR-057
+adds 76 backend / 30 dashboard cases. Those offline checks made no provider
 requests; two separate live development evaluations made six authorized requests
 each, using different policy identities and sample compositions.
 

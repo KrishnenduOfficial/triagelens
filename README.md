@@ -16,7 +16,7 @@ but still exposed a false negative and unsupported assertions; see
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-652_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-728_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -118,7 +118,11 @@ See the [six-case evidence and limitations](docs/results/groq_evaluation_report.
 
 New assessments separate `disposition` (MALICIOUS, BENIGN or UNDETERMINED) from
 severity (response priority/impact). A malicious event can have LOW priority.
-UNDETERMINED requires HIGH uncertainty and a nonblank missing-information item;
+The active policy is now **`triage-v2` / `evidence-basis-v1`** (ADR-057), implemented
+and verified offline after the v1 review. It adds a ninth response field with
+declared support, observations, hypotheses, gaps and references to captured
+sanitized evidence. Binary answers require observed references and no declared
+blocking gap. UNDETERMINED requires HIGH uncertainty and a blocking gap;
 it counts as available but contributes to neither binary accuracy nor calibration.
 Severity agreement remains independently scored when a reference severity exists.
 Confidence concerns disposition correctness, not severity or action safety.
@@ -130,7 +134,13 @@ justifies it; the analyst must assess scope, urgency and evidence-loss tradeoffs
 Nonblank summary, reasoning and recommendations are validated locally. Free-text
 correctness and safety still require human review; structural validation cannot
 certify them. The exact system prompt and policy identity enter cache fingerprints.
-Old records retain their original scores and null/unrecorded policy metadata;
+New references and basis relationships are checked on fresh output and cache
+return; the UI resolves citations against the saved sanitized snapshot. It shows
+uncertainty and gaps before actions, distinguishing assessed empty lists from
+unrecorded legacy values. References prove traceability, not entailment. Labelled
+binary coverage and abstentions are shown alongside accuracy. Live v2 schema
+acceptance and semantic quality remain unmeasured; earlier results are not v2 scores.
+Old records retain their original scores and null/unrecorded new metadata;
 History may mix scoring generations, so use explicit cohorts for comparisons.
 
 ### 3.4 Historical benchmark evidence
@@ -153,7 +163,7 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (652 passing backend tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (728 passing backend tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
 
 ---
@@ -413,7 +423,7 @@ triagelens/
       components/               # MetricsOverview and TimelineFeed
       metrics/                  # Scope validation, formatting and request lifecycle
       pages/                    # DashboardHome, TimelineView and ThreatHunt
-    tests/                      # 48 verified frontend tests
+    tests/                      # 79 verified frontend tests
     package.json
     package-lock.json
   docs/results/                 # Verification reports and labelled historical evidence
@@ -432,7 +442,7 @@ triagelens/
     engine/                     # Pipeline, Groq, cache, provenance and metric scopes
     models/                     # Validated data contracts
     utils/                      # Indicator extraction and credential/PII masking
-  tests/                        # 652 verified backend cases; network blocked by default
+  tests/                        # 728 verified backend cases; network blocked by default
 ```
 
 Local `.env`, virtual environments, dependencies, build output, databases and

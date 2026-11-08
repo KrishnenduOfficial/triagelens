@@ -2258,6 +2258,211 @@ claims; no semantic safety sign-off or further policy change is implied. See
 `docs/results/triage_v1_live_check_20261108.md`. Held-out performance and injection
 resistance remain unmeasured.
 
+### ADR-057: Versioned evidence-basis contract and visible uncertainty
+
+**Status:** Accepted and implemented offline, 2026-11-08. The operator first
+requested contract agreement, then explicitly authorized offline implementation.
+The active runtime policy is `triage-v2`; live provider acceptance and semantic
+quality under the new contract have not yet been measured.
+
+**Context:** The [offline audit](docs/results/evidence_abstention_audit_20261108.md)
+reproduced structurally valid but unsupported claims and inconsistent abstention.
+The policy reached the actual request; scoring and label isolation were correct.
+The timeline UI omits stored qualifications. Adding more prohibitions alone does
+not create a checkable decision basis, and arbitrary prose cannot be certified by
+a keyword filter or a model-authored citation.
+
+**Decision: target identities and preserved semantics.** Implement assessment
+policy `triage-v2` and evidence contract `evidence-basis-v1` together. Both identities
+are application-owned and enter the system instruction and inference-policy hash.
+Keep independent disposition, the five-level severity rubric, binary-correctness
+confidence, preservation-first/authorized recommendations and emergency containment
+rules from ADR-056. `UNDETERMINED` is available and excluded from binary/calibration
+counts; known severity can still be scored. Keep `explicit_disposition_v1` and
+`AccuracyTracker-disposition-v1`: their binary scoring rule is unchanged. Distinguish
+policies by the actual inference-policy hash/cohort, rather than relabelling the
+evaluator or previous outcomes.
+
+#### A. Request evidence and references
+
+After recursive isolation, secret masking and summary budgeting, assign stable
+request-local `evidence_id` values to the final sanitized event/intelligence arrays:
+`E1`, `E2`, ... for events, `I1`, `I2`, ... for supplied intelligence records. IDs
+depend only on array position, not labels, filenames, dataset identifiers or hashes
+of private provenance. Generated IDs cannot be taken from untrusted telemetry.
+An empty intelligence array stays empty; do not fabricate a lookup or its status.
+
+A reference is exactly:
+
+```json
+{"evidence_id": "E1", "field_path": ["details", "Protocol"]}
+```
+
+`field_path` is a nonempty array of nonblank string tokens. Resolve it only inside
+the identified sanitized record: dictionary tokens are exact keys; list tokens
+are canonical nonnegative decimal indexes, checked against bounds. No evaluation,
+query execution, relative traversal, wildcards or lookup in unsanitized source data
+is permitted. The final target must be a non-null scalar; blank strings are not
+support. The generated `evidence_id` field itself is not a support target. Compare
+deduplicated references structurally, not by arbitrary text matching.
+
+The engine retains the exact post-scrub evidence map as an application-owned
+`evidence_context` snapshot with the verdict. UI resolution uses this immutable
+snapshot, never today's mutable timeline or independently stored ground truth.
+Only already sanitized, transmitted values enter this snapshot. This is needed
+to audit what a citation actually pointed to; existence does not prove entailment.
+
+#### B. Model-authored assessment schema
+
+Keep the existing eight required assessment fields and add one required
+`evidence_basis` object. The response has nine model-authored fields; IDs, policy
+identity, contract identity and `evidence_context` remain application-owned.
+Use strict types and reject extra fields at every model-authored object level.
+Existing nonblank/content constraints remain. New objects have these exact fields:
+
+| Object | Required fields |
+|---|---|
+| `evidence_basis` | `kind`, `decision_refs`, `observations`, `hypotheses`, `gaps` |
+| Reference | `evidence_id` (string), `field_path` (string array) |
+| Observation | `statement` (nonblank string), `refs` (nonempty reference array) |
+| Hypothesis | `statement` (nonblank string), `refs` (reference array, may be empty) |
+| Gap | `category`, `description` (nonblank string), `required_evidence` (nonblank string), `blocks_disposition` (strict boolean) |
+
+`kind` is one of `malicious_support`, `benign_support`, `insufficient_evidence`.
+`category` is one of `authorization`, `execution_outcome`, `protocol`,
+`threat_intelligence`, `scope_impact`, `process_context`, `other`.
+All arrays are present, including when empty. Exact duplicate references within
+one array are rejected. All references, including hypothesis references when given,
+must resolve against the captured evidence map. Missing telemetry belongs in gaps,
+not a reference to a nonexistent field or a fabricated negative observation.
+
+`required_evidence` identifies the observation, record or contextual answer needed
+to resolve a gap. This structure aids review; nonblank strings still cannot prove
+that a gap is useful or that the model identified every missing fact.
+
+Normalize validated strings consistently before constructing/storing the verdict,
+while retaining the exact raw model response for audit. Top-level
+`missing_information` must equal the ordered list of normalized `gaps.description`
+values, including an empty list when no gaps are declared. Reject disagreement;
+do not silently rewrite one field from the other. Keep summary/reasoning/actions
+for readability, but require the prompt to distinguish observation from inference
+and to keep prose consistent with the declared basis and gaps.
+
+#### C. Deterministic consistency and abstention
+
+| Basis | Disposition | Mandatory relationships |
+|---|---|---|
+| `malicious_support` | MALICIOUS | At least one observation and decision reference; no blocking gap |
+| `benign_support` | BENIGN | At least one observation and decision reference; no blocking gap |
+| `insufficient_evidence` | UNDETERMINED | HIGH uncertainty; at least one blocking gap; observations/decision references may be empty |
+
+Every decision reference must also occur in an observation's references. A
+blocking gap requires `insufficient_evidence`; neither binary disposition may
+declare one. Nonblocking gaps and HIGH uncertainty can accompany a supported
+binary assessment. Unknown authorization alone does not force abstention when
+other supplied evidence independently supports the conclusion. Absence of other
+alerts or conventional tool/user names must not be presented as verified legitimacy.
+
+These checks establish declared relationships, not truth: a model can select the
+wrong basis, misclassify a material gap as nonblocking, or cite an irrelevant field.
+The prompt must request abstention when the actual disposition cannot be justified,
+without using hidden reference labels or severity as a shortcut. Generic examples
+cover attempts/outcomes, TCP/verified TLS and absent/failed lookups. Do not tune an
+example to make M23 predict its hidden malicious reference.
+
+Malformed or inconsistent output follows the existing unavailable-outcome path.
+Do not repair it into a successful abstention, change its disposition, or add an
+implicit retry/fallback. Valid UNDETERMINED remains available. Preserve raw output
+and existing safe error logging behavior; do not expose rejected telemetry in logs.
+
+#### D. Persistence, caches and legacy compatibility
+
+Add nullable verdict JSON columns/optional model fields `evidence_basis` and
+`evidence_context`. Store application-owned `evidence_contract_version` as nullable
+TEXT. New `triage-v2` verdicts require all three, the exact supported contract
+version and valid reference relationships. Older verdicts retain null values;
+never invent support or upgrade a previous response to `triage-v2`.
+
+The captured prompt, annotated sanitized evidence, contract version and full
+generation/assessment schema must enter cache identity. Validate new reference
+relationships on cache return as well as fresh output. A policy-v1 or unversioned
+record cannot satisfy a policy-v2 request; its history stays accessible. Preserve
+existing terminal hashes by omitting only newly added null metadata for unchanged
+old snapshots. New non-null basis/context/version values enter verdict fingerprints
+and idempotency checks. Keep existing evaluation-row/replay counting and saved
+confidence snapshots; no historical rescoring or backfill.
+
+The timeline API must expose read-derived `missing_information_recorded` (boolean)
+from the underlying SQL value before its existing null-to-empty normalization.
+Null/absent storage is unrecorded; a valid stored JSON list, including `[]`, is
+recorded. Malformed data must not be represented as an assessed empty list.
+This presence flag is API presentation metadata, excluded from verdict/evaluation
+hashes, inference evidence and persisted model output. Missing/null uncertainty is
+already distinguishable from a recorded LOW/MEDIUM/HIGH value. New metadata keys
+remain recursively isolated if they appear in input telemetry.
+
+#### E. Analyst presentation
+
+Place uncertainty and missing information visibly beside the disposition/summary,
+before recommended actions. Use accessible text/list semantics; do not rely on
+color or a tooltip. Render these states without making them equivalent:
+
+| Stored state | Display |
+|---|---|
+| Uncertainty LOW/MEDIUM/HIGH | Show the recorded level |
+| Uncertainty null/absent | `Uncertainty not recorded` |
+| Recorded nonempty gap list | Show every stored gap |
+| Recorded `[]` | `No gaps reported by the model` plus a reminder this is not proof of completeness |
+| Gap presence unrecorded, or an empty/absent list from an older API without the presence flag | `Missing-information assessment not recorded` |
+
+An older API's nonempty gap list must still be shown; uncertainty about whether
+an empty list was assessed is not a reason to hide supplied qualifications.
+Malformed values or contradictory presence metadata are a data-quality warning,
+not evidence that the model found no gaps.
+
+Display qualifications for existing `triage-v1` verdicts as well as new ones;
+do not require a new inference to make stored gaps visible. For `triage-v2`, also
+show the basis, observations, hypotheses and blocking/nonblocking gaps distinctly.
+Resolve citations to the saved sanitized snapshot and label text as model-authored
+analysis. Previous policies without a basis show `Evidence basis not recorded for
+this policy`. Keep confidence labels, policy identity and authorized-review /
+preservation / justified-emergency-containment warnings. No automatic action or
+UI claim that references certify safety is introduced.
+
+#### F. Acceptance and boundaries
+
+Offline implementation tests must cover every basis/disposition pairing, blocking
+and nonblocking gaps, missing/extra/mistyped fields, duplicate/invalid/nonexistent
+references, wrong contract versions, gap-list disagreement and immutability of
+saved evidence. Include appropriately supported malicious/benign controls and
+insufficient-evidence cases. Test that unsupported claims can still be structurally
+valid when references exist; do not claim a semantic proof from contract tests.
+
+Verify recursive metadata isolation, label-change request equivalence, PII masking,
+prompt/evidence/schema cache invalidation, validation after cache replay, nullable
+legacy migration, unchanged old terminal hashes and repeat finalization. Exercise
+the real API and verdict UI with all qualification states and the actual rendered
+basis/gap/citation content. Preserve scoring/availability/calibration behavior in
+History, Run, Quality and Attempts scopes. Report labelled binary coverage and
+abstentions alongside accuracy in later evaluations; do not improve a selective
+score by hiding difficult labelled cases.
+
+**Executed verification:** 728 backend tests and 79 dashboard tests passed; the
+TypeScript/Vite production build passed. One existing Starlette/HTTPX TestClient
+deprecation warning remains. No provider calls, production database changes,
+reference-label edits, dependency changes, commit or push were made. See the
+implementation follow-up in
+`docs/results/evidence_abstention_audit_20261108.md` for coverage and changed files.
+Historical snapshots, terminal hashes and scoring identities are preserved.
+
+No new dependency is required by this design. Telemetry normalization, trusted
+authorization-context ingestion, automatic semantic claim verification, expanded
+recommendation schemas, additional live evaluations and the broader YARA/MITRE/
+PostgreSQL phases are outside this implementation scope. Future live acceptance
+must be separately bounded and predeclared; no performance or safety guarantee is
+made by agreeing the contract. The offline audit's existing results are historical
+evidence, not tests of an unimplemented `triage-v2`.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

@@ -290,6 +290,9 @@ when comparing policy generations. Legacy confidence targets may be unrecorded.
 | Legacy severity proxy | {metrics_a.get('legacy_severity_proxy_count', 0)} | {metrics_b.get('legacy_severity_proxy_count', 0)} |
 | Basis unrecorded | {metrics_a.get('prediction_basis_unknown_count', 0)} | {metrics_b.get('prediction_basis_unknown_count', 0)} |
 | Undetermined | {metrics_a.get('abstained', 0)} | {metrics_b.get('abstained', 0)} |
+| Labelled binary coverage | {metrics_a.get('labelled_binary', 0)} / {metrics_a.get('labelled_available', 0)} | {metrics_b.get('labelled_binary', 0)} / {metrics_b.get('labelled_available', 0)} |
+| Labelled abstentions | {metrics_a.get('labelled_abstained', 0)} | {metrics_b.get('labelled_abstained', 0)} |
+| Available unknown truth | {metrics_a.get('unknown_ground_truth', 0)} | {metrics_b.get('unknown_ground_truth', 0)} |
 | Assessment policies | {', '.join(sorted({r.get('policy_version') or 'unrecorded' for r in records_a}))} | {', '.join(sorted({r.get('policy_version') or 'unrecorded' for r in records_b}))} |
 
 | Calibration Metric | Model A: `{model_a_name}` | Model B: `{model_b_name}` | Interpretation |

@@ -50,6 +50,11 @@ export interface Metrics {
   total: number;
   unknown: number;
   abstained?: number;
+  labelled_available?: number;
+  labelled_binary?: number;
+  labelled_abstained?: number;
+  labelled_binary_coverage?: number | null;
+  unknown_ground_truth?: number;
   explicit_disposition_count?: number;
   legacy_severity_proxy_count?: number;
   prediction_basis_unknown_count?: number;
@@ -116,6 +121,32 @@ export interface TimelineSummary {
   alert_ids?: string[];
 }
 
+export interface EvidenceReference {
+  evidence_id: string;
+  field_path: string[];
+}
+
+export interface EvidenceStatement {
+  statement: string;
+  refs: EvidenceReference[];
+}
+
+export interface EvidenceGap {
+  category: "authorization" | "execution_outcome" | "protocol" | "threat_intelligence" |
+    "scope_impact" | "process_context" | "other";
+  description: string;
+  required_evidence: string;
+  blocks_disposition: boolean;
+}
+
+export interface EvidenceBasis {
+  kind: "malicious_support" | "benign_support" | "insufficient_evidence";
+  decision_refs: EvidenceReference[];
+  observations: EvidenceStatement[];
+  hypotheses: EvidenceStatement[];
+  gaps: EvidenceGap[];
+}
+
 export interface TriageVerdict {
   id: string;
   timeline_id: string;
@@ -124,6 +155,12 @@ export interface TriageVerdict {
   disposition?: "MALICIOUS" | "BENIGN" | "UNDETERMINED" | null;
   policy_version?: string | null;
   model_name?: string | null;
+  uncertainty_level?: "LOW" | "MEDIUM" | "HIGH" | null;
+  missing_information?: string[] | null;
+  missing_information_recorded?: boolean;
+  evidence_basis?: EvidenceBasis | null;
+  evidence_context?: Record<string, Record<string, unknown>> | null;
+  evidence_contract_version?: string | null;
   summary: string;
   reasoning: string[];
   recommended_actions: string[];

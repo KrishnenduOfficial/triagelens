@@ -262,7 +262,7 @@ class DatabaseManager:
 
             # Nullable snapshots; never infer historical disposition or policy.
             for table, names in (
-                ('verdicts', ('disposition', 'policy_version')),
+                ('verdicts', ('disposition', 'policy_version', 'evidence_basis', 'evidence_context', 'evidence_contract_version')),
                 ('evaluations', ('disposition', 'prediction_basis', 'policy_version')),
             ):
                 existing = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})')}
@@ -551,7 +551,8 @@ class DatabaseManager:
             def outcome_snapshot(model):
                 data = model.model_dump(mode='json')
                 # Preserve pre-policy terminal hashes for unchanged old snapshots.
-                for name in ('disposition', 'prediction_basis', 'policy_version'):
+                for name in ('disposition', 'prediction_basis', 'policy_version',
+                             'evidence_basis', 'evidence_context', 'evidence_contract_version'):
                     if data.get(name) is None:
                         data.pop(name, None)
                 return data
@@ -1081,6 +1082,7 @@ class DatabaseManager:
             String representation of verdict_id.
         """
         with self._lock:
+            verdict = TriageVerdict.model_validate(verdict.model_dump(mode='json'))
             conn = self.connect()
             verdict_id_str = str(verdict.verdict_id)
             timeline_id_str = str(verdict.timeline_id)
@@ -1097,8 +1099,9 @@ class DatabaseManager:
                 INSERT INTO verdicts (
                     id, timeline_id, severity, confidence_score, summary,
                     reasoning, recommended_actions, raw_llm_response, created_at,
-                    model_name, uncertainty_level, missing_information, disposition, policy_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    model_name, uncertainty_level, missing_information, disposition, policy_version,
+                    evidence_basis, evidence_context, evidence_contract_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     verdict_id_str,
@@ -1115,6 +1118,9 @@ class DatabaseManager:
                     missing_info_json,
                     verdict.disposition,
                     verdict.policy_version,
+                    json.dumps(verdict.evidence_basis.model_dump(mode='json')) if verdict.evidence_basis is not None else None,
+                    json.dumps(verdict.evidence_context) if verdict.evidence_context is not None else None,
+                    verdict.evidence_contract_version,
                 ),
             )
             if not self._atomic_depth:
@@ -1131,11 +1137,32 @@ class DatabaseManager:
             row = cursor.fetchone()
             if not row:
                 return None
-            data = dict(row)
-            data["reasoning"] = json.loads(data["reasoning"])
-            data["recommended_actions"] = json.loads(data["recommended_actions"])
-            data["missing_information"] = json.loads(data.get("missing_information") or "[]")
-            return data
+            return self._decode_verdict(row)
+
+    @staticmethod
+    def _decode_verdict(row, presentation=False):
+        data = dict(row)
+        for name in ('reasoning', 'recommended_actions', 'evidence_basis', 'evidence_context'):
+            value = data.get(name)
+            try:
+                data[name] = json.loads(value) if value is not None else None
+            except (ValueError, TypeError):
+                if not presentation or name in ('reasoning', 'recommended_actions'):
+                    raise
+                data[name] = value  # Invalid new metadata is visible to the UI as a warning.
+        raw = data.get('missing_information')
+        if presentation:
+            try:
+                parsed = json.loads(raw) if raw is not None else []
+                valid = isinstance(parsed, list) and all(isinstance(item, str) for item in parsed)
+            except (ValueError, TypeError):
+                parsed, valid = None, False
+            data['missing_information_recorded'] = raw is not None and valid
+            # Preserve malformed storage as a detectable invalid value, never [].
+            data['missing_information'] = parsed if valid else raw
+        else:
+            data['missing_information'] = json.loads(raw or '[]')
+        return data
 
     def get_verdict_for_timeline(
         self, timeline_id: Union[UUID, str]
@@ -1150,11 +1177,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             if not row:
                 return None
-            data = dict(row)
-            data["reasoning"] = json.loads(data["reasoning"])
-            data["recommended_actions"] = json.loads(data["recommended_actions"])
-            data["missing_information"] = json.loads(data.get("missing_information") or "[]")
-            return data
+            return self._decode_verdict(row, presentation=True)
 
     # =====================================================================
     # Evaluation Persistence

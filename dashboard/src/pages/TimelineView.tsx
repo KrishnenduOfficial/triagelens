@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { VerdictQualifications } from "../components/VerdictQualifications";
 import {
   fetchTimelineDetail,
   type SeverityLevel,
@@ -173,6 +174,7 @@ export const TimelineView: React.FC = () => {
 
             {timeline.verdict ? (
               <div className="verdict-body">
+                <VerdictQualifications verdict={timeline.verdict} />
                 <div className="verdict-block">
                   <h4 className="block-title">Executive Threat Summary</h4>
                   <p className="verdict-summary-text">{timeline.verdict.summary}</p>

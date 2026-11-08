@@ -28,6 +28,19 @@ still found unsupported TLS/success/legitimacy claims and incomplete containment
 qualification. See `docs/results/triage_v1_live_check_20261108.md`. The earlier six
 outcomes remain pre-policy evidence. No live calls were made by the offline audit
 or implementation themselves.
+
+Follow-up evidence/abstention audit is complete:
+`docs/results/evidence_abstention_audit_20261108.md`. Six saved completions replay
+with matching request-body hashes; 14 injected local probes made zero network
+attempts, and 228 targeted regressions passed. Structural checks do not enforce
+evidence sufficiency or prose support, and the audit found missing uncertainty/gap
+presentation. ADR-057 is now implemented offline: active `triage-v2` /
+`evidence-basis-v1`, structured basis/observation/hypothesis/gap checks, validated
+references to immutable sanitized snapshots, and legacy-safe uncertainty display.
+Labelled coverage is reported separately from abstentions and unknown truth.
+Live v2 acceptance/semantic quality remains unmeasured. Normalization is a separate
+follow-up. Preserve all previous
+labels, metrics and policy identities; do not claim the semantic gaps are fixed.
 This does not close interactive UI, full CLI or prompt-injection verification.
 
 Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
@@ -36,11 +49,12 @@ benchmark reports and stored records retain their true model attribution.
 Do not ask the operator to resume Gemini diagnostics as a current project task.
 See README.md, TASKS.md, DECISIONS.md and docs/results/groq_migration_20261108.md.
 
-Current offline verification: 652 backend tests passed (one existing warning),
-49 dashboard tests passed and production build succeeded; local Markdown links and
+Current offline verification: 728 backend tests passed (one existing warning),
+79 dashboard tests passed and production build succeeded; local Markdown links and
 diff whitespace checks passed. Removed-provider tests were retired; the new policy
-adds 33 backend cases. Semantic safety still needs analyst review; the bounded
-live check exposed unresolved gaps. Untouched-case evaluation remains pending.
+added 33 backend cases; ADR-057 adds 76 backend and 30 dashboard cases. References
+establish traceability, not semantic proof. The earlier bounded live check used v1;
+v2 live acceptance and untouched-case evaluation remain pending.
 
 ## 1. Project Identity
 

@@ -95,6 +95,9 @@ export const MetricResults: React.FC<{ metrics: Metrics }> = ({ metrics }) => {
           <div><dt>Binary-labeled results</dt><dd>{metrics.total}</dd></div>
           <div><dt>Unscored binary outcomes (unknown or abstained)</dt><dd>{metrics.unknown}</dd></div>
           <div><dt>Undetermined dispositions</dt><dd>{countText(metrics.abstained)}</dd></div>
+          <div><dt>Labelled binary coverage</dt><dd>{formatPercent(metrics.labelled_binary_coverage)} ({countText(metrics.labelled_binary)} / {countText(metrics.labelled_available)} available labelled)</dd></div>
+          <div><dt>Labelled abstentions</dt><dd>{countText(metrics.labelled_abstained)}</dd></div>
+          <div><dt>Available outcomes with unknown truth</dt><dd>{countText(metrics.unknown_ground_truth)}</dd></div>
           <div><dt>Explicit disposition outcomes</dt><dd>{countText(metrics.explicit_disposition_count)}</dd></div>
           <div><dt>Legacy severity-proxy outcomes</dt><dd>{countText(metrics.legacy_severity_proxy_count)}</dd></div>
           <div><dt>Prediction basis unrecorded</dt><dd>{countText(metrics.prediction_basis_unknown_count)}</dd></div>

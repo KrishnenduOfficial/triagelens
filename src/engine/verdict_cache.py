@@ -87,8 +87,9 @@ def validated_candidate(snapshot, provenance, contract, now) -> Optional[TriageV
         data = snapshot.model_dump(mode='json') if isinstance(snapshot,TriageVerdict) else dict(snapshot)
         if 'id' in data:
             data['verdict_id']=data['id']
-            for name in ('reasoning','recommended_actions','missing_information'):
-                data[name]=json.loads(data[name])
+            for name in ('reasoning','recommended_actions','missing_information','evidence_basis','evidence_context'):
+                if data.get(name) is not None:
+                    data[name]=json.loads(data[name])
         if 'verdict_id' not in data or 'timeline_id' not in data:
             return None
         verdict = TriageVerdict.model_validate(data)

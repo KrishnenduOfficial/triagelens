@@ -1,8 +1,9 @@
 """Data models for AI-assisted alert triage and analysis."""
 
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator, model_validator
+from src.models.evidence import EvidenceBasis, EVIDENCE_CONTRACT_VERSION
 
 SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
 Disposition = Literal["MALICIOUS", "BENIGN", "UNDETERMINED"]
@@ -32,6 +33,9 @@ class TriageVerdict(BaseModel):
     raw_llm_response: str
     disposition: Optional[Disposition] = None
     policy_version: Optional[str] = Field(default=None, min_length=1)
+    evidence_basis: Optional[EvidenceBasis] = None
+    evidence_context: Optional[dict[str, dict[str, Any]]] = None
+    evidence_contract_version: Optional[str] = None
     model_name: Optional[str] = Field(
         default=None,
         description="The answering model identifier that generated this triage assessment",
@@ -50,6 +54,13 @@ class TriageVerdict(BaseModel):
     def require_versioned_disposition(self):
         if (self.disposition is None) != (self.policy_version is None):
             raise ValueError("Disposition and policy version must be recorded together")
+        metadata = (self.evidence_basis, self.evidence_context, self.evidence_contract_version)
+        if self.policy_version == "triage-v2" or any(value is not None for value in metadata):
+            if (any(value is None for value in metadata) or self.policy_version in (None, "triage-v1")
+                    or self.evidence_contract_version != EVIDENCE_CONTRACT_VERSION):
+                raise ValueError("Versioned evidence contract is missing or unsupported")
+            self.evidence_basis.validate_decision(self.disposition, self.uncertainty_level, self.missing_information)
+            self.evidence_basis.validate_context(self.evidence_context)
         return self
 
     @field_validator("severity", mode="before")

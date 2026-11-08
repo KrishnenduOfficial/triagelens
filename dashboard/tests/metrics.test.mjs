@@ -78,6 +78,18 @@ test('abstention and mixed prediction bases are disclosed without changing denom
   assert.equal(metrics.selection.denominators.binary, 2);
 });
 
+test('labelled binary coverage is displayed separately and malformed metadata is rejected', () => {
+  const metrics=fixture('history',{labelled_available:3,labelled_binary:2,labelled_abstained:1,
+    labelled_binary_coverage:2/3,unknown_ground_truth:0});
+  validateMetricResponse(metrics,{scope:'history'});
+  const html=text(React.createElement(MetricResults,{metrics}));
+  assert.match(html,/Labelled binary coverage 66.7% \(2 \/ 3 available labelled\)/);
+  assert.match(html,/Labelled abstentions 1/);
+  assert.match(html,/Available outcomes with unknown truth 0/);
+  assert.throws(()=>validateMetricResponse({...metrics,labelled_available:'3'},{scope:'history'}));
+  assert.throws(()=>validateMetricResponse({...metrics,labelled_binary_coverage:2},{scope:'history'}));
+});
+
 test('empty binary data and undefined FPR render N/A without changing payload', () => {
   const metrics = fixture('history', {accuracy:0,total:0,tp:0,tn:0,fp:0,fn:0});
   const html = text(React.createElement(MetricResults, {metrics}));

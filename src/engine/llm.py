@@ -55,7 +55,11 @@ CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matchin
     "recommended_actions": [
         "<authorized, evidence-qualified investigation or preservation step>",
         "<scoped response only if justified; preserve evidence before cleanup>"
-    ]
+    ],
+    "evidence_basis": {
+        "kind": "malicious_support" | "benign_support" | "insufficient_evidence",
+        "decision_refs": [], "observations": [], "hypotheses": [], "gaps": []
+    }
 }
 Do not include any introductory remarks, markdown prose outside the JSON block, or post-analysis commentary. Output ONLY the JSON object.
 """ + POLICY_DIRECTIVES
@@ -346,6 +350,7 @@ class TriageEngineBase:
     PROVIDER_ID = ""
     PROVIDER_LABEL = "LLM"
     POLICY_VERSION = None
+    EVIDENCE_CONTRACT_VERSION = None
 
 
     FORBIDDEN_EVALUATION_KEYS = {
@@ -363,6 +368,11 @@ class TriageEngineBase:
         "disposition",
         "prediction_basis",
         "policy_version",
+        "evidence_basis",
+        "evidence_context",
+        "evidence_contract_version",
+        "evidence_id",
+        "missing_information_recorded",
     }
 
     FORBIDDEN_PROVENANCE_KEYS = {
@@ -512,8 +522,14 @@ class TriageEngineBase:
     def _system_prompt(self) -> str:
         return DFIR_SYSTEM_PROMPT
 
-    def _verdict_metadata(self, assessment):
+    def _verdict_metadata(self, assessment, evidence_context):
         return {}
+
+    def _prepare_evidence(self, payload):
+        return None
+
+    def _cache_compatible(self, verdict, evidence_context):
+        return True
 
     def _prepare_request(self, candidate, user_prompt, generation, system_prompt):
         raise NotImplementedError
@@ -523,6 +539,9 @@ class TriageEngineBase:
 
     def _validate_assessment(self, assessment: Dict[str, Any]) -> bool:
         return True
+
+    def _normalize_assessment(self, assessment):
+        return assessment if self._validate_assessment(assessment) else None
 
     def _extract_json(self, raw_text: str) -> Optional[Dict[str, Any]]:
         """Extracts and parses a JSON object from raw LLM output.
@@ -755,6 +774,7 @@ class TriageEngineBase:
         for entry in final_enrichments:
             if isinstance(entry.get("intel_summary"), dict):
                 entry["intel_summary"] = _bound_enrichment_summary(entry["intel_summary"])
+        evidence_context = self._prepare_evidence(final_payload)
         sanitized_timeline_json = json.dumps(final_payload, indent=2, ensure_ascii=True, default=str)
 
         # 2. Construct API request payload with explicit evidence boundary delimiters
@@ -793,6 +813,7 @@ class TriageEngineBase:
                 'models':candidate_models,'generation':generation_by_model,
                 'system_instruction':{'parts': [{'text': system_prompt}]},
                 'assessment_policy_version':self.POLICY_VERSION,
+                'evidence_contract_version':self.EVIDENCE_CONTRACT_VERSION,
                 'user_template':user_prompt.replace(sanitized_timeline_json,'<EVIDENCE_JSON>',1),
                 'schema':TriageVerdict.model_json_schema(),
             }),tuple(candidate_models),effective_ttl)
@@ -815,7 +836,7 @@ class TriageEngineBase:
                         rejection = True
                         continue
                     cached = validated_candidate(row,stamp,contract,self.utc_clock())
-                    if cached is not None:
+                    if cached is not None and self._cache_compatible(cached, evidence_context):
                         note_cache_state('verified',contract,stamp)
                         note_acquisition('cache')
                         return cached
@@ -825,7 +846,7 @@ class TriageEngineBase:
                 rejection |= rejected
                 if cached is not None:
                     validated = validated_candidate(cached,stamp,contract,self.utc_clock())
-                    if validated is not None:
+                    if validated is not None and self._cache_compatible(validated, evidence_context):
                         note_cache_state('verified',contract,stamp)
                         note_acquisition('cache')
                         return validated
@@ -909,7 +930,8 @@ class TriageEngineBase:
             logger.error(f"Failed to extract valid JSON object from LLM response: {safe_text}")
             return None
 
-        if not self._validate_assessment(parsed_dict):
+        parsed_dict = self._normalize_assessment(parsed_dict)
+        if parsed_dict is None:
             logger.error("%s assessment failed strict validation; verdict withheld.", self.PROVIDER_LABEL)
             return None
 
@@ -937,7 +959,7 @@ class TriageEngineBase:
                 model_name=answering_model,
                 uncertainty_level=uncertainty,
                 missing_information=missing_info,
-                **self._verdict_metadata(parsed_dict),
+                **self._verdict_metadata(parsed_dict, evidence_context),
             )
             if self.enable_cache and self.cache is not None and effective_ttl>0:
                 stamp = CacheProvenance.create(contract,verdict,self.utc_clock())

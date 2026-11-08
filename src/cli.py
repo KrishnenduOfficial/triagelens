@@ -260,6 +260,9 @@ def _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups):
     logger.info("Confusion Matrix Counts     : TP=%d, TN=%d, FP=%d, FN=%d", metrics.get("tp", 0), metrics.get("tn", 0), metrics.get("fp", 0), metrics.get("fn", 0))
     logger.info("Binary Evaluated Records    : %d (Unknown/abstained: %d)", metrics.get("total", 0), metrics.get("unknown", 0))
     logger.info("Undetermined Dispositions   : %d", metrics.get("abstained", 0))
+    logger.info("Labelled Binary Coverage    : %d / %d available labelled (abstained: %d)",
+                metrics.get("labelled_binary", 0), metrics.get("labelled_available", 0),
+                metrics.get("labelled_abstained", 0))
     logger.info("Prediction Basis            : explicit=%d, legacy proxy=%d, unrecorded=%d",
                 metrics.get("explicit_disposition_count", 0), metrics.get("legacy_severity_proxy_count", 0),
                 metrics.get("prediction_basis_unknown_count", 0))
