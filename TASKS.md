@@ -12,6 +12,12 @@ verdicts, TP=3/TN=3/FP=0/FN=0, and exact severity agreement 1/6. Saved API metri
 static dashboard rendering matched. This selected synthetic sample is not a
 general performance claim. See [evaluation](docs/results/groq_evaluation_report.md).
 
+The later `triage-v1` development check completed six live requests: TP=3/TN=1/FN=1
+on five labelled cases, one unlabelled abstention, and severity agreement 3/5. All
+four API scopes and static dashboard rendering matched saved metrics. Semantic
+policy compliance remains incomplete; see
+[new-policy evidence](docs/results/triage_v1_live_check_20261108.md).
+
 Gemini WIRE-11 is **retired / superseded by provider replacement**. Its upstream
 cause was not established or repaired. It is not an active blocker or a task to
 resume. Prior benchmark reports and stored outcomes retain historical attribution.
@@ -55,9 +61,15 @@ resume. Prior benchmark reports and stored outcomes retain historical attributio
   nonblank content checks, abstention accounting, additive persistence, exact
   prompt/cache identity and evaluator-aware cohorts. See the
   [audit and implementation verification](docs/results/severity_safety_audit_20261108.md).
-- [ ] Verify new-policy Groq output on a bounded development sample, then evaluate
-  untouched cases under a new explicit inference-policy/cohort identity. Existing
-  six-case scores predate this policy; do not relabel them or alter reference labels.
+- [x] Verify new-policy Groq output on a bounded development sample under a new
+  explicit inference-policy/cohort identity. Six valid responses include one
+  unlabelled abstention, but review found a high-confidence false negative and
+  unsupported assertions; this is not a semantic-safety sign-off.
+- [ ] Audit evidence-qualified conclusions and abstention consistency offline.
+  M23 is explicitly BENIGN despite missing authorization context; the sparse TCP/443
+  response abstains but still invents TLS. Containment qualification also needs review.
+- [ ] Evaluate untouched cases after addressing the development findings. Preserve
+  labels, earlier scores and policy attribution; do not tune to hidden intent.
 - [ ] Measure Groq prompt-injection resistance and availability; report sample size and scope.
 - [ ] Verify the normal CLI -> shared SQLite -> API -> dashboard workflow manually.
   Preserve default History behavior and select explicit run/cohort IDs for provider comparisons.
@@ -80,7 +92,8 @@ Starlette/HTTPX deprecation warning; **49 dashboard tests passed** and productio
 build succeeded. Local Markdown
 link checks and `git diff --check` passed. Removed-provider tests explain the change
 from the pre-retirement 688-case suite; ADR-056 adds 33 backend cases. Those offline checks made no provider
-requests; the separate live evaluation above made six authorized requests.
+requests; two separate live development evaluations made six authorized requests
+each, using different policy identities and sample compositions.
 
 Ordinary pytest stays offline, including with local credentials configured. Use
 injected transports and temporary databases. Never weaken security tests or claim

@@ -1,10 +1,13 @@
 # TriageLens
 
 **Active provider: Groq, `openai/gpt-oss-120b` (ADR-055).**
-A six-case live synthetic check on 2026-11-08 returned six valid verdicts:
+A pre-policy six-case live synthetic check on 2026-11-08 returned six valid verdicts:
 6/6 binary classifications matched the labels, but exact severity matched 1/6.
 This small selected sample does not establish general accuracy or service uptime.
 Gemini runtime support is removed. Historical results remain attributed correctly.
+The later `triage-v1` check returned six valid assessments, including one abstention,
+but still exposed a false negative and unsupported assertions; see
+[new-policy evidence](docs/results/triage_v1_live_check_20261108.md).
 
 > **An alert triage pipeline that measures how often its AI is wrong.**
 
@@ -101,8 +104,15 @@ without specifying evidence preservation first. The subsequent
 policy criteria and a malicious/LOW reference conflicting with severity-derived
 binary scoring. The approved `triage-v1` contract and recommendation policy are
 now implemented and verified offline (ADR-056). These six measured results predate
-that policy and are unchanged. Live compliance with the new policy, injection resistance,
-real-world generalization and sustained availability remain unmeasured. The
+that policy and are unchanged. The subsequent selected `triage-v1` live check made
+six successful requests: TP=3/TN=1/FN=1 across five labelled cases, one unlabelled
+UNDETERMINED response, and exact severity agreement 3/5. Saved metrics matched all
+four API scopes and static dashboard rendering. Review still found unsupported
+TLS/success/legitimacy assertions and incomplete containment qualification. This
+does not establish safe recommendations or an improvement over a different sample.
+See [new-policy results and remaining gaps](docs/results/triage_v1_live_check_20261108.md).
+Injection resistance, real-world generalization and sustained availability remain
+unmeasured. The
 repository's 70-case dataset is synthetic, not a real-world SOC benchmark.
 See the [six-case evidence and limitations](docs/results/groq_evaluation_report.md).
 

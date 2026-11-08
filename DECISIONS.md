@@ -2248,8 +2248,15 @@ metadata isolation, actual prompt/cache consistency, persistent policy changes,
 legacy migration/idempotency and API run/attempts/quality scopes. See
 `docs/results/severity_safety_audit_20261108.md` for final results and changed files.
 No live model request, reference-label rewrite, commit or push was performed.
-The six prior live outcomes remain pre-policy development evidence; new-policy
-live quality, held-out performance and injection resistance remain unmeasured.
+The six prior live outcomes remain pre-policy development evidence. At implementation,
+new-policy live quality, held-out performance and injection resistance were unmeasured.
+
+**Subsequent live verification:** The operator authorized a six-request `triage-v1`
+development check on 2026-11-08. Provider/schema acceptance and persisted scoring
+passed, including an abstention. Review still found a false negative and unsupported
+claims; no semantic safety sign-off or further policy change is implied. See
+`docs/results/triage_v1_live_check_20261108.md`. Held-out performance and injection
+resistance remain unmeasured.
 
 ## 4. Deferred Decisions
 

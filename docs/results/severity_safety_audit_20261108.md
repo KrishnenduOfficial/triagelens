@@ -210,6 +210,11 @@ No fix, benchmark rerun, commit or push was performed by this audit.
 
 ## Approved implementation and verification
 
+Follow-up after implementation: the authorized
+[six-request live development check](triage_v1_live_check_20261108.md) verified
+schema acceptance and abstention accounting but exposed remaining semantic gaps.
+The offline verification and limits below describe the implementation stage.
+
 The operator approved independent disposition, the confidence target and legacy
 compatibility, then authorized the versioned rubric and preservation-first,
 evidence-qualified recommendation policy. Implementation is `triage-v1` in

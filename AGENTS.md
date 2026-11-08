@@ -20,9 +20,14 @@ malicious/LOW scoring conflict and structural validation accepting unsafe or
 unsupported advice. The operator subsequently approved and implemented ADR-056:
 `triage-v1` separates disposition from severity, adds an evidence-qualified,
 preservation-first policy and structural content checks, and preserves legacy
-history with explicit prediction-basis metadata. New-policy live quality remains
-unmeasured; the six earlier outcomes are pre-policy evidence. No new API calls
-were made for the audit or implementation.
+history with explicit prediction-basis metadata. The subsequent authorized
+`triage-v1` live development check made six requests: six valid outcomes, TP=3,
+TN=1/FN=1 on five labelled cases, one unlabelled abstention, and severity 3/5.
+Saved metrics matched all four API scopes and static dashboard rendering. Review
+still found unsupported TLS/success/legitimacy claims and incomplete containment
+qualification. See `docs/results/triage_v1_live_check_20261108.md`. The earlier six
+outcomes remain pre-policy evidence. No live calls were made by the offline audit
+or implementation themselves.
 This does not close interactive UI, full CLI or prompt-injection verification.
 
 Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
@@ -34,7 +39,8 @@ See README.md, TASKS.md, DECISIONS.md and docs/results/groq_migration_20261108.m
 Current offline verification: 652 backend tests passed (one existing warning),
 49 dashboard tests passed and production build succeeded; local Markdown links and
 diff whitespace checks passed. Removed-provider tests were retired; the new policy
-adds 33 backend cases. Semantic safety still needs analyst review and live evaluation.
+adds 33 backend cases. Semantic safety still needs analyst review; the bounded
+live check exposed unresolved gaps. Untouched-case evaluation remains pending.
 
 ## 1. Project Identity
 
