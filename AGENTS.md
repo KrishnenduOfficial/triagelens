@@ -14,8 +14,15 @@ not benchmark accuracy or guaranteed future availability.
 Subsequent agent-executed live verification: six preselected synthetic cases,
 six valid verdicts, TP=3/TN=3/FP=0/FN=0, but severity agreement only 1/6. API persisted
 metrics and real-component static rendering matched. See
-`docs/results/groq_evaluation_report.md`. Unsupported assertions and a destructive
-cleanup recommendation require an offline rubric/preservation audit before scaling.
+`docs/results/groq_evaluation_report.md`. The offline rubric/preservation audit is
+complete: `docs/results/severity_safety_audit_20261108.md`. It reproduced M23's
+malicious/LOW scoring conflict and structural validation accepting unsafe or
+unsupported advice. The operator subsequently approved and implemented ADR-056:
+`triage-v1` separates disposition from severity, adds an evidence-qualified,
+preservation-first policy and structural content checks, and preserves legacy
+history with explicit prediction-basis metadata. New-policy live quality remains
+unmeasured; the six earlier outcomes are pre-policy evidence. No new API calls
+were made for the audit or implementation.
 This does not close interactive UI, full CLI or prompt-injection verification.
 
 Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
@@ -24,9 +31,10 @@ benchmark reports and stored records retain their true model attribution.
 Do not ask the operator to resume Gemini diagnostics as a current project task.
 See README.md, TASKS.md, DECISIONS.md and docs/results/groq_migration_20261108.md.
 
-Current offline verification: 619 backend tests passed (one existing warning),
-48 dashboard tests passed; local Markdown links and diff whitespace checks passed.
-The lower backend total reflects retirement of tests exclusive to removed features.
+Current offline verification: 652 backend tests passed (one existing warning),
+49 dashboard tests passed and production build succeeded; local Markdown links and
+diff whitespace checks passed. Removed-provider tests were retired; the new policy
+adds 33 backend cases. Semantic safety still needs analyst review and live evaluation.
 
 ## 1. Project Identity
 

@@ -164,7 +164,7 @@ class AccuracyTracker:
     - True Negatives (TN): Benign ground truth, LLM predicted benign
     - False Positives (FP): Benign ground truth, LLM predicted malicious
     - False Negatives (FN): Malicious ground truth, LLM predicted benign
-    - Unknown: Missing ground truth, excluded from confusion matrix metrics
+    - Unknown: Missing ground truth or abstained disposition, excluded from binary metrics
     - Unavailable: AI prediction missing/failed, excluded from confusion matrix metrics
     """
 
@@ -413,15 +413,21 @@ class AccuracyTracker:
             self.history.append(result)
             return result
 
-        # 1. Determine LLM prediction (True if Critical/High/Medium, False if Low/Informational)
+        # Legacy verdicts retain the original severity proxy. New verdicts record
+        # an independent disposition; abstention is available but not binary evidence.
         sev = str(verdict.severity).strip().upper()
-        llm_prediction = sev in ("CRITICAL", "HIGH", "MEDIUM")
+        if verdict.disposition is None:
+            llm_prediction = sev in ("CRITICAL", "HIGH", "MEDIUM")
+            prediction_basis = "legacy_severity_proxy"
+        else:
+            llm_prediction = {"MALICIOUS": True, "BENIGN": False, "UNDETERMINED": None}[verdict.disposition]
+            prediction_basis = "explicit_disposition_v1"
 
         # 2. Categorize against ground truth
         category: EvaluationCategory
         is_correct: Optional[bool]
 
-        if ground_truth is None:
+        if ground_truth is None or llm_prediction is None:
             category = "Unknown"
             is_correct = None
             self.unknown_count += 1
@@ -469,6 +475,9 @@ class AccuracyTracker:
             severity_prediction=sev,
             severity_correct=severity_correct,
             confidence_score=conf,
+            disposition=verdict.disposition,
+            prediction_basis=prediction_basis,
+            policy_version=verdict.policy_version,
         )
         self.history.append(result)
         return result
@@ -624,6 +633,10 @@ class AccuracyTracker:
             "fn": fn,
             "total": total,
             "unknown": self.unknown_count,
+            "abstained": sum(r.disposition == "UNDETERMINED" for r in self.history),
+            "explicit_disposition_count": sum(r.prediction_basis == "explicit_disposition_v1" for r in self.history),
+            "legacy_severity_proxy_count": sum(r.prediction_basis == "legacy_severity_proxy" for r in self.history),
+            "prediction_basis_unknown_count": sum(r.prediction_basis is None for r in self.history),
             "unavailable": self.unavailable_count,
             "availability_rate": availability_rate,
             "positive_samples": positive_samples,

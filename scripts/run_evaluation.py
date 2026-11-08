@@ -164,7 +164,7 @@ def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
         run.complete(observation_id, eval_result, tl, tracker,
                      verdict=verdict, failure_category=failure_category)
 
-        status_symbol = "OK" if eval_result.is_correct else "ERR"
+        status_symbol = "UNSCORED" if eval_result.is_correct is None else "OK" if eval_result.is_correct else "ERR"
         print(f"[{eval_result.category}] {status_symbol}")
 
         evaluation_records.append({
@@ -179,10 +179,13 @@ def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
             ),
             "llm_prediction_bool": eval_result.llm_prediction,
             "llm_prediction_label": (
-                "Unavailable" if eval_result.llm_prediction is None
+                ("Unavailable" if verdict is None else "Undetermined") if eval_result.llm_prediction is None
                 else "Malicious" if eval_result.llm_prediction else "Benign"
             ),
             "severity_prediction": verdict.severity if verdict else "N/A",
+            "disposition": verdict.disposition if verdict else None,
+            "prediction_basis": eval_result.prediction_basis,
+            "policy_version": verdict.policy_version if verdict else None,
             "category": eval_result.category,
             "is_correct": eval_result.is_correct,
             "model_name": verdict.model_name if verdict else "N/A",
@@ -224,6 +227,17 @@ def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
 **Configured Model Hierarchy:** `{engine.model}` (configured primary) -> `{', '.join(engine.fallback_models)}`  
 **Dataset:** `data/eval_benchmark_70.json` (70 Balanced Enterprise Timelines; Synthetic Telemetry)  
 **Evaluation Digest (SHA-256):** `{report_data['integrity_hash']}`  
+
+**Prediction basis:** explicit disposition `{metrics['explicit_disposition_count']}`;
+legacy severity proxy `{metrics['legacy_severity_proxy_count']}`;
+unrecorded `{metrics['prediction_basis_unknown_count']}`.
+**Assessment policies:** `{', '.join(sorted({r['policy_version'] or 'unrecorded' for r in evaluation_records}))}`.
+**Undetermined dispositions:** `{metrics['abstained']}`; total unscored binary
+outcomes (including unknown truth): `{metrics['unknown']}`.
+Abstention is an available result, excluded from binary accuracy and calibration.
+Confidence measures binary correctness under the recorded policy, not severity
+or recommendation safety. Legacy confidence targets may be unrecorded. Compare
+explicit run/cohort identities rather than combining different policy generations.
 
 ---
 

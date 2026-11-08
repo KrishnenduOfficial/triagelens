@@ -1,5 +1,10 @@
 # Groq six-case synthetic evaluation - 2026-11-08
 
+Follow-up: the [offline severity/safety audit](severity_safety_audit_20261108.md)
+is complete, followed by the operator-approved `triage-v1` implementation (ADR-056).
+These measured results predate that policy and remain unchanged; recommendations
+below are historical. New-policy model quality has not yet been measured.
+
 ## Scope and reproducibility
 
 This is an actual agent-executed live evaluation authorized by the user's "go on",

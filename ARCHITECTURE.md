@@ -41,14 +41,45 @@ construction. Concrete transports own generation settings, credentials, endpoint
 response extraction and additional validation. The retired provider transport,
 credentials, exports and diagnostic tools have been removed (ADR-055).
 
-Groq sends only seven model-authored assessment fields under strict JSON schema.
+Groq sends eight model-authored assessment fields under strict JSON schema (ADR-056).
 Application-generated IDs and answering-model provenance cannot be authored by the
 model. A non-stop finish reason, refusal, tool call, mismatched model or invalid
 assessment is unavailable. Configured fallback is attempted only at the existing
 transport/HTTP 429/503/404 boundaries; there is no implicit retry loop.
 Cache policy hashes include provider identity, model chain, schema, prompt and
 generation settings, preventing Gemini/Groq cache reuse. Historical records and
-history metric counting are preserved; there is no database migration or backfill.
+history metric counting are preserved. Provider replacement itself required no
+backfill; the later ADR-056 migration adds nullable disposition/policy snapshots.
+
+## Versioned Assessment Contract (ADR-056)
+
+`src/engine/triage_policy.py` defines application-owned `triage-v1`. Disposition
+is MALICIOUS/BENIGN/UNDETERMINED, independently of severity as response priority.
+Groq locally requires a nonblank summary, at least one nonblank reason/action,
+nonblank gap entries, and HIGH uncertainty with a gap for UNDETERMINED. Empty gaps
+remain permitted for other dispositions. Policy identity is attached by the engine,
+never authored by the model. Confidence means correctness of the selected binary
+disposition; abstention confidence is excluded from calibration.
+
+The policy instructs evidence-qualified claims and preservation before destructive
+cleanup, authorized analyst review, scoped actions, and justified emergency
+containment when ongoing harm makes full acquisition impractical. This is model
+guidance plus structural checks, not semantic certification or automatic response.
+The dashboard repeats the review/preservation warning beside recommendations.
+
+One captured system prompt is used for both the actual request and cache contract;
+policy version is also hashed. Changed policies invalidate reuse while retaining
+history. New verdicts/evaluations persist nullable disposition and policy version;
+evaluations additionally snapshot prediction basis. Legacy null fields remain
+unrecorded without backfill; original evaluation categories/calibration persist.
+Legacy verdicts evaluated again retain their original severity-derived prediction.
+
+UNDETERMINED is an available response in `unknown`, with a separate `abstained`
+count; it is excluded from binary/calibration denominators but can have a scored
+severity. Metrics disclose explicit, legacy-proxy and unrecorded basis counts.
+New evaluation contexts/cohorts identify `AccuracyTracker-disposition-v1`; existing
+`AccuracyTracker-v1` manifests and terminal hashes remain valid. A cohort cannot
+mix the two binary evaluator rules. Run/History counting units are unchanged.
 
 `scripts/diagnose_groq.py` checks one synthetic full triage, bypassing cache and
 fallback. Its dry run makes no request; optional traces use shared allow-listed
@@ -415,7 +446,7 @@ Groq chat completions (`https://api.groq.com/openai/v1/chat/completions`):
 4. **Response Caching:** Check `LLMResponseCache` using SHA-256 fingerprint of sanitized timeline alerts and candidate model before making external requests (ADR-025).
 5. **API Invocation:** Transmit system/user messages and strict JSON schema to Groq. Only explicitly configured fallbacks are tried upon HTTP 429, 503, 404 or transport failures.
 6. **Safe Failure Reporting:** Withhold upstream error bodies and exception details from Groq logs; report status/category without exposing telemetry or credentials.
-7. **Strict Schema Parsing:** Require exact JSON with seven model-authored fields, local strict types/ranges, expected model identity and a completed answer. Reject prose, fences, truncation, refusals and tool calls.
+7. **Strict Schema Parsing:** Require exact JSON with eight model-authored fields, local strict types/ranges/content checks, expected model identity and a completed answer. Reject prose, fences, truncation, refusals and tool calls.
 8. **Verdict Attribution:** Store answering `model_name`, `uncertainty_level`, and `missing_information` in `TriageVerdict` and persist to SQLite.
 
 ### Expected Output Schema
@@ -424,6 +455,7 @@ Each triage assessment produces a structured `TriageVerdict`:
 
 ```json
 {
+  "disposition": "MALICIOUS" | "BENIGN" | "UNDETERMINED",
   "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL",
   "confidence_score": 0.0 - 1.0,
   "uncertainty_level": "LOW" | "MEDIUM" | "HIGH",
@@ -435,7 +467,7 @@ Each triage assessment produces a structured `TriageVerdict`:
     "Telemetry gap or investigative lead"
   ],
   "recommended_actions": [
-    "Immediate containment or remediation step"
+    "Authorized, scoped investigation/preservation step; cleanup only after preservation"
   ]
 }
 ```

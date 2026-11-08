@@ -93,12 +93,16 @@ export const MetricResults: React.FC<{ metrics: Metrics }> = ({ metrics }) => {
           <div><dt>False positive rate</dt><dd>{formatPercent(validFpr ? metrics.false_positive_rate : null)}</dd></div>
           <div><dt>False negative rate</dt><dd>{formatPercent(validFnr ? metrics.false_negative_rate : null)}</dd></div>
           <div><dt>Binary-labeled results</dt><dd>{metrics.total}</dd></div>
-          <div><dt>Unknown binary labels</dt><dd>{metrics.unknown}</dd></div>
+          <div><dt>Unscored binary outcomes (unknown or abstained)</dt><dd>{metrics.unknown}</dd></div>
+          <div><dt>Undetermined dispositions</dt><dd>{countText(metrics.abstained)}</dd></div>
+          <div><dt>Explicit disposition outcomes</dt><dd>{countText(metrics.explicit_disposition_count)}</dd></div>
+          <div><dt>Legacy severity-proxy outcomes</dt><dd>{countText(metrics.legacy_severity_proxy_count)}</dd></div>
+          <div><dt>Prediction basis unrecorded</dt><dd>{countText(metrics.prediction_basis_unknown_count)}</dd></div>
           <div><dt>Unavailable outcomes</dt><dd>{countText(metrics.unavailable)}</dd></div>
         </dl>
         {!validFpr && <p className="stat-hint">FPR is undefined without negative samples.</p>}
         {!validFnr && <p className="stat-hint">FNR and recall are undefined without positive samples.</p>}
-        <p className="stat-hint">Unknown labels are distinct from skipped inputs. Unavailable outcomes do not enter binary accuracy or calibration.</p>
+        <p className="stat-hint">Unknown truth and undetermined disposition do not enter binary accuracy or calibration. Abstention is an available response. Calibration measures confidence in binary correctness, not severity or recommendation safety. Historical results may use a different prediction basis; use explicit cohorts for policy comparisons.</p>
       </div>
     </div>
 

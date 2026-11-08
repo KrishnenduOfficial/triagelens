@@ -13,7 +13,7 @@ Gemini runtime support is removed. Historical results remain attributed correctl
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-619_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-652_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -63,7 +63,7 @@ verification remains pending; one Groq synthetic live request has succeeded.
 ### 3.1 What the model does in TriageLens
 
 Groq receives sanitized chronological security evidence and returns a structured
-assessment: severity, confidence, summary, supporting reasoning, recommended
+assessment: independent disposition, severity, confidence, summary, supporting reasoning, recommended
 investigation actions, uncertainty and missing information. It assists analysts;
 it does not execute containment, run tools or independently verify its own claims.
 
@@ -96,11 +96,32 @@ Mean request time was 1.24 seconds. Saved results matched the API's History, Run
 and Fresh attempts metrics and rendered through the dashboard's real component.
 
 The review found unsupported assertions and a recommendation to delete a dump
-without specifying evidence preservation first. Severity criteria and analyst-safe
-recommendations need review before a larger evaluation. Injection resistance,
+without specifying evidence preservation first. The subsequent
+[offline audit](docs/results/severity_safety_audit_20261108.md) confirmed missing
+policy criteria and a malicious/LOW reference conflicting with severity-derived
+binary scoring. The approved `triage-v1` contract and recommendation policy are
+now implemented and verified offline (ADR-056). These six measured results predate
+that policy and are unchanged. Live compliance with the new policy, injection resistance,
 real-world generalization and sustained availability remain unmeasured. The
 repository's 70-case dataset is synthetic, not a real-world SOC benchmark.
 See the [six-case evidence and limitations](docs/results/groq_evaluation_report.md).
+
+New assessments separate `disposition` (MALICIOUS, BENIGN or UNDETERMINED) from
+severity (response priority/impact). A malicious event can have LOW priority.
+UNDETERMINED requires HIGH uncertainty and a nonblank missing-information item;
+it counts as available but contributes to neither binary accuracy nor calibration.
+Severity agreement remains independently scored when a reference severity exists.
+Confidence concerns disposition correctness, not severity or action safety.
+
+The [versioned policy](src/engine/triage_policy.py) requires evidence-qualified
+claims, authorized analyst review, and preservation before destructive cleanup.
+Emergency containment may precede full collection when observed ongoing harm
+justifies it; the analyst must assess scope, urgency and evidence-loss tradeoffs.
+Nonblank summary, reasoning and recommendations are validated locally. Free-text
+correctness and safety still require human review; structural validation cannot
+certify them. The exact system prompt and policy identity enter cache fingerprints.
+Old records retain their original scores and null/unrecorded policy metadata;
+History may mix scoring generations, so use explicit cohorts for comparisons.
 
 ### 3.4 Historical benchmark evidence
 
@@ -122,7 +143,7 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (619 passing backend tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (652 passing backend tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
 
 ---
@@ -401,7 +422,7 @@ triagelens/
     engine/                     # Pipeline, Groq, cache, provenance and metric scopes
     models/                     # Validated data contracts
     utils/                      # Indicator extraction and credential/PII masking
-  tests/                        # 619 verified backend cases; network blocked by default
+  tests/                        # 652 verified backend cases; network blocked by default
 ```
 
 Local `.env`, virtual environments, dependencies, build output, databases and

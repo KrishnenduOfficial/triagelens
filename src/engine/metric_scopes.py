@@ -42,7 +42,7 @@ def normalize_manifest(manifest):
         raise MetricSelectionError("Unsupported cohort manifest", 422)
     if manifest["kind"] not in ("ad_hoc", "declared"):
         raise MetricSelectionError("Unsupported cohort kind", 422)
-    if (manifest["evaluator_version"] != "AccuracyTracker-v1" or
+    if (manifest["evaluator_version"] not in ("AccuracyTracker-v1", "AccuracyTracker-disposition-v1") or
             manifest["label_policy_version"] != "evaluation-context-v1"):
         raise MetricSelectionError("Unsupported evaluator or label-policy version", 422)
     if not isinstance(manifest["revision"], str) or not manifest["revision"].strip():
@@ -117,6 +117,10 @@ def _verified_member(row, observation, run, manifest, members):
             row["quality_cohort_hash"] != run["quality_cohort_hash"]):
         raise MetricSelectionError("Evaluation provenance integrity failure")
     member = members.get(row["timeline_id"])
+    evaluator = ("AccuracyTracker-disposition-v1" if row["prediction_basis"] == "explicit_disposition_v1"
+                 else "AccuracyTracker-v1")
+    if row["verdict_id"] is not None and manifest["evaluator_version"] != evaluator:
+        raise MetricSelectionError("Outcome prediction basis does not match cohort evaluator")
     if (member is None or member["evidence_hash"] != observation["evidence_hash"] or
             member["evaluation_context_hash"] != row["evaluation_context_hash"] or
             manifest["inference_policy_hash"] != observation["inference_policy_hash"]):
@@ -131,7 +135,7 @@ def run_manifest(snapshot, run_id):
         raise MetricSelectionError("Unknown run", 404)
     if run["status"] not in ("completed", "failed"):
         raise MetricSelectionError("Cohort declaration requires a terminal run")
-    members, policies = {}, set()
+    members, policies, evaluators = {}, set(), set()
     for row in snapshot["rows"]:
         ob = snapshot["observations"].get(row["observation_id"])
         if not ob or ob["run_id"] != run_id:
@@ -147,10 +151,15 @@ def run_manifest(snapshot, run_id):
             raise MetricSelectionError("Conflicting case assignments in cohort")
         members[member["case_id"]] = member
         policies.add(ob["inference_policy_hash"])
+        if row["verdict_id"] is not None:
+            evaluators.add("AccuracyTracker-disposition-v1" if row["prediction_basis"] == "explicit_disposition_v1"
+                           else "AccuracyTracker-v1")
     if not members or len(policies) != 1:
         raise MetricSelectionError("Run requires nonempty membership and one inference policy")
+    if len(evaluators) > 1:
+        raise MetricSelectionError("Cohort requires one prediction basis")
     return normalize_manifest({"version": 1, "kind": "ad_hoc", "revision": "1", "source_run_id": run_id,
-        "evaluator_version": "AccuracyTracker-v1", "label_policy_version": "evaluation-context-v1",
+        "evaluator_version": next(iter(evaluators), "AccuracyTracker-v1"), "label_policy_version": "evaluation-context-v1",
         "inference_policy_hash": next(iter(policies)), "members": list(members.values())})
 
 

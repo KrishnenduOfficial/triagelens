@@ -49,6 +49,10 @@ export interface Metrics {
   fn: number;
   total: number;
   unknown: number;
+  abstained?: number;
+  explicit_disposition_count?: number;
+  legacy_severity_proxy_count?: number;
+  prediction_basis_unknown_count?: number;
   accuracy_pct?: number;
   unavailable?: number;
   availability_rate?: number | null;
@@ -117,6 +121,9 @@ export interface TriageVerdict {
   timeline_id: string;
   severity: SeverityLevel;
   confidence_score: number;
+  disposition?: "MALICIOUS" | "BENIGN" | "UNDETERMINED" | null;
+  policy_version?: string | null;
+  model_name?: string | null;
   summary: string;
   reasoning: string[];
   recommended_actions: string[];

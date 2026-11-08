@@ -133,7 +133,9 @@ class RunRecorder:
             policy = {key:sorted(value) if isinstance(value,set) else value for key,value in policy.items()}
             if policy not in policies:
                 policies.append(policy)
-        context = _fingerprint({'version':1,'evaluator':'AccuracyTracker-v1',
+        evaluator = ('AccuracyTracker-disposition-v1' if result.prediction_basis == 'explicit_disposition_v1'
+                     else 'AccuracyTracker-v1')
+        context = _fingerprint({'version':1,'evaluator':evaluator,
                                 'binary_label':result.ground_truth,'severity_label':result.severity_ground_truth,
                                 'policies':sorted(policies,key=lambda policy:json.dumps(policy,sort_keys=True))})
         run = self.db.get_evaluation_run(self.run_id)

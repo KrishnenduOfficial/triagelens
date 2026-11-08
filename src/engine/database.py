@@ -260,6 +260,16 @@ class DatabaseManager:
             if "severity_correct" not in existing_eval_cols:
                 cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_correct INTEGER;")
 
+            # Nullable snapshots; never infer historical disposition or policy.
+            for table, names in (
+                ('verdicts', ('disposition', 'policy_version')),
+                ('evaluations', ('disposition', 'prediction_basis', 'policy_version')),
+            ):
+                existing = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})')}
+                for name in names:
+                    if name not in existing:
+                        conn.execute(f'ALTER TABLE {table} ADD COLUMN {name} TEXT')
+
             self._migrate_unavailable_evaluations(conn)
             self._init_provenance(conn)
 
@@ -538,8 +548,15 @@ class DatabaseManager:
             if result.verdict_id is not None:
                 if verdict is None or verdict.timeline_id != result.timeline_id:
                     raise ValueError('Verdict timeline conflict')
-            digest = hashlib.sha256(json.dumps({'outcome':snapshot.model_dump(mode='json'),
-                                               'verdict':verdict.model_dump(mode='json') if verdict else None,
+            def outcome_snapshot(model):
+                data = model.model_dump(mode='json')
+                # Preserve pre-policy terminal hashes for unchanged old snapshots.
+                for name in ('disposition', 'prediction_basis', 'policy_version'):
+                    if data.get(name) is None:
+                        data.pop(name, None)
+                return data
+            digest = hashlib.sha256(json.dumps({'outcome':outcome_snapshot(snapshot),
+                                               'verdict':outcome_snapshot(verdict) if verdict else None,
                                                'cache':cache_provenance.as_record() if cache_provenance else None,
                                                'failure':failure_category},sort_keys=True,separators=(',',':'),
                                               allow_nan=False).encode('utf-8')).hexdigest()
@@ -1080,8 +1097,8 @@ class DatabaseManager:
                 INSERT INTO verdicts (
                     id, timeline_id, severity, confidence_score, summary,
                     reasoning, recommended_actions, raw_llm_response, created_at,
-                    model_name, uncertainty_level, missing_information
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    model_name, uncertainty_level, missing_information, disposition, policy_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     verdict_id_str,
@@ -1096,6 +1113,8 @@ class DatabaseManager:
                     model_name,
                     uncertainty_level,
                     missing_info_json,
+                    verdict.disposition,
+                    verdict.policy_version,
                 ),
             )
             if not self._atomic_depth:
@@ -1185,8 +1204,9 @@ class DatabaseManager:
                     timeline_id, verdict_id, ground_truth, llm_prediction,
                     is_correct, category, evaluated_at, confidence_score, severity_prediction,
                     severity_ground_truth, severity_correct, observation_id,
-                    evaluation_context_hash, quality_cohort_hash, provenance_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    evaluation_context_hash, quality_cohort_hash, provenance_version,
+                    disposition, prediction_basis, policy_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     timeline_id_str,
@@ -1204,6 +1224,9 @@ class DatabaseManager:
                     evaluation.evaluation_context_hash,
                     evaluation.quality_cohort_hash,
                     evaluation.provenance_version,
+                    evaluation.disposition,
+                    evaluation.prediction_basis,
+                    evaluation.policy_version,
                 ),
             )
             if not self._atomic_depth:
@@ -1235,7 +1258,8 @@ class DatabaseManager:
                 data.setdefault("severity_ground_truth", None)
                 severity_correct = data.get("severity_correct")
                 data["severity_correct"] = bool(severity_correct) if severity_correct is not None else None
-                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version'):
+                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version',
+                             'disposition','prediction_basis','policy_version'):
                     data.setdefault(name, None)
                 results.append(data)
             return results
@@ -1255,7 +1279,8 @@ class DatabaseManager:
             severity_correct_select = "e.severity_correct" if "severity_correct" in cols else "NULL"
             provenance_select = ', '.join(
                 (f'e.{name}' if name in cols else 'NULL') + f' AS {name}'
-                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version')
+                for name in ('observation_id','evaluation_context_hash','quality_cohort_hash','provenance_version',
+                             'disposition','prediction_basis','policy_version')
             )
 
             query = f"""
@@ -1307,6 +1332,9 @@ class DatabaseManager:
                         evaluation_context_hash=data['evaluation_context_hash'],
                         quality_cohort_hash=data['quality_cohort_hash'],
                         provenance_version=data['provenance_version'],
+                        disposition=data['disposition'],
+                        prediction_basis=data['prediction_basis'],
+                        policy_version=data['policy_version'],
                     )
                 )
             return results

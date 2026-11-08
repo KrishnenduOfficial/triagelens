@@ -152,8 +152,12 @@ export const TimelineView: React.FC = () => {
                     {timeline.verdict.severity}
                   </span>
                   <span className="badge badge-confidence mono">
-                    Confidence: {(timeline.verdict.confidence_score * 100).toFixed(1)}%
+                    {timeline.verdict.disposition === "UNDETERMINED" ? "Abstention confidence" : timeline.verdict.policy_version ? "Disposition confidence" : "Legacy confidence (target unrecorded)"}: {(timeline.verdict.confidence_score * 100).toFixed(1)}%
                   </span>
+                  <span className="badge mono">
+                    Disposition: {timeline.verdict.disposition ?? "Not recorded (legacy)"}
+                  </span>
+                  <span className="badge mono">Policy: {timeline.verdict.policy_version ?? "Not recorded"}</span>
                 </div>
               )}
             </div>
@@ -192,6 +196,7 @@ export const TimelineView: React.FC = () => {
                   timeline.verdict.recommended_actions.length > 0 && (
                     <div className="verdict-block">
                       <h4 className="block-title">Recommended DFIR Investigation Actions</h4>
+                      <p className="stat-hint" role="note">Unreviewed AI suggestions. Authorized analyst approval is required. Preserve evidence before destructive cleanup; justified emergency containment may precede full collection. Confidence does not certify recommendation safety.</p>
                       <div className="actions-list">
                         {timeline.verdict.recommended_actions.map((act, idx) => (
                           <div key={idx} className="action-pill">

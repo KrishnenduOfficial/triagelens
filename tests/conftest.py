@@ -28,11 +28,11 @@ class PipelineTestEngine(llm.TriageEngineBase):
     def _generation_settings(self, candidate):
         return {"temperature": 0.1}
 
-    def _prepare_request(self, candidate, user_prompt, generation):
+    def _prepare_request(self, candidate, user_prompt, generation, system_prompt):
         return (f"https://offline.invalid/{candidate}:triage",
                 {"Authorization": f"Bearer {self.api_key}"},
                 {"inputs": [{"role": "user", "segments": [{"text": user_prompt}]}],
-                 "system": {"segments": [{"text": llm.DFIR_SYSTEM_PROMPT}]},
+                 "system": {"segments": [{"text": system_prompt}]},
                  "generation": generation})
 
     def _response_text(self, response, candidate):

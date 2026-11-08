@@ -153,14 +153,17 @@ def _evaluate_model_with_db(model_name,timelines,pacing_seconds,engine,db):
                 time.sleep(pacing_seconds)
 
         eval_result = tracker.evaluate(verdict, tl)
-        status_tag = "PASS" if eval_result.is_correct else "FAIL"
+        status_tag = "UNSCORED" if eval_result.is_correct is None else "PASS" if eval_result.is_correct else "FAIL"
         print(f"[{eval_result.category}] {status_tag}")
 
         records.append({
             "index": idx,
             "scenario": tl.correlation_reason or tl.grouping_key,
-            "ground_truth": "Malicious" if eval_result.ground_truth else "Benign",
-            "prediction": "Malicious" if eval_result.llm_prediction else "Benign",
+            "ground_truth": "Unknown" if eval_result.ground_truth is None else ("Malicious" if eval_result.ground_truth else "Benign"),
+            "prediction": ("Unavailable" if verdict is None else "Undetermined") if eval_result.llm_prediction is None else ("Malicious" if eval_result.llm_prediction else "Benign"),
+            "disposition": verdict.disposition if verdict else None,
+            "prediction_basis": eval_result.prediction_basis,
+            "policy_version": verdict.policy_version if verdict else None,
             "severity": verdict.severity if verdict else "N/A",
             "confidence": verdict.confidence_score if verdict else 0.0,
             "uncertainty": verdict.uncertainty_level if verdict else "N/A",
@@ -198,6 +201,10 @@ def generate_comparison_report(
 
     def flt(val: Optional[float]) -> str:
         return f"{val:.4f}" if val is not None else "N/A"
+
+    def pct_delta(metric: str) -> str:
+        a, b = metrics_a.get(metric), metrics_b.get(metric)
+        return f"{(a - b) * 100:+.1f}%" if a is not None and b is not None else "N/A"
 
     latency_a_str = f"{latency_a:.2f}s" if latency_a is not None else "N/A (cached)"
     latency_b_str = f"{latency_b:.2f}s" if latency_b is not None else "N/A (cached)"
@@ -250,9 +257,9 @@ def generate_comparison_report(
 | **Accuracy** | **{pct(metrics_a.get('accuracy'))}** | **{pct(metrics_b.get('accuracy'))}** | {((metrics_a.get('accuracy',0) - metrics_b.get('accuracy',0))*100):+.1f}% | {ci_str(metrics_a.get('accuracy_ci95'))} | {ci_str(metrics_b.get('accuracy_ci95'))} | ≥ 85.0% |
 | **Precision** | **{pct(metrics_a.get('precision'))}** | **{pct(metrics_b.get('precision'))}** | {((metrics_a.get('precision',0) - metrics_b.get('precision',0))*100):+.1f}% | {ci_str(metrics_a.get('precision_ci95'))} | {ci_str(metrics_b.get('precision_ci95'))} | ≥ 80.0% |
 | **Recall (Sensitivity)** | **{pct(metrics_a.get('recall'))}** | **{pct(metrics_b.get('recall'))}** | {((metrics_a.get('recall',0) - metrics_b.get('recall',0))*100):+.1f}% | {ci_str(metrics_a.get('recall_ci95'))} | {ci_str(metrics_b.get('recall_ci95'))} | ≥ 85.0% |
-| **Specificity (TNR)** | **{pct(metrics_a.get('specificity'))}** | **{pct(metrics_b.get('specificity'))}** | {((metrics_a.get('specificity',0) - metrics_b.get('specificity',0))*100):+.1f}% | {ci_str(metrics_a.get('specificity_ci95'))} | {ci_str(metrics_b.get('specificity_ci95'))} | ≥ 85.0% |
+| **Specificity (TNR)** | **{pct(metrics_a.get('specificity'))}** | **{pct(metrics_b.get('specificity'))}** | {pct_delta('specificity')} | {ci_str(metrics_a.get('specificity_ci95'))} | {ci_str(metrics_b.get('specificity_ci95'))} | ≥ 85.0% |
 | **F1-Score** | **{pct(metrics_a.get('f1_score'))}** | **{pct(metrics_b.get('f1_score'))}** | {((metrics_a.get('f1_score',0) - metrics_b.get('f1_score',0))*100):+.1f}% | N/A | N/A | ≥ 85.0% |
-| **False Positive Rate (FPR)** | **{pct(metrics_a.get('false_positive_rate'))}** | **{pct(metrics_b.get('false_positive_rate'))}** | {((metrics_a.get('false_positive_rate',0) - metrics_b.get('false_positive_rate',0))*100):+.1f}% | - | - | ≤ 15.0% |
+| **False Positive Rate (FPR)** | **{pct(metrics_a.get('false_positive_rate'))}** | **{pct(metrics_b.get('false_positive_rate'))}** | {pct_delta('false_positive_rate')} | - | - | ≤ 15.0% |
 | **False Negative Rate (FNR)** | **{pct(metrics_a.get('false_negative_rate'))}** | **{pct(metrics_b.get('false_negative_rate'))}** | {((metrics_a.get('false_negative_rate',0) - metrics_b.get('false_negative_rate',0))*100):+.1f}% | - | - | ≤ 15.0% |
 | **Average Latency / Timeline** | `{latency_a_str}` | `{latency_b_str}` | `{latency_delta_str}` | - | - | < 5.0s |
 | **Availability Rate** | `{pct(metrics_a.get('availability_rate'))}` | `{pct(metrics_b.get('availability_rate'))}` | - | - | - | 100% |
@@ -271,6 +278,19 @@ def generate_comparison_report(
 ## 2. Confidence Calibration & Error Analysis
 
 A reliable SOC triage AI must not only predict the correct verdict, but its reported confidence score must reflect actual empirical probability.
+
+Calibration here concerns binary correctness, not severity or recommendation safety.
+Undetermined dispositions are available responses excluded from binary scoring and
+calibration; unknown truth is also excluded. Preserve explicit run/cohort identities
+when comparing policy generations. Legacy confidence targets may be unrecorded.
+
+| Prediction contract | Model A | Model B |
+|---|---|---|
+| Explicit disposition | {metrics_a.get('explicit_disposition_count', 0)} | {metrics_b.get('explicit_disposition_count', 0)} |
+| Legacy severity proxy | {metrics_a.get('legacy_severity_proxy_count', 0)} | {metrics_b.get('legacy_severity_proxy_count', 0)} |
+| Basis unrecorded | {metrics_a.get('prediction_basis_unknown_count', 0)} | {metrics_b.get('prediction_basis_unknown_count', 0)} |
+| Undetermined | {metrics_a.get('abstained', 0)} | {metrics_b.get('abstained', 0)} |
+| Assessment policies | {', '.join(sorted({r.get('policy_version') or 'unrecorded' for r in records_a}))} | {', '.join(sorted({r.get('policy_version') or 'unrecorded' for r in records_b}))} |
 
 | Calibration Metric | Model A: `{model_a_name}` | Model B: `{model_b_name}` | Interpretation |
 |---|---|---|---|

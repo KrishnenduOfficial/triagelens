@@ -56,13 +56,26 @@ test('null, absent, nonfinite, and zero percentages remain distinct', () => {
 
 test('history discloses replay counting, source, and separate lifecycle counts', () => {
   const html = text(React.createElement(MetricResults, {metrics: fixture()}));
-  for (const label of ['History', 'evaluation rows', 'Database', 'Unknown binary labels', 'Unavailable outcomes', 'Skipped', 'Cache', 'Legacy', 'Repeated evidence']) assert.ok(html.includes(label), label);
+  for (const label of ['History', 'evaluation rows', 'Database', 'Unscored binary outcomes', 'Unavailable outcomes', 'Skipped', 'Cache', 'Legacy', 'Repeated evidence']) assert.ok(html.includes(label), label);
   assert.doesNotMatch(html, /Unlabeled \/ Skipped/);
-  assert.match(html, /Unknown binary labels 1/);
+  assert.match(html, /Unscored binary outcomes \(unknown or abstained\) 1/);
   assert.match(html, /Unavailable outcomes 2/);
   assert.match(html, /Skipped 4/);
   assert.match(html, /Result availability 60.0%/);
   assert.match(html, /5 completed results/);
+});
+
+test('abstention and mixed prediction bases are disclosed without changing denominators', () => {
+  const metrics = fixture('history', {abstained:1, explicit_disposition_count:2,
+    legacy_severity_proxy_count:1, prediction_basis_unknown_count:2});
+  const html = text(React.createElement(MetricResults, {metrics}));
+  assert.match(html, /Undetermined dispositions 1/);
+  assert.match(html, /Explicit disposition outcomes 2/);
+  assert.match(html, /Legacy severity-proxy outcomes 1/);
+  assert.match(html, /Prediction basis unrecorded 2/);
+  assert.match(html, /Abstention is an available response/);
+  assert.match(html, /not severity or recommendation safety/);
+  assert.equal(metrics.selection.denominators.binary, 2);
 });
 
 test('empty binary data and undefined FPR render N/A without changing payload', () => {

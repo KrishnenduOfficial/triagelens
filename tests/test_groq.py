@@ -18,7 +18,7 @@ from src.models.timeline import ThreatTimeline
 
 
 MODEL = "openai/gpt-oss-120b"
-ASSESSMENT = {"severity": "LOW", "confidence_score": 0.7, "summary": "Synthetic alert",
+ASSESSMENT = {"disposition": "BENIGN", "severity": "LOW", "confidence_score": 0.7, "summary": "Synthetic alert",
               "reasoning": ["Routine process"], "recommended_actions": ["Review telemetry"],
               "uncertainty_level": "HIGH", "missing_information": ["Parent process"]}
 

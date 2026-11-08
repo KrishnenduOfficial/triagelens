@@ -2,26 +2,38 @@
 
 import json
 import math
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
 
 from src import config
-from src.engine.llm import DFIR_SYSTEM_PROMPT, TriageEngineBase
-from src.models.triage import SeverityLevel
+from src.engine.llm import TriageEngineBase
+from src.engine.triage_policy import POLICY_VERSION
+from src.models.triage import Disposition, SeverityLevel
+
+NonBlank = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class GroqAssessment(BaseModel):
     """Only model-authored fields; identity/provenance remain application-owned."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
+    disposition: Disposition
     severity: SeverityLevel
     confidence_score: float = Field(ge=0, le=1)
     uncertainty_level: Literal["LOW", "MEDIUM", "HIGH"]
-    summary: str = Field(min_length=1)
-    reasoning: list[str]
-    missing_information: list[str]
-    recommended_actions: list[str]
+    summary: NonBlank
+    reasoning: list[NonBlank] = Field(min_length=1)
+    missing_information: list[NonBlank]
+    recommended_actions: list[NonBlank] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_abstention_explanation(self):
+        if self.disposition == "UNDETERMINED" and (
+            self.uncertainty_level != "HIGH" or not self.missing_information
+        ):
+            raise ValueError("Undetermined disposition requires high uncertainty and concrete gaps")
+        return self
 
 
 class GroqTriageEngine(TriageEngineBase):
@@ -34,6 +46,7 @@ class GroqTriageEngine(TriageEngineBase):
     ENV_FALLBACKS = "GROQ_FALLBACK_MODELS"
     PROVIDER_ID = "groq/openai/v1/chat/completions"
     PROVIDER_LABEL = "Groq"
+    POLICY_VERSION = POLICY_VERSION
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     # Deliberately limited to models documented to support strict structured output.
     SUPPORTED_MODELS = frozenset({"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"})
@@ -67,12 +80,15 @@ class GroqTriageEngine(TriageEngineBase):
             settings["reasoning_effort"] = "low"
         return settings
 
-    def _prepare_request(self, candidate, user_prompt, generation):
+    def _verdict_metadata(self, assessment):
+        return {"disposition": assessment["disposition"], "policy_version": self.POLICY_VERSION}
+
+    def _prepare_request(self, candidate, user_prompt, generation, system_prompt):
         return (
             self.ENDPOINT,
             {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
             {"model": candidate, "messages": [
-                {"role": "system", "content": DFIR_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ], **generation},
         )

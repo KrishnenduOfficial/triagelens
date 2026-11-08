@@ -2193,6 +2193,64 @@ No commit/push is performed by the cleanup; review the final diff first.
 Starlette/HTTPX deprecation warning remains. Local Markdown links are valid and
 diff whitespace checks pass. No agent provider requests or production DB changes.
 
+### ADR-056: Independent disposition and versioned evidence/preservation policy
+
+**Status:** Accepted and implemented offline, 2026-11-08. Explicitly authorized by
+the operator. Supersedes the severity-derived binary prediction rule for new
+versioned assessments only; original ADR-022 results and labels are preserved.
+
+**Context:** The six-case Groq review exposed unsupported assertions and cleanup
+without preservation. The subsequent offline audit reproduced an impossible joint
+target under the old evaluator: malicious M23 with reference severity LOW would
+be a binary false negative even with exact severity. Valid JSON provided no rubric
+or action-safety assurance.
+
+**Decision:** Application-owned `triage-v1` separates disposition
+(MALICIOUS/BENIGN/UNDETERMINED) from severity as response priority, impact, scope
+and urgency. Confidence means correctness of the chosen binary disposition;
+abstention confidence describes the choice to withhold judgment. UNDETERMINED
+requires HIGH uncertainty and a nonblank evidence gap. It is available, excluded
+from binary/calibration denominators, and separately counted; severity can still
+be evaluated against an independent severity reference.
+
+The versioned rubric defines five priority levels and prohibits inferring major
+impact from one command/host alone. Recommendations must qualify observations,
+hypotheses and unknowns, avoid unsupported protocol/privilege/authorization claims,
+and prioritize verification and preservation before destructive cleanup. Authorized
+analysts retain authority. Evidence-supported emergency containment may precede
+full acquisition when ongoing harm justifies urgency, with scope and volatile-loss
+tradeoffs explained. Investigation must not delay urgent containment solely for imaging.
+
+The Groq wire schema has eight model-authored fields and excludes policy identity.
+Local checks require nonblank summary, at least one nonblank reason/action, and
+nonblank gap entries, with abstention-specific requirements. Empty gaps remain
+allowed for other dispositions. There is no keyword-based safety certification:
+free-text factual support, action ordering and safety still require human review.
+
+Nullable verdict/evaluation snapshots record disposition and policy; evaluations
+also record prediction basis. Legacy rows are not backfilled or rescored. Evaluating
+a legacy verdict again uses the old severity proxy and records that basis; stored
+historical snapshots without a basis remain unrecorded. Default History and replay
+counting units stay unchanged. Null metadata is omitted from terminal hashing to
+preserve idempotency for existing outcomes.
+
+One captured effective system prompt feeds the actual request and cache hash;
+policy identity, schema and generation settings also enter the contract. Old cache
+entries cannot impersonate new policy results, while historical records survive.
+New evaluator contexts and cohorts identify `AccuracyTracker-disposition-v1`;
+legacy `AccuracyTracker-v1` manifests remain supported. Cohorts reject mixed binary
+evaluator rules. Dashboard, CLI and generated reports disclose abstention/basis and
+the confidence target rather than presenting different generations as equivalent.
+
+**Verification and limits:** Offline regressions cover M23, all five severity
+levels with both binary dispositions, abstention, strict content failures, nested
+metadata isolation, actual prompt/cache consistency, persistent policy changes,
+legacy migration/idempotency and API run/attempts/quality scopes. See
+`docs/results/severity_safety_audit_20261108.md` for final results and changed files.
+No live model request, reference-label rewrite, commit or push was performed.
+The six prior live outcomes remain pre-policy development evidence; new-policy
+live quality, held-out performance and injection resistance remain unmeasured.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

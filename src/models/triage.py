@@ -2,9 +2,10 @@
 
 from typing import List, Literal, Optional
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
+Disposition = Literal["MALICIOUS", "BENIGN", "UNDETERMINED"]
 
 
 class TriageVerdict(BaseModel):
@@ -29,6 +30,8 @@ class TriageVerdict(BaseModel):
     reasoning: List[str]
     recommended_actions: List[str]
     raw_llm_response: str
+    disposition: Optional[Disposition] = None
+    policy_version: Optional[str] = Field(default=None, min_length=1)
     model_name: Optional[str] = Field(
         default=None,
         description="The answering model identifier that generated this triage assessment",
@@ -42,6 +45,12 @@ class TriageVerdict(BaseModel):
         description="Key telemetry gaps or unobserved investigation leads (e.g. missing parent process or egress)",
     )
 
+
+    @model_validator(mode="after")
+    def require_versioned_disposition(self):
+        if (self.disposition is None) != (self.policy_version is None):
+            raise ValueError("Disposition and policy version must be recorded together")
+        return self
 
     @field_validator("severity", mode="before")
     @classmethod

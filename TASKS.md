@@ -47,8 +47,17 @@ resume. Prior benchmark reports and stored outcomes retain historical attributio
 
 - [x] Run a small sanitized Groq evaluation using independent labels. Inspect severity,
   false negatives, unsupported reasoning, missing-information handling and calibration.
-- [ ] Audit severity criteria, evidence-qualified assertions and preservation-first
+- [x] Audit severity criteria, evidence-qualified assertions and preservation-first
   recommendations offline before changing prompts or running a larger benchmark.
+- [x] Agree and implement independent disposition, response-priority severity,
+  binary-confidence meaning and legacy compatibility (ADR-056). `triage-v1` adds
+  a versioned rubric, preservation-first/evidence-qualified analyst recommendations,
+  nonblank content checks, abstention accounting, additive persistence, exact
+  prompt/cache identity and evaluator-aware cohorts. See the
+  [audit and implementation verification](docs/results/severity_safety_audit_20261108.md).
+- [ ] Verify new-policy Groq output on a bounded development sample, then evaluate
+  untouched cases under a new explicit inference-policy/cohort identity. Existing
+  six-case scores predate this policy; do not relabel them or alter reference labels.
 - [ ] Measure Groq prompt-injection resistance and availability; report sample size and scope.
 - [ ] Verify the normal CLI -> shared SQLite -> API -> dashboard workflow manually.
   Preserve default History behavior and select explicit run/cohort IDs for provider comparisons.
@@ -66,10 +75,11 @@ these without a scoped request. Human analysts retain final response authority.
 
 ## Verification rules
 
-Latest offline verification: **619 backend tests passed**, with one existing
-Starlette/HTTPX deprecation warning; **48 dashboard tests passed**. Local Markdown
+Latest offline verification: **652 backend tests passed**, with one existing
+Starlette/HTTPX deprecation warning; **49 dashboard tests passed** and production
+build succeeded. Local Markdown
 link checks and `git diff --check` passed. Removed-provider tests explain the change
-from the pre-retirement 688-case suite. Those offline checks made no provider
+from the pre-retirement 688-case suite; ADR-056 adds 33 backend cases. Those offline checks made no provider
 requests; the separate live evaluation above made six authorized requests.
 
 Ordinary pytest stays offline, including with local credentials configured. Use

@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from src.engine.provenance import (AcquisitionPersistenceError, acquisition_trace,
                                    note_acquisition, note_cache_state, traced_acquisition)
 from src.engine.verdict_cache import CacheContract, CacheProvenance, fingerprint, validated_candidate
+from src.engine.triage_policy import POLICY_DIRECTIVES
 
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -39,6 +40,7 @@ CRITICAL INTEL RULE: Threat intelligence indicators marked with lookup_status ot
 You must deliver an objective, actionable, and rigorously structured triage assessment.
 CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matching this schema:
 {
+    "disposition": "MALICIOUS" | "BENIGN" | "UNDETERMINED",
     "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL",
     "confidence_score": <float between 0.0 and 1.0>,
     "uncertainty_level": "LOW" | "MEDIUM" | "HIGH",
@@ -51,12 +53,12 @@ CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matchin
         "<unobserved telemetry gap or key investigation lead, e.g. parent process or network egress>"
     ],
     "recommended_actions": [
-        "<immediate containment or response step>",
-        "<further investigation or eradication action>"
+        "<authorized, evidence-qualified investigation or preservation step>",
+        "<scoped response only if justified; preserve evidence before cleanup>"
     ]
 }
 Do not include any introductory remarks, markdown prose outside the JSON block, or post-analysis commentary. Output ONLY the JSON object.
-"""
+""" + POLICY_DIRECTIVES
 
 
 @runtime_checkable
@@ -343,6 +345,7 @@ class TriageEngineBase:
     ENV_FALLBACKS = ""
     PROVIDER_ID = ""
     PROVIDER_LABEL = "LLM"
+    POLICY_VERSION = None
 
 
     FORBIDDEN_EVALUATION_KEYS = {
@@ -357,6 +360,9 @@ class TriageEngineBase:
         "label",
         "verdict",
         "classification",
+        "disposition",
+        "prediction_basis",
+        "policy_version",
     }
 
     FORBIDDEN_PROVENANCE_KEYS = {
@@ -503,7 +509,13 @@ class TriageEngineBase:
     def _generation_settings(self, candidate: str) -> Dict[str, Any]:
         raise NotImplementedError
 
-    def _prepare_request(self, candidate, user_prompt, generation):
+    def _system_prompt(self) -> str:
+        return DFIR_SYSTEM_PROMPT
+
+    def _verdict_metadata(self, assessment):
+        return {}
+
+    def _prepare_request(self, candidate, user_prompt, generation, system_prompt):
         raise NotImplementedError
 
     def _response_text(self, response, candidate) -> str:
@@ -757,6 +769,7 @@ class TriageEngineBase:
         )
 
         # 3. Transmit request with resilience and model fallback handling
+        system_prompt = self._system_prompt()
         candidate_models = [self.model]
         for fb in self.fallback_models:
             if fb not in candidate_models:
@@ -778,7 +791,8 @@ class TriageEngineBase:
             contract = CacheContract(str(timeline.timeline_id),fingerprint(evidence),fingerprint({
                 'provider':self.PROVIDER_ID,'preparation_version':CACHE_PREPARATION_VERSION,
                 'models':candidate_models,'generation':generation_by_model,
-                'system_instruction':{'parts': [{'text': DFIR_SYSTEM_PROMPT}]},
+                'system_instruction':{'parts': [{'text': system_prompt}]},
+                'assessment_policy_version':self.POLICY_VERSION,
                 'user_template':user_prompt.replace(sanitized_timeline_json,'<EVIDENCE_JSON>',1),
                 'schema':TriageVerdict.model_json_schema(),
             }),tuple(candidate_models),effective_ttl)
@@ -823,7 +837,7 @@ class TriageEngineBase:
         answering_model = None
         for candidate in candidate_models:
             url, headers, candidate_payload = self._prepare_request(
-                candidate, user_prompt, generation_by_model[candidate])
+                candidate, user_prompt, generation_by_model[candidate], system_prompt)
             try:
                 sender = self.request_sender if self.request_sender is not None else httpx.post
                 note_acquisition('fresh')
@@ -923,6 +937,7 @@ class TriageEngineBase:
                 model_name=answering_model,
                 uncertainty_level=uncertainty,
                 missing_information=missing_info,
+                **self._verdict_metadata(parsed_dict),
             )
             if self.enable_cache and self.cache is not None and effective_ttl>0:
                 stamp = CacheProvenance.create(contract,verdict,self.utc_clock())
