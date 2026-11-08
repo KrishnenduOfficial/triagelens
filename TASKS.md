@@ -33,6 +33,10 @@ resume. Prior benchmark reports and stored outcomes retain historical attributio
 - [x] Remove unused dashboard starter assets and the empty rule file; remove 14
   obsolete dependency pins and protect environment variants, SQLite sidecars and
   TypeScript build metadata from accidental commits.
+- [x] Correct remaining README drift: prerequisites, dependency/test versions,
+  dashboard routes, metric-scope checks, input folder examples, enrichment network
+  behavior and actual directory paths. Verified 13 documentation/config/API parity
+  tests and all listed repository paths; application behavior unchanged.
 
 ## Next work
 

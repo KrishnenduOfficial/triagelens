@@ -11,92 +11,39 @@ Gemini runtime support is removed. Historical results remain attributed correctl
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.162.0-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Pytest](https://img.shields.io/badge/Pytest-619_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
 
-Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing capability is measuring how often its AI makes mistakes** — calculating precision, recall, false-positive rate, false-negative rate, Brier score calibration, and Expected Calibration Error (ECE) across standardized benchmarks.
+Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing capability is measuring how often its AI makes mistakes** — calculating precision, recall, false-positive rate, false-negative rate, Brier score calibration, and Expected Calibration Error (ECE) on independently labelled evaluation cases.
 
 ---
 
 ## 1. System Architecture
 
-TriageLens operates as a modular, pipeline-driven architecture where security telemetry flows through decoupled, testable processing stages:
+Six functional stages turn alert telemetry into analyst-reviewed results:
 
 ```text
-               PUBLIC & ENTERPRISE SECURITY TELEMETRY (JSON / CSV)
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 1. ALERT INTAKE ENGINE (intake.py)                               │
-    │    • Normalizes schema, maps timestamps to UTC, extracts IoCs    │
-    │    • Preserves provenance & isolates ground-truth labels         │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 2. THREAT INTEL ENRICHMENT ENGINE (enrichment.py)                │
-    │    • Multi-provider queries: VirusTotal, AbuseIPDB, URLhaus      │
-    │    • In-memory TTL caching, rate-limit & backoff resilience      │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 3. TIMELINE BUILDER & CORRELATION (timeline.py)                  │
-    │    • Identity-driven correlation: host + user, IP, and domain    │
-    │    • 30-minute sliding time windows; caps events per timeline    │
-    │    • Classifies correlations as 'confirmed' vs 'potential'       │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 4. LLM-ASSISTED TRIAGE ENGINE (llm.py)                           │
-    │    • <FORENSIC_EVIDENCE> XML boundary isolation against injection│
-    │    • Cloud Groq DFIR triage with strict assessment JSON          │
-    │      (openai/gpt-oss-120b; model fallback explicitly opt-in)      │
-    │    • In-memory SHA-256 LLM response caching (LLMResponseCache)   │
-    │    • Provider-independent protocol abstraction (TriageProvider)  │
-    │    • Wire-level PII/secret scrubbing with Luhn credit-card check │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 5. ACCURACY & VALIDATION ENGINE (evaluation.py)                  │
-    │    • Independent ground-truth comparison (ADR-008)               │
-    │    • Confusion matrix: TP, TN, FP, FN, Accuracy, Precision,      │
-    │      Recall, Specificity, F1-Score, FPR, and FNR                 │
-    │    • Probabilistic confidence calibration: Brier score & ECE     │
-    │    • Class imbalance detection & SHA-256 reproducibility digest  │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 6. RELATIONAL PERSISTENCE (database.py)                          │
-    │    • Foreign-key enforced SQLite database with WAL journal mode  │
-    │    • Automated idempotent schema migrations for verdicts & alerts│
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 7. FASTAPI BACKEND API (main.py, hunting.py)                     │
-    │    • REST endpoints for alerts, timelines, verdicts, and metrics │
-    │    • Parameterized KQL-to-SQLite threat hunting query engine     │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-    ┌──────────────────────────────────────────────────────────────────┐
-    │ 8. ANALYST DASHBOARD (dashboard/)                                │
-    │    • React 19 + TypeScript + Vite + Tailwind CSS dark-mode UI    │
-    │    • SOC Operations Console, Timeline Explorer, Threat Hunting   │
-    └─────────────────────────────────┬────────────────────────────────┘
-                                      │
-                                      ▼
-                            HUMAN SOC ANALYST
-             (Retains final decision-making authority; ADR-008)
+JSON / CSV alerts
+    -> Intake: normalize records and preserve source evidence/labels
+    -> Enrichment: VirusTotal, AbuseIPDB and URLhaus lookups
+    -> Timeline builder: correlate identities and split event sessions
+    -> Groq triage: sanitize evidence, request strict JSON, validate verdict
+    -> Evaluation: compare predictions with independent ground truth
+    -> Dashboard: inspect timelines, verdicts and scoped reliability metrics
+
+SQLite stores alerts, intelligence, verdicts, outcomes and run provenance.
+FastAPI serves stored results and parameterized hunting queries to React.
+The human analyst retains final investigation and response authority.
 ```
+
+`src/engine/llm.py` owns shared privacy, prompt and cache processing;
+`src/engine/groq.py` owns the active provider's request/response contract.
+The pipeline's implementation is verified offline. Full manual UI/workflow
+verification remains pending; one Groq synthetic live request has succeeded.
 
 ---
 
@@ -154,7 +101,6 @@ The [2026-11-06 evaluation](docs/results/evaluation_report_20261106.md) and
 They are archived evidence, not Groq performance claims. Stored history can contain
 old models; use explicit run/cohort selections for a current-provider comparison.
 
-
 ## 4. Technology Stack
 
 | Layer | Technologies | Purpose |
@@ -168,18 +114,21 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (529 passing tests) | Unit, adversarial, security injection, and regression testing |
-| **Frontend** | React 19, TypeScript, Vite, Tailwind | Dark-mode SOC analyst investigation console |
+| **Testing** | Pytest 9.2 (619 passing backend tests) | Unit, adversarial, security injection, and regression testing |
+| **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
 
 ---
 
 ## 5. Quickstart Guide
 
 ### 5.1 Prerequisites
-- **Operating System:** Windows, Linux, or macOS
-- **Python:** 3.12+ (tested and verified on Python 3.14)
-- **Node.js:** 18+ and npm
-- **Hardware:** Runs efficiently on standard workstation hardware (8 GB RAM / Intel Core i5)
+
+- Python 3.14, the version used for the verified pinned environment.
+- Node.js satisfying the installed Vite requirement: `^20.19.0 || >=22.12.0`, plus npm.
+- The documented development environment is Windows/PowerShell. Other operating
+  systems have not been verified by this project evidence.
+- Cloud inference avoids running a local model. Hardware performance has not been
+  benchmarked; the project targets a modest workstation.
 
 ---
 
@@ -191,23 +140,22 @@ old models; use explicit run/cohort selections for a current-provider comparison
    cd triagelens
    ```
 
-2. **Create and activate virtual environment:**
-   ```bash
+2. **Create and activate a virtual environment (PowerShell):**
+   ```powershell
    python -m venv .venv
-   # Windows PowerShell:
    .\.venv\Scripts\Activate.ps1
-   # Linux/macOS:
-   source .venv/bin/activate
    ```
+   On a POSIX shell, activation is `source .venv/bin/activate`.
 
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 4. **Configure environment variables:**
-   ```bash
-   cp .env.example .env
+   ```powershell
+   # For a new checkout only; preserve an existing configured .env.
+   Copy-Item .env.example .env
    ```
    Edit `.env` to configure your API keys and model parameters:
    ```env
@@ -243,8 +191,10 @@ old models; use explicit run/cohort selections for a current-provider comparison
 ```powershell
 python -m pytest -q
 cd dashboard
+npm ci
 npm test
 npm run build
+cd ..
 ```
 
 Ordinary pytest blocks real network calls, including when credentials are present.
@@ -253,69 +203,73 @@ provenance tests use a neutral test-only transport; it is not a production provi
 Live provider commands are manual and separate from tests. The latest verified
 suite and counts are recorded in the migration report and TASKS.md.
 
+### 5.4 End-to-End Execution Sequence
 
-### 5.4 End-to-End Execution Sequence (Ingest, Triage, Evaluate, Store, API, Dashboard)
+Run these from the project root with the virtual environment active. Live CLI
+runs can contact both Groq and configured intelligence services and consume quota.
 
-To run the complete system from raw ingestion to the analyst dashboard:
-
-1. **Generate synthetic SOC telemetry (58 alerts across 14 enterprise timelines):**
-   ```bash
+1. **Prepare a dedicated synthetic alert input folder:**
+   ```powershell
    python scripts/generate_soc_data.py
+   New-Item -ItemType Directory -Force data/raw/demo | Out-Null
+   Copy-Item data/synthetic_soc_telemetry.json data/raw/demo/telemetry.json
    ```
+   `data/raw/` is Git-ignored. Keep alert inputs separate from the benchmark JSON
+   and databases; do not feed the entire mixed `data/` directory into alert intake.
 
-2. **Execute the end-to-end pipeline via CLI:**
-   Ingests alerts from `data/`, enriches indicators, correlates chronological timelines, executes LLM DFIR triage, evaluates accuracy against ground truth, and persists records to SQLite:
-   ```bash
-   python -m src.cli --data-dir data/ --db-path data/triagelens.db
+2. **Run the pipeline:**
+   ```powershell
+   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db
    ```
-   *(For offline execution without an active LLM API key, pass `--skip-llm`:)*
-   ```bash
-   python -m src.cli --data-dir data/ --db-path data/triagelens.db --skip-llm
+   To skip Groq while retaining enrichment:
+   ```powershell
+   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db --skip-llm
    ```
+   **`--skip-llm` is not an offline switch:** intelligence lookups can still occur.
+   Use the guarded test suite for offline verification.
 
-3. **(Optional) Run benchmark evaluation with end-to-end enrichment:**
-   ```bash
+3. **Optional benchmark evaluation:**
+   ```powershell
    python scripts/run_evaluation.py --end-to-end
    ```
+   This can process the full 70-timeline synthetic benchmark and make many provider
+   requests. Review quota before running it. The generated report is
+   `docs/results/groq_evaluation_report.md`; the earlier model report is preserved.
+   The separate `compare_models.py` runner writes `groq_model_comparison_report.md`.
 
-4. **Launch the FastAPI Backend:**
-   Starts the REST API server connected to the populated SQLite database:
-   ```bash
+4. **Start the backend in a separate terminal:**
+   ```powershell
    uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
    ```
-   - Interactive Swagger UI: `http://127.0.0.1:8000/docs`
-   - Real-time database metrics endpoint: `http://127.0.0.1:8000/api/metrics`
+   Configure the API's `DATABASE_PATH` to the same file as the CLI. Open
+   `http://127.0.0.1:8000/docs` for the API or `/api/metrics` for stored metrics.
 
-5. **Launch the Analyst Dashboard (in a second terminal):**
-   ```bash
+5. **Start the dashboard in another terminal:**
+   ```powershell
    cd dashboard
-   npm install
+   npm ci
    npm run dev
    ```
-   Open `http://localhost:5173` to interact with the SOC Operations Console and Threat Hunting Console.
+   Open the local URL printed by Vite (normally `http://localhost:5173`).
 
 ---
 
 ### 5.5 Manual Click-Through Verification Checklist
 
-Follow this checklist to verify that the dashboard and backend reflect the CLI pipeline results:
-
-- [ ] **1. API Server & Metrics Verification:**
-  - Navigate to `http://127.0.0.1:8000/api/metrics`.
-  - Confirm the JSON response contains non-zero `total`, `tp`, `tn`, and calculated `accuracy`, matching the CLI summary.
-- [ ] **2. Operations Overview Console (`/`):**
-  - Open `http://localhost:5173` in your browser.
-  - Confirm the header indicates backend connectivity (`Connected to API: 127.0.0.1:8000`).
-  - Verify the 4 primary KPI cards (**Accuracy**, **Precision**, **Recall**, **F1-Score**) display non-zero percentages matching the CLI summary.
-  - Verify the **Confusion Matrix** widget displays the True Positive, True Negative, False Positive, and False Negative counts.
-- [ ] **3. Timeline Explorer (`/timelines`):**
-  - Verify the table lists correlated threat timelines with non-zero event counts.
-  - Click on any timeline row to open the incident detail drawer.
-  - Confirm the detail drawer renders chronological event cards, threat intelligence badges, and the AI Triage Verdict (severity, confidence score, reasoning bullets, and recommended actions).
-- [ ] **4. Threat Hunting Console (`/hunt`):**
-  - Navigate to the Threat Hunting tab.
-  - Select a sample pre-built query or type: `Event.Type == 'process_creation'` or `Alert.Severity == 'CRITICAL'`.
-  - Click **Run Query** and verify matching alerts are returned and highlighted.
+- [ ] Open `/health` on the API and verify database connectivity.
+- [ ] Open `/api/metrics` and compare values for the same scope and dataset.
+  Default History includes prior evaluations; it need not equal the latest CLI
+  run's summary. Zero counts or N/A can be valid for empty/unlabelled selections.
+- [ ] On dashboard `/`, check metrics, confusion counts, availability and coverage.
+  Run, Quality and Fresh attempts require the corresponding explicit IDs. Check
+  loading/error states; the UI does not certify live provider availability.
+- [ ] Use the timeline list on `/` and follow a row to `/timeline/:id`. Verify its
+  alert details, intelligence and stored verdict. There is no `/timelines` page or
+  incident-detail drawer in the current router.
+- [ ] On `/hunt`, try `event_type == "ProcessCreate"` or
+  `CommandLine contains "powershell"`. A valid query may return zero matching rows.
+- [ ] Check that failed triage is unavailable rather than a benign prediction and
+  that historical model results remain distinguishable from new Groq results.
 
 ---
 
@@ -347,14 +301,12 @@ Fallback remains within the configured Groq models. Rate limits still apply; val
 correct security analysis. Evaluate sanitized cases before using real alerts.
 No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
 
-
-
 ## 6. API Reference
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | System health check and database connectivity status |
-| `GET` | `/api/metrics` | Retrieve live confusion matrix, precision, recall, F1, and calibration metrics |
+| `GET` | `/api/metrics` | Retrieve stored-result metrics for History or explicit run/cohort scopes |
 | `GET` | `/api/timelines` | Retrieve paginated correlated threat timelines |
 | `GET` | `/api/timelines/{timeline_id}` | Retrieve detailed threat timeline with alerts and LLM verdict |
 | `GET` | `/api/alerts/{alert_id}` | Retrieve normalized security alert by ID |
@@ -386,64 +338,48 @@ To ensure transparency and maintain defensible security engineering standards, t
 
 ```text
 triagelens/
-├── data/                      # Benchmark datasets & SQLite storage
-│   ├── eval_benchmark_70.json # 70-timeline balanced evaluation benchmark
-│   ├── test_sample_attack.csv # Sample attack logs (CSV format)
-│   └── test_sample_attack.json# Sample attack logs (JSON format)
-├── dashboard/                 # React 19 + TypeScript Analyst Dashboard
-│   ├── src/
-│   │   ├── components/        # MetricsOverview, TimelineFeed, ThreatHuntView
-│   │   ├── services/          # Typed Axios REST API client
-│   │   └── types/             # TypeScript data contracts matching Pydantic
-│   └── package.json
-├── docs/                      # Technical reports & architecture specifications
-│   ├── results/
-│   │   ├── evaluation_report_20261106.md # 70-timeline empirical benchmark report
-│   │   └── model_comparison_report.md    # 2-model comparison & calibration report
-│   └── architecture/          # Diagrams and ADR reference material
-├── scripts/                   # SOC automation & benchmark runners
-│   ├── generate_eval_dataset.py # Generates balanced 70-timeline dataset
-│   ├── generate_soc_data.py   # Synthetic SOC log generator
-│   ├── run_evaluation.py      # Real evaluation benchmark runner
-│   └── compare_models.py      # 2-model evaluation & calibration comparison
-├── src/                       # Core Python backend and pipeline engine
-│   ├── api/                   # FastAPI application & REST route handlers
-│   │   └── main.py
-│   ├── engine/                # Core pipeline stages
-│   │   ├── database.py        # SQLite persistence, foreign keys & WAL manager
-│   │   ├── enrichment.py      # Threat intel (VirusTotal, AbuseIPDB, URLhaus)
-│   │   ├── evaluation.py      # AccuracyTracker, calibration, metrics (ADR-008)
-│   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
-│   │   ├── intake.py          # Alert normalization and intake engine
-│   │   ├── llm.py             # Shared triage, privacy, cache and provider protocol
-│   │   ├── groq.py            # Active Groq transport and strict assessment validation
-│   │   └── timeline.py        # Identity-based event correlation & time windows
-│   ├── models/                # Pydantic schemas
-│   │   ├── alert.py
-│   │   ├── enrichment.py
-│   │   ├── evaluation.py
-│   │   ├── timeline.py
-│   │   └── triage.py
-│   └── utils/                 # Security & extraction utilities
-│       ├── extraction.py      # Indicator extraction and validation
-│       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-├── tests/                     # 529 passing adversarial, security, and unit test cases
-│   ├── test_api_adversarial.py
-│   ├── test_database_adversarial.py
-│   ├── test_enrichment.py
-│   ├── test_evaluation_adversarial.py
-│   ├── test_hunting_adversarial.py
-│   ├── test_intake_adversarial.py
-│   ├── test_llm_adversarial.py
-│   ├── test_timeline_adversarial.py
-│   └── test_wire7_docs_and_health.py
-├── ARCHITECTURE.md            # Complete architecture specification
-├── DECISIONS.md               # 32 Architectural Decision Records (ADRs)
-├── AGENTS.md                  # Project identity and operational guidelines
-├── LICENSE                    # MIT License
-├── TASKS.md                   # Task tracking and phase completion records
-└── requirements.txt           # Python dependency specification
+  .env.example                  # Placeholder configuration; real .env is private
+  AGENTS.md                     # Project rules and working instructions
+  ARCHITECTURE.md                # Components and data contracts
+  DECISIONS.md                   # Versioned technical decisions
+  TASKS.md                      # Current progress and next work
+  requirements.txt              # Pinned Python dependencies
+  data/
+    dummy_alerts.json            # Intake test fixture
+    dummy_alerts.csv             # Intake test fixture
+    synthetic_soc_telemetry.json # Generator output used for demonstrations
+    eval_benchmark_70.json       # Synthetic timeline evaluation dataset
+  dashboard/
+    src/
+      api/apiService.ts         # Typed API client and contracts
+      components/               # MetricsOverview and TimelineFeed
+      metrics/                  # Scope validation, formatting and request lifecycle
+      pages/                    # DashboardHome, TimelineView and ThreatHunt
+    tests/                      # 48 verified frontend tests
+    package.json
+    package-lock.json
+  docs/results/                 # Verification reports and labelled historical evidence
+  scripts/
+    check_connections.py        # Manual provider smoke probes
+    diagnose_groq.py            # One synthetic full-triage diagnostic
+    diagnostic_transport.py     # Metadata-only tracing helpers
+    generate_eval_dataset.py
+    generate_soc_data.py
+    run_evaluation.py
+    compare_models.py
+  src/
+    api/main.py                 # FastAPI routes
+    cli.py                      # Pipeline orchestration
+    config.py                   # Configuration and shared database-path resolution
+    engine/                     # Pipeline, Groq, cache, provenance and metric scopes
+    models/                     # Validated data contracts
+    utils/                      # Indicator extraction and credential/PII masking
+  tests/                        # 619 verified backend cases; network blocked by default
 ```
+
+Local `.env`, virtual environments, dependencies, build output, databases and
+SQLite sidecars are Git-ignored. An ignored file can still contain valuable local
+results; exclusion from Git is not a reason to delete it.
 
 ---
 
