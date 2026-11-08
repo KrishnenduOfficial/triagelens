@@ -6,10 +6,11 @@
  */
 
 import axios, { type AxiosError, type AxiosInstance } from "axios";
+import { validateMetricQuery, validateMetricResponse } from "../metrics/presentation";
 
 // Environment-configurable API URL with local fallback
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  import.meta.env?.VITE_API_BASE_URL || "http://localhost:8000";
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -49,7 +50,57 @@ export interface Metrics {
   total: number;
   unknown: number;
   accuracy_pct?: number;
+  unavailable?: number;
+  availability_rate?: number | null;
+  fpr_valid?: boolean;
+  fnr_valid?: boolean;
+  accuracy_ci95?: [number, number];
+  precision_ci95?: [number, number];
+  recall_ci95?: [number, number];
+  severity_accuracy?: number;
+  severity_evaluated?: number;
+  severity_matches?: number;
+  brier_score?: number | null;
+  expected_calibration_error?: number | null;
+  selection?: MetricSelection;
 }
+
+export type MetricScope = "history" | "run" | "quality" | "attempts";
+export type MetricQuery =
+  | { scope: "history"; run_id?: never; cohort_id?: never }
+  | { scope: "run"; run_id: string; cohort_id?: never }
+  | { scope: "quality"; cohort_id: string; run_id?: never }
+  | ({ scope: "attempts" } & (
+    | { run_id: string; cohort_id?: never }
+    | { cohort_id: string; run_id?: never }
+  ));
+
+export interface MetricSelection {
+  scope: MetricScope;
+  source: "database" | "memory";
+  unit: "evaluation_row" | "run_evaluation_row" | "verdict_context" | "completed_fresh_attempt";
+  run_id: string | null;
+  run_status: "running" | "completed" | "failed" | null;
+  cohort_id: string | null;
+  cohort_kind: "ad_hoc" | "declared" | null;
+  inference_policy_hash?: string | null;
+  context_selection?: string;
+  context_count?: number;
+  observed_inference_policies?: string[];
+  availability_status: "result_availability" | "not_applicable_to_quality" |
+    "fresh_result_availability" | "no_completed_fresh_attempts";
+  coverage: Partial<Record<MetricCoverageKey, number>> & {
+    run_status_counts?: Partial<Record<"running" | "completed" | "failed", number>>;
+  };
+  denominators: { binary: number; severity: number; calibration: number; availability: number | null };
+}
+
+export type MetricCoverageKey = "evaluation_rows" | "selected_units" | "observations" |
+  "fresh" | "completed_fresh" | "cache" | "unknown_origin" | "skipped" | "pending" |
+  "interrupted" | "legacy_unknown" | "excluded_legacy_unknown" | "outside_selection" |
+  "excluded_unverifiable" | "excluded_no_verdict" | "deduplicated" | "missing_outcomes" |
+  "unique_evidence" | "repeated_evidence" | "evidence_unknown" | "manifest_cases" |
+  "included_cases" | "missing_cases";
 
 export interface TimelineSummary {
   id: string;
@@ -133,9 +184,16 @@ export function normalizeError(
 /**
  * Fetches real-time accuracy and performance evaluation metrics.
  */
-export async function fetchMetrics(): Promise<Metrics> {
+export async function fetchMetrics(
+  query: MetricQuery = { scope: "history" }, signal?: AbortSignal,
+): Promise<Metrics> {
+  validateMetricQuery(query);
   try {
-    const response = await apiClient.get<Metrics>("/api/metrics");
+    const response = await apiClient.get<Metrics>("/api/metrics", {
+      params: query.scope === "history" ? undefined : query,
+      signal,
+    });
+    validateMetricResponse(response.data, query);
     return response.data;
   } catch (error) {
     throw normalizeError(error, "Failed to retrieve accuracy metrics.");

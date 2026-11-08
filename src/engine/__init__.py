@@ -11,7 +11,7 @@ from src.engine.enrichment import (
 from src.engine.evaluation import AccuracyTracker
 from src.engine.hunting import KQLParseError, ThreatHuntingEngine
 from src.engine.intake import AlertIntakeEngine
-from src.engine.llm import GeminiTriageEngine
+from src.engine.groq import GroqTriageEngine
 from src.engine.timeline import TimelineBuilder
 
 __all__ = [
@@ -22,7 +22,7 @@ __all__ = [
     "URLhausProvider",
     "EnrichmentEngine",
     "TimelineBuilder",
-    "GeminiTriageEngine",
+    "GroqTriageEngine",
     "AccuracyTracker",
     "DatabaseManager",
     "ThreatHuntingEngine",

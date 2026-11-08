@@ -4,7 +4,7 @@ Executes real LLM-assisted triage and evaluation across the 70-timeline benchmar
 Enforces ADR-008 (AI predictions and ground truth strictly separate).
 Maintains SQLite verdict cache for reproducibility and resilience.
 Calculates statistical performance metrics via AccuracyTracker and writes
-docs/results/evaluation_report_20261106.md with all required metadata.
+docs/results/groq_evaluation_report.md with all required metadata.
 """
 
 import argparse
@@ -23,11 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 
 from src.cli import detect_indicator_type
-from src.config import get_database_path, get_gemini_api_key
+from src.config import get_database_path, get_groq_api_key
 from src.engine.database import DatabaseManager
 from src.engine.enrichment import EnrichmentEngine
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
-from src.engine.llm import GeminiTriageEngine
+from src.engine.groq import GroqTriageEngine
 from src.engine.provenance import evaluation_run
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -79,14 +79,14 @@ def run_evaluation_pipeline(
     max_lookups: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Executes evaluation pipeline across threat timelines with optional enrichment and persistent storage."""
-    api_key = get_gemini_api_key()
+    api_key = get_groq_api_key()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
+        raise ValueError("GROQ_API_KEY environment variable is missing or empty.")
 
     target_db = get_database_path(db_path)
     db = DatabaseManager(db_path=target_db)
     with evaluation_run(db, 'evaluation') as run:
-        engine = GeminiTriageEngine(api_key=api_key)
+        engine = GroqTriageEngine(api_key=api_key)
         return _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
                                        results_output_dir, pacing_seconds, end_to_end, max_lookups)
 
@@ -198,7 +198,7 @@ def _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,
     if results_output_dir:
         out_dir = Path(results_output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        report_file = out_dir / "evaluation_report_20261106.md"
+        report_file = out_dir / "groq_evaluation_report.md"
 
         # Generate Markdown Report
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

@@ -13,7 +13,7 @@ from src.engine.enrichment import (
     URLhausProvider,
     VirusTotalProvider,
 )
-from src.engine.llm import GeminiTriageEngine
+from conftest import PipelineTestEngine
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -128,7 +128,7 @@ def test_compact_summary_size_limit_and_injection_defense():
     )
     timeline = ThreatTimeline(grouping_key="host_01", alerts=[alert], enrichment_data=[enr])
 
-    llm_engine = GeminiTriageEngine(api_key="mock_gemini_key_for_summary_test")
+    llm_engine = PipelineTestEngine(api_key="mock_test_transport_key_for_summary_test")
     payload = llm_engine._build_sanitized_triage_payload(timeline)
 
     enr_data = payload.get("enrichment_data", [])
@@ -197,7 +197,7 @@ def test_compact_summary_abuseipdb_and_urlhaus():
     )
 
     timeline = ThreatTimeline(grouping_key="test", alerts=[alert], enrichment_data=[enr_abuse, enr_urlhaus])
-    llm = GeminiTriageEngine(api_key="mock_key")
+    llm = PipelineTestEngine(api_key="mock_key")
     payload = llm._build_sanitized_triage_payload(timeline)
 
     abuse_summary = payload["enrichment_data"][0]["intel_summary"]

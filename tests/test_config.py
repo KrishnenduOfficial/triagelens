@@ -12,9 +12,9 @@ from src.config import (
     get_backend_host,
     get_backend_port,
     get_database_path,
-    get_gemini_api_key,
-    get_gemini_fallback_models,
-    get_gemini_model,
+    get_groq_api_key,
+    get_groq_fallback_models,
+    get_groq_model,
     get_virustotal_api_key,
     validate_config,
 )
@@ -79,15 +79,15 @@ def test_api_uses_file_database_by_default(monkeypatch, tmp_path):
     assert getattr(app.state.db, "db_path", None) != ":memory:"
 
 
-def test_gemini_config_and_fallbacks(monkeypatch):
-    """Verify Gemini primary model and fallback candidate parsing."""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
-    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-3.1-flash-lite")
+def test_groq_config_and_fallbacks(monkeypatch):
+    """Verify Groq primary model and fallback candidate parsing."""
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("GROQ_FALLBACK_MODELS", "openai/gpt-oss-20b,qwen/qwen3.8-27b")
 
-    assert get_gemini_api_key() == "test-gemini-key"
-    assert get_gemini_model() == "gemini-3.8-flash"
-    assert get_gemini_fallback_models() == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    assert get_groq_api_key() == "test-groq-key"
+    assert get_groq_model() == "openai/gpt-oss-120b"
+    assert get_groq_fallback_models() == ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
 
 
 def test_backend_host_and_port(monkeypatch):
@@ -100,19 +100,19 @@ def test_backend_host_and_port(monkeypatch):
 
 def test_safe_validation_logging_never_prints_secrets(caplog, monkeypatch):
     """Verify validate_config() logs configuration status without printing secret keys."""
-    raw_secret_gemini = "AIzaSyD-super-secret-gemini-key"
+    raw_secret_groq = "AIzaSyD-super-secret-groq-key"
     raw_secret_vt = "vt-secret-token-abcdef12345"
 
-    monkeypatch.setenv("GEMINI_API_KEY", raw_secret_gemini)
+    monkeypatch.setenv("GROQ_API_KEY", raw_secret_groq)
     monkeypatch.setenv("VIRUSTOTAL_API_KEY", raw_secret_vt)
 
     import logging
     with caplog.at_level(logging.INFO):
         summary = validate_config()
 
-    assert raw_secret_gemini not in caplog.text
+    assert raw_secret_groq not in caplog.text
     assert raw_secret_vt not in caplog.text
-    assert "configured" in caplog.text or summary.get("gemini_configured") is True
+    assert "configured" in caplog.text or summary.get("groq_configured") is True
 
 
 def test_env_example_and_readme_parity():
@@ -149,7 +149,7 @@ def test_env_example_and_readme_parity():
         assert var in all_supported_vars, f"Variable '{var}' in README.md is not supported by src.config"
 
     # Assert canonical variables in .env.example match README.md canonical variables
-    assert "GEMINI_API_KEY" in env_example_vars and "GEMINI_API_KEY" in readme_vars
-    assert "GEMINI_MODEL" in env_example_vars and "GEMINI_MODEL" in readme_vars
-    assert "GEMINI_FALLBACK_MODELS" in env_example_vars and "GEMINI_FALLBACK_MODELS" in readme_vars
+    assert "GROQ_API_KEY" in env_example_vars and "GROQ_API_KEY" in readme_vars
+    assert "GROQ_MODEL" in env_example_vars and "GROQ_MODEL" in readme_vars
+    assert "GROQ_FALLBACK_MODELS" in env_example_vars and "GROQ_FALLBACK_MODELS" in readme_vars
     assert "DATABASE_PATH" in env_example_vars or "TRIAGELENS_DB_PATH" in env_example_vars

@@ -27,6 +27,35 @@ The six primary stages are:
 
 The architecture is designed to run on modest hardware without requiring a locally hosted AI model or a full SIEM deployment.
 
+## Sole LLM Provider: Groq (ADR-054, ADR-055)
+
+Groq replaces Gemini in CLI triage, evaluation, two-model comparison, startup
+configuration reporting, and connection checks. `src/engine/groq.py` implements
+the Groq chat-completions wire contract using the existing HTTPX dependency.
+Default model: `openai/gpt-oss-120b`. Only `GROQ_API_KEY` authenticates active triage;
+Groq is the sole supported runtime provider. Model fallback is explicitly opt-in.
+
+`TriageEngineBase` in `llm.py` owns evidence isolation, recursive scrubbing, compact
+summary budgeting, prompt construction, cache/provenance lifecycle and verdict
+construction. Concrete transports own generation settings, credentials, endpoint,
+response extraction and additional validation. The retired provider transport,
+credentials, exports and diagnostic tools have been removed (ADR-055).
+
+Groq sends only seven model-authored assessment fields under strict JSON schema.
+Application-generated IDs and answering-model provenance cannot be authored by the
+model. A non-stop finish reason, refusal, tool call, mismatched model or invalid
+assessment is unavailable. Configured fallback is attempted only at the existing
+transport/HTTP 429/503/404 boundaries; there is no implicit retry loop.
+Cache policy hashes include provider identity, model chain, schema, prompt and
+generation settings, preventing Gemini/Groq cache reuse. Historical records and
+history metric counting are preserved; there is no database migration or backfill.
+
+`scripts/diagnose_groq.py` checks one synthetic full triage, bypassing cache and
+fallback. Its dry run makes no request; optional traces use shared allow-listed
+metadata-only helpers in `scripts/diagnostic_transport.py`. Logging and TLS guards
+are retained. Live availability and Groq analytical quality require operator
+verification; offline integration success does not establish either.
+
 ## Shared Database Target (ADR-044)
 
 CLI, API, and `scripts/run_evaluation.py` use `config.get_database_path(override)`.
@@ -43,7 +72,7 @@ same file. Existing databases are never discovered, merged, moved, or preferred
 based on row counts. The legacy root database remains separate from the default.
 API state selects its database at startup, so configuration changes require a
 restart. Path consistency is verified offline with real CLI persistence and API
-reads; live primary-model verification remains blocked under WIRE-11.
+reads; Groq primary-only live verification succeeded once; normal operator workflow verification remains pending.
 
 ## Metric Scopes and Cohort Selection (ADR-050)
 
@@ -71,7 +100,36 @@ null; attempts availability is null without completed fresh attempts. Default
 history/run empty conventions remain compatible. Coverage distinguishes replay,
 fresh, unknown, skipped, pending, interrupted, legacy, and repeated evidence.
 Truth/cohort metadata never enters model prompts or inference/cache fingerprints.
-Stage-4 dashboard scope presentation remains separate.
+Stage-4 dashboard presentation (ADR-051) consumes this contract without changing
+the server's selectors, formulas, stored records, or History default. Browser
+preview verification and operator-report presentation remain separate follow-ups.
+
+`dashboard/src/metrics/presentation.ts` owns typed selector validation, response
+selection checks, and undefined-value formatting. `request.ts` coordinates request
+generation and AbortController cleanup, withholding superseded success/failure
+callbacks even when a transport ignores cancellation. `MetricsOverview` separates
+draft controls from applied selection, and renders only results belonging to that
+applied request identity. `MetricResults` presents the server-selected units,
+denominators, source, severity/calibration/intervals, and lifecycle/evidence coverage;
+it does not deduplicate or reselect data in the browser. Metadata-free legacy
+History remains supported with unknown provenance; explicit scopes fail closed
+when response selection mismatches. No live-provider status is inferred from
+stored evaluation history. Tests use Node's built-in runner, in-memory TSX
+compilation, real React server rendering, injected Axios adapters/deferred requests,
+and network guards; no dependency or public cohort-write endpoint is added.
+
+## Groq Operator Diagnostics (ADR-055)
+
+`scripts/diagnose_groq.py` submits one synthetic full triage using the real engine,
+with cache/fallback disabled. `--dry-run` validates local configuration only;
+`--trace` records bounded allow-listed HTTPcore phases without raw trace data.
+Shared trace/log filters live in `scripts/diagnostic_transport.py`.
+
+The operator reported one HTTP 200/schema-valid result in 1248.8ms, requested and
+answering model `openai/gpt-oss-120b`, no cache or fallback. This is integration
+acceptance for that request, not an accuracy benchmark. See the migration report.
+Gemini WIRE-11 tooling is retired after provider replacement, not fixed upstream.
+
 
 ## Core Design Philosophy
 
@@ -116,7 +174,7 @@ The processing pipeline:
                   v
         +---------------------+
         | 4. LLM TRIAGE       |
-        | Gemini API          |
+        | Groq API            |
         +---------------------+
                   |
                   v
@@ -339,22 +397,25 @@ The initial implementation should use transparent, deterministic correlation log
 
 **Responsibility:** Use an external LLM to assist with alert investigation and triage while enforcing security boundaries and provider abstraction.
 
-### Initial Provider & Active Tiering
+### Active Provider and Model
 
-Google Gemini API (Generative Language API v1beta):
-- **Primary Model:** `gemini-3.8-flash` (Flagship analytical tier)
-- **Candidate Fallbacks:** `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite` (High-throughput, reliable failovers)
-- Fully configurable via `GEMINI_MODEL` and `GEMINI_FALLBACK_MODELS` environment variables.
+Groq chat completions (`https://api.groq.com/openai/v1/chat/completions`):
+- Primary: `openai/gpt-oss-120b`.
+- Configure `GROQ_API_KEY`, `GROQ_MODEL` and optional `GROQ_FALLBACK_MODELS`.
+- No model fallback or retry is enabled by default. Explicit fallback consumes
+  additional requests and does not guarantee continuity under provider limits.
+- Strict-schema-compatible model identifiers are validated before dispatch.
+
 
 ### Processing Pipeline
 
 1. **Deterministic Redaction:** Retain allow-listed telemetry roots and recursively copy their structured values, excluding evaluation/ground-truth keys and dataset provenance regardless of case/separator variants. Remove standalone classification values and complete technique IDs while preserving forensic strings and false/zero/null values. Original records and independent provider intelligence remain intact (ADR-008, ADR-017, ADR-040). Dataset adapters must keep evaluation metadata out of free-form observable text.
-2. **PII & Secret Scrubbing:** Mask API keys, private keys, passwords, bearer tokens, IP addresses, emails, and SSNs using `PIIScrubber` with Luhn credit-card defense (ADR-019).
+2. **PII & Secret Scrubbing:** Mask API keys (including Groq tokens), private keys, passwords, bearer tokens, emails, and credit cards using `PIIScrubber` with Luhn credit-card defense (ADR-019).
 3. **Prompt Injection Defense & Boundary Isolation:** Encapsulate untrusted log telemetry inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML tags. Instruct the model that log content is untrusted and cannot override system instructions (ADR-023).
 4. **Response Caching:** Check `LLMResponseCache` using SHA-256 fingerprint of sanitized timeline alerts and candidate model before making external requests (ADR-025).
-5. **API Invocation & Model Failover:** Transmit structured prompt to primary model; automatically fail over through candidate fallbacks upon HTTP 429, 503, 404, or network timeout.
-6. **Log Truncation & Sanitization:** Sanitize and truncate any raw API errors or candidate outputs to 250 characters via `_safe_log_text()` (ADR-024).
-7. **Strict Schema Parsing:** Enforce JSON object extraction, removing markdown code fences or trailing commas.
+5. **API Invocation:** Transmit system/user messages and strict JSON schema to Groq. Only explicitly configured fallbacks are tried upon HTTP 429, 503, 404 or transport failures.
+6. **Safe Failure Reporting:** Withhold upstream error bodies and exception details from Groq logs; report status/category without exposing telemetry or credentials.
+7. **Strict Schema Parsing:** Require exact JSON with seven model-authored fields, local strict types/ranges, expected model identity and a completed answer. Reject prose, fences, truncation, refusals and tool calls.
 8. **Verdict Attribution:** Store answering `model_name`, `uncertainty_level`, and `missing_information` in `TriageVerdict` and persist to SQLite.
 
 ### Expected Output Schema
@@ -471,7 +532,7 @@ observations retain separate history rows; retries of one observation reuse its
 outcome. Model failures are unavailable outcomes; storage/protocol errors fail the
 run and interrupt pending work. Skips have observation metadata and no evaluation.
 Contexts store independent-label/policy digests outside prompts. Each run currently
-has an ad hoc cohort namespace; legacy rows remain unknown. Gemini reports actual
+has an ad hoc cohort namespace; legacy rows remain unknown. Groq reports actual
 cache/send origin via context-local hooks, while opaque providers remain unknown.
 Stage 3 now supplies explicit validated cohort bindings and scoped selection. See
 `docs/results/run_provenance_stage1_20261108.md`.
@@ -493,15 +554,13 @@ scripts use shared cache acquisition. Stage 2 preserves history counts and metri
 shapes; stage 3 adds explicit scopes and additive selection metadata as described above.
 See `docs/results/verdict_cache_validity_20261108.md`.
 
-### Empirical Benchmarks
+### Model Verification and Historical Benchmarks
 
-1. **70-Timeline Balanced Benchmark (`docs/results/evaluation_report_20261106.md`):**
-   - 92.8% Accuracy, 96.8% Precision, 88.2% Recall, 97.1% Specificity, 92.3% F1-score, 2.9% FPR, 11.8% FNR.
-2. **2-Model Calibration Benchmark (`docs/results/model_comparison_report.md`):**
-   - `gemini-3.5-flash-lite`: 95.0% Accuracy, Brier: 0.0390, ECE: 0.0020.
-   - `gemini-3.1-flash-lite`: 100.0% Accuracy, Brier: 0.0071, ECE: 0.0585.
+Groq `openai/gpt-oss-120b` completed one operator-observed schema-valid synthetic
+triage in 1248.8ms. No Groq benchmark accuracy or calibration result is available.
+The 70-timeline evaluation and earlier two-model comparison in `docs/results/`
+are archived Gemini evidence. Do not apply their scores to the active provider.
 
----
 
 ## 3.6 Analyst Dashboard
 
@@ -596,7 +655,7 @@ Related events are grouped into a chronological timeline.
 
 ### Step 5: AI Analysis
 
-The enriched alert and relevant contextual information are submitted to Gemini.
+The enriched alert and relevant contextual information are submitted to Groq.
 
 ### Step 6: Evaluation
 
@@ -675,7 +734,7 @@ The processing modules should also be usable independently of the dashboard wher
 | Python     | Processing stages 1–5     |
 | FastAPI    | Backend API               |
 | SQLite     | Persistent data storage   |
-| Gemini API | AI-assisted analysis      |
+| Groq API | AI-assisted analysis      |
 | HTTPX      | External API requests     |
 | Pydantic   | Data validation           |
 | TypeScript | Dashboard                 |
@@ -848,7 +907,7 @@ triagelens/
 │   │   ├── evaluation.py      # AccuracyTracker, calibration, metrics (ADR-008)
 │   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
 │   │   ├── intake.py          # Alert normalization and intake engine
-│   │   ├── llm.py             # Gemini DFIR triage, prompt defense, cache & protocol
+│   │   ├── llm.py             # Shared triage, privacy, cache and provider protocol
 │   │   └── timeline.py        # Identity-based event correlation & time windows
 │   ├── models/                # Pydantic data schemas
 │   │   ├── alert.py

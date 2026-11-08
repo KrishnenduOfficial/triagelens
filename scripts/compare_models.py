@@ -1,6 +1,6 @@
 """2-Model Evaluation Comparison Script for TriageLens.
 
-Compares two Google Gemini models on a representative 20-timeline split
+Compares two Groq-hosted models on a representative 20-timeline split
 (10 Malicious, 10 Benign) from data/eval_benchmark_70.json.
 
 Evaluates:
@@ -9,7 +9,7 @@ Evaluates:
 - Latency and availability
 - Uncertainty and missing information telemetry
 
-Outputs report to docs/results/model_comparison_report.md.
+Outputs report to docs/results/groq_model_comparison_report.md.
 """
 
 from datetime import datetime, timezone
@@ -26,10 +26,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
-from src.config import get_gemini_api_key
+from src.config import get_groq_api_key
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
-from src.engine.llm import GeminiTriageEngine
+from src.engine.groq import GroqTriageEngine
 from src.engine.provenance import acquire_triage
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -102,7 +102,7 @@ def evaluate_model(
     print(f"Evaluating Model: {model_name} on {len(timelines)} timelines")
     print(f"========================================================")
 
-    engine = GeminiTriageEngine(api_key=api_key, model=model_name, fallback_models=[])
+    engine = GroqTriageEngine(api_key=api_key, model=model_name, fallback_models=[])
     db = DatabaseManager(db_path=cache_db_path)
     with closing(db):
         db.init_db()
@@ -127,7 +127,7 @@ def _evaluate_model_with_db(model_name,timelines,pacing_seconds,engine,db):
     latencies: List[float] = []
 
     for idx, tl in enumerate(timelines, start=1):
-        print(f"[{idx:02d}/{len(timelines):02d}] {tl.correlation_reason[:45]:<45} ... ", end="", flush=True)
+        print(f"[{idx:02d}/{len(timelines):02d}] {(tl.correlation_reason or '')[:45]:<45} ... ", end="", flush=True)
 
         if not db.get_timeline(tl.timeline_id):
             db.insert_timeline(tl)
@@ -182,7 +182,7 @@ def generate_comparison_report(
     metrics_b: Dict[str, Any],
     records_b: List[Dict[str, Any]],
     latency_b: Optional[float],
-    output_path: str = "docs/results/model_comparison_report.md",
+    output_path: str = "docs/results/groq_model_comparison_report.md",
 ) -> None:
     """Generates the Markdown comparison report."""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -295,9 +295,9 @@ A reliable SOC triage AI must not only predict the correct verdict, but its repo
 
 ## 4. Key Takeaways & Deployment Recommendations
 
-1. **Analytical Accuracy vs Efficiency:** Both models demonstrate strong classification performance across the balanced dataset.
-2. **Confidence Calibration:** Comparing Brier score and ECE reveals how well calibrated the models are. Well-calibrated confidence scores allow SOC orchestrators to route high-confidence predictions to automated containment and low-confidence predictions to human Tier-2 analysts.
-3. **Architectural Redundancy:** TriageLens's fallback engine guarantees uninterrupted SOC operations even under provider throttling or temporary quota exhaustion.
+1. **Analytical Accuracy vs Efficiency:** Assess measured results alongside availability, sample size, and latency; model quality is not assumed.
+2. **Confidence Calibration:** Brier score and ECE describe this sample's calibration. Human analysts retain response authority.
+3. **Availability:** Each model is evaluated without fallback. Free-tier limits can interrupt either model; continuity is not guaranteed.
 """
 
     out_file = Path(output_path)
@@ -307,15 +307,15 @@ A reliable SOC triage AI must not only predict the correct verdict, but its repo
 
 
 def main() -> None:
-    api_key = get_gemini_api_key()
+    api_key = get_groq_api_key()
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
+        raise ValueError("GROQ_API_KEY environment variable is missing or empty.")
 
     timelines = load_balanced_subset("data/eval_benchmark_70.json", num_malicious=10, num_benign=10)
     print(f"Loaded {len(timelines)} balanced test timelines (10 Malicious, 10 Benign).")
 
-    model_a = "gemini-3.5-flash-lite"
-    model_b = "gemini-3.1-flash-lite"
+    model_a = "openai/gpt-oss-120b"
+    model_b = "openai/gpt-oss-20b"
 
     metrics_a, records_a, latency_a = evaluate_model(
         model_name=model_a,
@@ -342,7 +342,7 @@ def main() -> None:
         metrics_b=metrics_b,
         records_b=records_b,
         latency_b=latency_b,
-        output_path="docs/results/model_comparison_report.md",
+        output_path="docs/results/groq_model_comparison_report.md",
     )
 
 

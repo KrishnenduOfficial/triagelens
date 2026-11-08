@@ -65,6 +65,7 @@ class PIIScrubber:
     GCP_KEY_PATTERN = re.compile(r"\bAIza[0-9A-Za-z\-_]{30,40}\b")
     TOKEN_PREFIX_PATTERN = re.compile(
         r"\b(?:"
+        r"gsk_[a-zA-Z0-9]{20,}|"  # Groq API key
         r"ghp_[a-zA-Z0-9]{36}|"  # GitHub personal token
         r"gho_[a-zA-Z0-9]{36}|"  # GitHub OAuth token
         r"xox[baprs]-[0-9a-zA-Z]{10,48}|"  # Slack token

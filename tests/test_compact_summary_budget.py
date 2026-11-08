@@ -6,7 +6,8 @@ import json
 import httpx
 import pytest
 
-from src.engine.llm import GeminiTriageEngine, summarize_enrichment
+from conftest import PipelineTestEngine
+from src.engine.llm import summarize_enrichment
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
 from src.utils.masking import PIIScrubber
@@ -26,18 +27,18 @@ def capture_summary(provider, raw):
 
     def send(url, **kwargs):
         requests.append(kwargs["json"])
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{
+        return httpx.Response(200, json={"outputs": [{"message": {"segments": [{
             "text": json.dumps({"severity": "LOW", "confidence_score": 0.6,
                                 "summary": "Offline fixture", "reasoning": [], "recommended_actions": []})
         }]}}]})
 
-    engine = GeminiTriageEngine(
+    engine = PipelineTestEngine(
         api_key="offline-placeholder", model="offline-model", fallback_models=[],
         enable_cache=False, request_sender=send,
     )
     assert engine.analyze_timeline(ThreatTimeline(grouping_key="test", enrichment_data=[result])) is not None
     assert len(requests) == 1
-    prompt = requests[0]["contents"][0]["parts"][0]["text"]
+    prompt = requests[0]["inputs"][0]["segments"][0]["text"]
     start = prompt.index('"intel_summary": ') + len('"intel_summary": ')
     summary, end = json.JSONDecoder().raw_decode(prompt, start)
     fragment = prompt[start:end]
@@ -167,7 +168,7 @@ def test_invalid_final_masked_payload_withholds_request(masked_payload):
         calls.append(kwargs)
         raise AssertionError("Invalid masked payload must never be sent")
 
-    engine = GeminiTriageEngine(
+    engine = PipelineTestEngine(
         api_key="offline-placeholder", fallback_models=[], enable_cache=False,
         request_sender=send, scrubber=BrokenScrubber(),
     )

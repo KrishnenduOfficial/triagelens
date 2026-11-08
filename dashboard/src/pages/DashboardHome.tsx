@@ -13,8 +13,7 @@ export const DashboardHome: React.FC = () => {
           </p>
         </div>
         <div className="pipeline-status-badge">
-          <span className="status-dot pulsing" />
-          <span>Pipeline Online · Cloud LLM Active</span>
+          <span>Live provider status not checked</span>
         </div>
       </div>
 

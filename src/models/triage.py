@@ -31,7 +31,7 @@ class TriageVerdict(BaseModel):
     raw_llm_response: str
     model_name: Optional[str] = Field(
         default=None,
-        description="The Gemini model identifier that generated this triage assessment",
+        description="The answering model identifier that generated this triage assessment",
     )
     uncertainty_level: Optional[Literal["LOW", "MEDIUM", "HIGH"]] = Field(
         default=None,

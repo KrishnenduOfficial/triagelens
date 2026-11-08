@@ -1,3 +1,9 @@
+> Historical verification snapshot. Groq is now the sole runtime provider
+> (ADR-055). References below to Gemini, removed tools or unresolved WIRE-11
+> describe that earlier state; WIRE-11 is retired from active work after provider
+> replacement. Prior model scores are not Groq scores. See
+> [current Groq verification](groq_migration_20261108.md).
+
 # Recursive structured prompt isolation — 2026-11-08
 
 Status: **FIXED+VERIFIED within the structured telemetry boundary** (ADR-040).

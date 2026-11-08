@@ -354,19 +354,19 @@ def test_snapshot_survives_a_concurrent_file_database_writer(tmp_path):
 def test_real_engine_replay_quality_survives_cache_expiry_and_label_mutation(db):
     import json
     import httpx
-    from src.engine.llm import GeminiTriageEngine
+    from conftest import PipelineTestEngine
 
     calls = []
     ticks = [1800000000.0]
 
     def sender(url, **kwargs):
         calls.append(kwargs)
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps({
+        return httpx.Response(200, json={"outputs": [{"message": {"segments": [{"text": json.dumps({
             "severity": "HIGH", "confidence_score": .9, "summary": "Fixture", "reasoning": ["Evidence"],
             "recommended_actions": ["Review"], "uncertainty_level": "HIGH", "missing_information": [],
         })}]}}]})
 
-    engine = GeminiTriageEngine(api_key="offline-placeholder", model="offline-primary", fallback_models=[],
+    engine = PipelineTestEngine(api_key="offline-placeholder", model="offline-primary", fallback_models=[],
         request_sender=sender, utc_clock=lambda: ticks[0], cache_ttl_seconds=60)
     tl, _ = case(db)
     run = RunRecorder(db, "evaluation")

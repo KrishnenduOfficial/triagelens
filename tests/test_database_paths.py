@@ -134,8 +134,8 @@ def test_evaluation_runner_uses_same_resolver(monkeypatch, project, explicit):
         def analyze_timeline(self, timeline):
             raise AssertionError("No timelines should be submitted")
 
-    monkeypatch.setattr(run_evaluation, "get_gemini_api_key", lambda: "offline-placeholder")
-    monkeypatch.setattr(run_evaluation, "GeminiTriageEngine", OfflineEngine)
+    monkeypatch.setattr(run_evaluation, "get_groq_api_key", lambda: "offline-placeholder")
+    monkeypatch.setattr(run_evaluation, "GroqTriageEngine", OfflineEngine)
     if explicit:
         monkeypatch.setenv("DATABASE_PATH", "nested/evaluation.db")
     metrics = run_evaluation.run_evaluation_pipeline(
@@ -192,8 +192,8 @@ def test_real_cli_and_api_persist_to_resolved_paths(monkeypatch, project, source
             opened.append(self)
 
     monkeypatch.setattr(cli, "DatabaseManager", RecordedDatabase)
-    monkeypatch.setattr(cli, "GeminiTriageEngine", OfflineTriage)
-    monkeypatch.setattr(config, "get_gemini_api_key", lambda: "offline-placeholder")
+    monkeypatch.setattr(cli, "GroqTriageEngine", OfflineTriage)
+    monkeypatch.setattr(config, "get_groq_api_key", lambda: "offline-placeholder")
     monkeypatch.setattr(cli, "EnrichmentEngine", lambda **kwargs: EnrichmentEngine(providers={}, daily_quotas={}, **kwargs))
     app = None
     try:

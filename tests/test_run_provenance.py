@@ -228,7 +228,7 @@ def test_lifecycle_uses_injected_clock(tmp_path):
 
 
 def successful_response():
-    return httpx.Response(200,json={'candidates':[{'content':{'parts':[{'text':json.dumps({
+    return httpx.Response(200,json={'outputs':[{'message':{'segments':[{'text':json.dumps({
         'severity':'HIGH','confidence_score':0.9,'summary':'Offline fixture',
         'reasoning':['Fixture'],'recommended_actions':['Review'],
         'uncertainty_level':'HIGH','missing_information':[],
@@ -236,7 +236,7 @@ def successful_response():
 
 
 def test_real_engine_reports_fresh_then_memory_cache_and_keeps_evaluation_metadata_out(db):
-    from src.engine.llm import GeminiTriageEngine
+    from conftest import PipelineTestEngine
     from src.engine.provenance import RunRecorder
     calls = []
 
@@ -246,7 +246,7 @@ def test_real_engine_reports_fresh_then_memory_cache_and_keeps_evaluation_metada
         assert record['origin'] == 'fresh' and record['attempt_id'] and record['status'] == 'pending'
         return successful_response()
 
-    engine = GeminiTriageEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],request_sender=send)
+    engine = PipelineTestEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],request_sender=send)
     tl, _, _ = outcome(db)
     run = RunRecorder(db,'evaluation')
     tracker = AccuracyTracker()
@@ -267,11 +267,11 @@ def test_real_engine_reports_fresh_then_memory_cache_and_keeps_evaluation_metada
 
 
 def test_acquisition_storage_failure_stops_http_and_marks_run_failed(monkeypatch,tmp_path):
-    from src.engine.llm import GeminiTriageEngine
+    from conftest import PipelineTestEngine
     from src.engine.provenance import AcquisitionPersistenceError, evaluation_run
     db = DatabaseManager(str(tmp_path / 'before-send.db'))
     calls = []
-    engine = GeminiTriageEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],
+    engine = PipelineTestEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],
                                request_sender=lambda *args,**kwargs:calls.append(kwargs))
     try:
         with pytest.raises(AcquisitionPersistenceError):
@@ -310,7 +310,7 @@ def test_real_runners_persist_lifecycle_but_keep_history_metrics(monkeypatch,tmp
     from src import cli, config
     from src.api.main import create_app
     from src.engine.enrichment import EnrichmentEngine
-    from src.engine.llm import GeminiTriageEngine
+    from conftest import PipelineTestEngine
     path = str(tmp_path / 'runner.db')
     monkeypatch.setenv('DATABASE_PATH',path)
     calls = []
@@ -326,11 +326,11 @@ def test_real_runners_persist_lifecycle_but_keep_history_metrics(monkeypatch,tmp
         return successful_response()
 
     def engine(**kwargs):
-        return GeminiTriageEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],request_sender=send)
+        return PipelineTestEngine(api_key='offline-placeholder',model='offline-model',fallback_models=[],request_sender=send)
 
     if runner == 'cli':
         module = cli
-        monkeypatch.setattr(config,'get_gemini_api_key',lambda:'offline-placeholder')
+        monkeypatch.setattr(config,'get_groq_api_key',lambda:'offline-placeholder')
         monkeypatch.setattr(cli,'EnrichmentEngine',lambda **kwargs:EnrichmentEngine(providers={},daily_quotas={},**kwargs))
         input_dir = tmp_path / 'input'
         input_dir.mkdir()
@@ -340,14 +340,14 @@ def test_real_runners_persist_lifecycle_but_keep_history_metrics(monkeypatch,tmp
             return cli.run_pipeline(data_dir=str(input_dir))
     else:
         from scripts import run_evaluation as module
-        monkeypatch.setattr(module,'get_gemini_api_key',lambda:'offline-placeholder')
+        monkeypatch.setattr(module,'get_groq_api_key',lambda:'offline-placeholder')
         alert = NormalizedAlert(source_dataset='offline',source_file='fixture.json',event_type='ProcessStart',original_record={'is_malicious':True,'severity':'HIGH'})
         tl = ThreatTimeline(grouping_key='offline',alerts=[alert],total_events=1)
 
         def run():
             return module.run_evaluation_pipeline(timelines=[tl])
 
-    monkeypatch.setattr(module,'GeminiTriageEngine',engine)
+    monkeypatch.setattr(module,'GroqTriageEngine',engine)
     for _ in range(2):
         assert run()['total'] == 1
     db = DatabaseManager(path)
@@ -402,7 +402,7 @@ def test_wrong_cohort_cannot_be_attached_to_an_observation(db):
 
 
 def test_fallback_http_calls_are_one_logical_fresh_attempt(db):
-    from src.engine.llm import GeminiTriageEngine
+    from conftest import PipelineTestEngine
     from src.engine.provenance import RunRecorder, _ACQUISITION
     calls = []
 
@@ -410,7 +410,7 @@ def test_fallback_http_calls_are_one_logical_fresh_attempt(db):
         calls.append(url)
         return httpx.Response(503,json={}) if len(calls)==1 else successful_response()
 
-    engine = GeminiTriageEngine(api_key='offline-placeholder',model='offline-primary',
+    engine = PipelineTestEngine(api_key='offline-placeholder',model='offline-primary',
                                fallback_models=['offline-fallback'],request_sender=send)
     run = RunRecorder(db,'evaluation')
     tl, _, _ = outcome(db)
@@ -432,7 +432,7 @@ def test_cli_skip_or_missing_input_has_honest_run_lifecycle(monkeypatch,tmp_path
     from src.engine.enrichment import EnrichmentEngine
     path = str(tmp_path / 'cli-lifecycle.db')
     monkeypatch.setenv('DATABASE_PATH',path)
-    monkeypatch.setattr(config,'get_gemini_api_key',lambda:None)
+    monkeypatch.setattr(config,'get_groq_api_key',lambda:None)
     monkeypatch.setattr(cli,'EnrichmentEngine',lambda **kwargs:EnrichmentEngine(providers={},daily_quotas={},**kwargs))
     input_dir = tmp_path / 'input'
     if not missing_input:

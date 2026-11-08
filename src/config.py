@@ -19,9 +19,9 @@ load_dotenv()
 
 # Canonical configuration variable definitions
 CANONICAL_CONFIG_VARS = [
-    "GEMINI_API_KEY",
-    "GEMINI_MODEL",
-    "GEMINI_FALLBACK_MODELS",
+    "GROQ_API_KEY",
+    "GROQ_MODEL",
+    "GROQ_FALLBACK_MODELS",
     "VIRUSTOTAL_API_KEY",
     "ABUSEIPDB_API_KEY",
     "URLHAUS_API_KEY",
@@ -78,25 +78,23 @@ def get_database_path(override: Optional[str] = None) -> str:
     return str(path)
 
 
-def get_gemini_api_key() -> Optional[str]:
-    """Returns the Gemini API key if configured."""
-    key = os.getenv("GEMINI_API_KEY")
-    return key.strip() if key else None
+def get_groq_api_key() -> Optional[str]:
+    """Return the Groq credential."""
+    key = os.getenv("GROQ_API_KEY", "").strip()
+    return key or None
 
 
-def get_gemini_model() -> str:
-    """Returns the configured primary Gemini model identifier."""
-    return os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+def get_groq_model() -> str:
+    """Return the active Groq model, with a nonblank default."""
+    return os.getenv("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b"
 
 
-def get_gemini_fallback_models() -> List[str]:
-    """Returns the candidate fallback model identifiers to try on quota or error."""
-    raw = os.getenv("GEMINI_FALLBACK_MODELS")
-    if raw:
-        models = [m.strip() for m in raw.split(",") if m.strip()]
-        if models:
-            return models
-    return ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+def get_groq_fallback_models() -> List[str]:
+    """Fallback is opt-in; no automatic model or provider substitution."""
+    return list(dict.fromkeys(
+        item.strip() for item in os.getenv("GROQ_FALLBACK_MODELS", "").split(",")
+        if item.strip()
+    ))
 
 
 def get_virustotal_api_key() -> Optional[str]:
@@ -237,9 +235,9 @@ def validate_config() -> Dict[str, Any]:
     Never prints, logs, or returns raw API keys or secret values.
     """
     db_path = get_database_path()
-    gemini_key = get_gemini_api_key()
-    gemini_model = get_gemini_model()
-    gemini_fallbacks = get_gemini_fallback_models()
+    groq_key = get_groq_api_key()
+    groq_model = get_groq_model()
+    groq_fallbacks = get_groq_fallback_models()
     vt_key = get_virustotal_api_key()
     abuse_key = get_abuseipdb_api_key()
     urlhaus_key = get_urlhaus_api_key()
@@ -252,9 +250,10 @@ def validate_config() -> Dict[str, Any]:
 
     status_summary = {
         "database_path": db_path,
-        "gemini_model": gemini_model,
-        "gemini_fallbacks": gemini_fallbacks,
-        "gemini_configured": bool(gemini_key),
+        "llm_provider": "groq",
+        "groq_model": groq_model,
+        "groq_fallbacks": groq_fallbacks,
+        "groq_configured": bool(groq_key),
         "virustotal_configured": bool(vt_key),
         "abuseipdb_configured": bool(abuse_key),
         "urlhaus_configured": bool(urlhaus_key),
@@ -268,10 +267,10 @@ def validate_config() -> Dict[str, Any]:
 
     logger.info("[Config] Target SQLite Database: %s", db_path)
     logger.info(
-        "[Config] Gemini Triage Engine : Model='%s', Fallbacks=%s, API Key=%s",
-        gemini_model,
-        gemini_fallbacks,
-        "configured" if gemini_key else "not configured",
+        "[Config] Groq Triage Engine : Model='%s', Fallbacks=%s, API Key=%s",
+        groq_model,
+        groq_fallbacks,
+        "configured" if groq_key else "not configured",
     )
     logger.info(
         "[Config] Threat Intelligence : VirusTotal=%s (min_detections=%d), AbuseIPDB=%s (min_score=%d), URLhaus=%s",

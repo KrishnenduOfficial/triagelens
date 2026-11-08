@@ -4,7 +4,7 @@ Coordinates all six major stages:
 1. Alert Intake (JSON and CSV)
 2. Threat Intelligence Enrichment (VirusTotal, AbuseIPDB, URLhaus)
 3. Incident Timeline Correlation
-4. Cloud LLM-Assisted Triage (Gemini API with PII Scrubbing)
+4. Cloud LLM-Assisted Triage (Groq API with PII Scrubbing)
 5. Ground-Truth Accuracy & Validation Evaluation
 6. Relational Persistence to SQLite
 """
@@ -28,7 +28,7 @@ from src.engine.enrichment import (
 )
 from src.engine.evaluation import AccuracyTracker
 from src.engine.intake import AlertIntakeEngine
-from src.engine.llm import GeminiTriageEngine
+from src.engine.groq import GroqTriageEngine
 from src.engine.provenance import evaluation_run
 from src.engine.timeline import TimelineBuilder
 from src.models.alert import NormalizedAlert
@@ -112,18 +112,18 @@ def _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups):
     accuracy_tracker = AccuracyTracker()
 
     # Initialize LLM Engine (if key exists and not explicitly skipped)
-    gemini_key = config.get_gemini_api_key()
-    triage_engine: Optional[GeminiTriageEngine] = None
+    groq_key = config.get_groq_api_key()
+    triage_engine: Optional[GroqTriageEngine] = None
 
     if not skip_llm:
-        if gemini_key:
+        if groq_key:
             try:
-                triage_engine = GeminiTriageEngine(api_key=gemini_key)
-                logger.info("[LLM Triage] Gemini Triage Engine initialized with PII Scrubber.")
+                triage_engine = GroqTriageEngine(api_key=groq_key)
+                logger.info("[LLM Triage] Groq Triage Engine initialized with PII Scrubber.")
             except Exception as exc:
-                logger.warning("[LLM Triage] Failed to initialize Gemini Engine: %s", exc)
+                logger.warning("[LLM Triage] Failed to initialize Groq Engine (%s).", type(exc).__name__)
         else:
-            logger.warning("[LLM Triage] GEMINI_API_KEY not found in environment; LLM stage will be skipped.")
+            logger.warning("[LLM Triage] GROQ_API_KEY not found in environment; LLM stage will be skipped.")
     else:
         logger.info("[LLM Triage] Skipped via --skip-llm flag.")
 

@@ -30,8 +30,8 @@ import httpx
 
 from src.config import (
     get_abuseipdb_api_key,
-    get_gemini_api_key,
-    get_gemini_model,
+    get_groq_api_key,
+    get_groq_model,
     get_urlhaus_api_key,
     get_virustotal_api_key,
 )
@@ -40,53 +40,39 @@ from src.config import (
 load_dotenv()
 
 
-def check_gemini(api_key: str, model: str, timeout: float) -> Tuple[bool, str]:
-    """Tests lightweight connectivity only; this does not validate a triage verdict."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key,
-    }
-    payload = {
-        "contents": [{"parts": [{"text": "Reply with OK."}]}],
-    }
-    if model.removeprefix("models/").startswith(("gemini-3.", "gemini-3-")):
-        payload["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "low"}}
+def check_groq(api_key: str, model: str, timeout: float) -> Tuple[bool, str]:
+    """One minimal generation probe; a successful probe is not a triage verdict."""
+    from src.engine.groq import GroqTriageEngine
+    from scripts.diagnostic_transport import _withhold_transport_logs
 
     start = time.perf_counter()
     try:
-        resp = httpx.post(url, headers=headers, json=payload, timeout=timeout)
-        latency_ms = (time.perf_counter() - start) * 1000.0
-        status_code = resp.status_code
-
-        parsing_ok = False
-        if status_code == 200:
+        engine = GroqTriageEngine(api_key=api_key, model=model, timeout=timeout,
+                                 fallback_models=[], enable_cache=False)
+        payload = {"model": model, "messages": [{"role": "user", "content": "Reply with OK."}],
+                   "max_completion_tokens": 2048}
+        if model.startswith("openai/gpt-oss-"):
+            payload["reasoning_effort"] = "low"
+        with _withhold_transport_logs():
+            response = httpx.post(engine.ENDPOINT,
+                                  headers={"Authorization": f"Bearer {api_key}"},
+                                  json=payload, timeout=timeout)
+        ok = False
+        if response.status_code == 200:
             try:
-                data = resp.json()
-                if isinstance(data, dict):
-                    parsing_ok = any(
-                        isinstance(part.get("text"), str) and bool(part["text"].strip())
-                        and not part.get("thought", False)
-                        for candidate in data.get("candidates", [])
-                        for part in candidate.get("content", {}).get("parts", [])
-                    )
-            except Exception:
-                parsing_ok = False
-
-        status_str = f"HTTP {status_code}"
-        parse_str = "OK" if parsing_ok else "FAILED"
-        success = (status_code == 200 and parsing_ok)
-        category = {
-            429: "quota_or_rate_limit", 503: "service_unavailable",
-            401: "auth_error", 403: "auth_error", 404: "model_not_found",
-        }.get(status_code, "invalid_response" if status_code == 200 else "http_error")
-        failure = "" if success else f" | failure: {category}"
-        return success, f"Google Gemini ({model}): {status_str} | latency: {latency_ms:.1f}ms | parsing: {parse_str}{failure}"
-
+                ok = bool(engine._response_text(response.json(), model).strip())
+            except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+                pass
+        elapsed = (time.perf_counter() - start) * 1000
+        category = {429: "quota_or_rate_limit", 503: "service_unavailable",
+                    401: "auth_error", 403: "permission_denied", 404: "model_not_found"}.get(
+                        response.status_code, "invalid_response" if response.status_code == 200 else "http_error")
+        suffix = "" if ok else f" | failure: {category}"
+        return ok, (f"Groq ({model}): HTTP {response.status_code} | latency: {elapsed:.1f}ms"
+                    f" | parsing: {'OK' if ok else 'FAILED'}{suffix}")
     except Exception as exc:
-        latency_ms = (time.perf_counter() - start) * 1000.0
-        exc_name = type(exc).__name__
-        return False, f"Google Gemini ({model}): ERROR ({exc_name}) | latency: {latency_ms:.1f}ms | parsing: FAILED"
+        # Neither response content nor exception text is safe operator output.
+        return False, f"Groq: ERROR ({type(exc).__name__}) | parsing: FAILED"
 
 
 def check_virustotal(api_key: str, indicator: str, timeout: float) -> Tuple[bool, str]:
@@ -220,11 +206,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--timeout",
         type=positive_timeout,
         default=None,
-        help="Override timeout for all probes (defaults: Gemini 30s, other providers 5s).",
+        help="Override timeout for all probes (defaults: Groq 30s, other providers 5s).",
     )
     parser.add_argument(
-        "--gemini-timeout", type=positive_timeout, default=None,
-        help="Gemini-specific timeout override, taking precedence over --timeout.",
+        "--groq-timeout", type=positive_timeout, default=None,
+        help="Groq-specific timeout override, taking precedence over --timeout.",
     )
     parser.add_argument(
         "--indicator",
@@ -235,24 +221,24 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(argv)
     provider_timeout = args.timeout if args.timeout is not None else 5.0
-    gemini_timeout = args.gemini_timeout if args.gemini_timeout is not None else (
+    groq_timeout = args.groq_timeout if args.groq_timeout is not None else (
         args.timeout if args.timeout is not None else 30.0
     )
 
     print("=" * 65)
     print("TriageLens Live Connection Smoke Test")
-    print("Connectivity probes only; primary-model triage is verified separately with diagnose_gemini.py.")
+    print("Connectivity probes only; primary-model triage is verified separately with diagnose_groq.py.")
     print("=" * 65)
 
-    gemini_key = get_gemini_api_key()
-    gemini_model = get_gemini_model()
+    groq_key = get_groq_api_key()
+    groq_model = get_groq_model()
     vt_key = get_virustotal_api_key()
     abuse_key = get_abuseipdb_api_key()
     urlhaus_key = get_urlhaus_api_key()
 
     if args.dry_run:
         print("[DRY-RUN] Checking configured credentials (no network calls):")
-        print(f"Google Gemini ({gemini_model}): {'CONFIGURED (dry-run)' if gemini_key else 'SKIPPED (no API key configured)'}")
+        print(f"Groq: {'CONFIGURED (dry-run)' if groq_key else 'SKIPPED (no API key configured)'}")
         print(f"VirusTotal: {'CONFIGURED (dry-run)' if vt_key else 'SKIPPED (no API key configured)'}")
         print(f"AbuseIPDB: {'CONFIGURED (dry-run)' if abuse_key else 'SKIPPED (no API key configured)'}")
         print(f"URLhaus: {'CONFIGURED (Auth-Key present, dry-run)' if urlhaus_key else 'SKIPPED (no API key configured)'}")
@@ -262,15 +248,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     all_passed = True
     tested_count = 0
 
-    # 1. Google Gemini
-    if gemini_key:
+    # 1. Groq
+    if groq_key:
         tested_count += 1
-        ok, msg = check_gemini(gemini_key, gemini_model, gemini_timeout)
+        ok, msg = check_groq(groq_key, groq_model, groq_timeout)
         print(msg)
         if not ok:
             all_passed = False
     else:
-        print("Google Gemini: SKIPPED (no API key configured)")
+        print("Groq: SKIPPED (no API key configured)")
 
     # 2. VirusTotal
     if vt_key:

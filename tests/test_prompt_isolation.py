@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from src.engine.llm import GeminiTriageEngine
+from conftest import PipelineTestEngine
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -28,20 +28,20 @@ def capture_evidence(record, enrichments=None):
 
     def send(url, **kwargs):
         requests.append(kwargs["json"])
-        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{
+        return httpx.Response(200, json={"outputs": [{"message": {"segments": [{
             "text": json.dumps({
                 "severity": "LOW", "confidence_score": 0.6, "summary": "Offline fixture",
                 "reasoning": [], "recommended_actions": [],
             })
         }]}}]})
 
-    engine = GeminiTriageEngine(
+    engine = PipelineTestEngine(
         api_key="offline-placeholder", model="offline-model", fallback_models=[],
         enable_cache=False, request_sender=send,
     )
     assert engine.analyze_timeline(timeline) is not None
     assert len(requests) == 1
-    prompt = requests[0]["contents"][0]["parts"][0]["text"]
+    prompt = requests[0]["inputs"][0]["segments"][0]["text"]
     evidence = json.loads(prompt.split("<FORENSIC_EVIDENCE>\n", 1)[1].split("\n</FORENSIC_EVIDENCE>", 1)[0])
     assert timeline.model_dump() == before, "Sanitization must not mutate independent evidence or labels"
     assert "DATASET_CANARY" not in prompt

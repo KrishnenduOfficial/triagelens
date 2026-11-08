@@ -13,7 +13,7 @@ from src.engine.enrichment import (
     URLhausProvider,
     VirusTotalProvider,
 )
-from src.engine.llm import GeminiTriageEngine
+from conftest import PipelineTestEngine
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -186,7 +186,7 @@ def test_cache_ttl_expiry_positive_and_negative(tmp_path):
 
 def test_unavailable_status_reaches_llm_payload():
     """Verify that missing intelligence (rate_limited, not_found, error) reaches the LLM prompt as unavailable."""
-    engine = GeminiTriageEngine(api_key="mock_gemini_key_for_payload_test")
+    engine = PipelineTestEngine(api_key="mock_test_transport_key_for_payload_test")
 
     alert = NormalizedAlert(
         source_dataset="test",

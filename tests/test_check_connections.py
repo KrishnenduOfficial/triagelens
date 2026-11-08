@@ -22,7 +22,7 @@ from scripts.check_connections import main
 
 
 CANARY_KEYS = {
-    "GEMINI_API_KEY": "AIzaSy_FAKE_GEMINI_TEST_SECRET_KEY_99999",
+    "GROQ_API_KEY": "gsk_FAKE_GROQ_TEST_SECRET_KEY_99999",
     "VIRUSTOTAL_API_KEY": "vt_fake_secret_key_88888888888888888888888888888888",
     "ABUSEIPDB_API_KEY": "abuseipdb_fake_secret_key_777777777777777777777777",
     "URLHAUS_API_KEY": "urlhaus_fake_secret_auth_key_6666666666666666",
@@ -35,6 +35,7 @@ def _setup_mock_env(monkeypatch):
     """Sets up canary keys in environment."""
     for k, v in CANARY_KEYS.items():
         monkeypatch.setenv(k, v)
+    monkeypatch.setenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 def test_check_connections_never_prints_keys(capsys, monkeypatch):
@@ -44,7 +45,8 @@ def test_check_connections_never_prints_keys(capsys, monkeypatch):
     mock_resp_success = MagicMock(spec=httpx.Response)
     mock_resp_success.status_code = 200
     mock_resp_success.json.return_value = {
-        "candidates": [{"content": {"parts": [{"text": "PONG"}]}}],
+        "model": "openai/gpt-oss-120b",
+        "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "PONG"}}],
         "data": {"attributes": {"last_analysis_stats": {"malicious": 0}}, "abuseConfidenceScore": 0},
         "query_status": "ok",
     }
@@ -83,7 +85,8 @@ def test_check_connections_never_prints_response_body(capsys, monkeypatch):
     mock_resp.status_code = 200
     mock_resp.text = f'{{"leak": "{CANARY_BODY_PAYLOAD}"}}'
     mock_resp.json.return_value = {
-        "candidates": [{"content": {"parts": [{"text": CANARY_BODY_PAYLOAD}]}}],
+        "model": "openai/gpt-oss-120b",
+        "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": CANARY_BODY_PAYLOAD}}],
         "data": {
             "attributes": {"last_analysis_stats": {"malicious": 0}},
             "abuseConfidenceScore": 0,
@@ -125,7 +128,8 @@ def test_check_connections_success_exit_code(capsys, monkeypatch):
     mock_resp = MagicMock(spec=httpx.Response)
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
-        "candidates": [{"content": {"parts": [{"text": "PONG"}]}}],
+        "model": "openai/gpt-oss-120b",
+        "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "PONG"}}],
         "data": {
             "attributes": {"last_analysis_stats": {"malicious": 0}},
             "abuseConfidenceScore": 0,
@@ -146,7 +150,7 @@ def test_check_connections_failure_exit_code(capsys, monkeypatch):
     """Verify exit code 1 when a provider encounters HTTP error or parsing failure."""
     _setup_mock_env(monkeypatch)
 
-    # Gemini returns 500
+    # Groq returns 500
     mock_500 = MagicMock(spec=httpx.Response)
     mock_500.status_code = 500
     mock_500.json.side_effect = ValueError("Invalid JSON")
@@ -157,7 +161,7 @@ def test_check_connections_failure_exit_code(capsys, monkeypatch):
     mock_200.json.return_value = {"data": {"attributes": {}}}
 
     def mock_post_dispatch(url, *args, **kwargs):
-        if "generativelanguage" in url:
+        if "api.groq.com" in url:
             return mock_500
         return mock_200
 
@@ -181,4 +185,28 @@ def test_check_connections_skips_unconfigured_providers(capsys, monkeypatch):
 
     out, _ = capsys.readouterr()
     assert "SKIPPED (no API key configured)" in out
+
+
+@pytest.mark.parametrize("arguments,groq_timeout,provider_timeout", [
+    ([], 30, 5), (["--timeout", "9"], 9, 9),
+    (["--groq-timeout", "40"], 40, 5),
+    (["--timeout", "9", "--groq-timeout", "40"], 40, 9),
+])
+def test_groq_default_budget_and_explicit_overrides(monkeypatch, arguments, groq_timeout, provider_timeout):
+    from scripts import check_connections as checks
+    monkeypatch.setattr(checks, "get_groq_api_key", lambda: "canary-key")
+    monkeypatch.setattr(checks, "get_virustotal_api_key", lambda: "canary-key")
+    monkeypatch.setattr(checks, "get_abuseipdb_api_key", lambda: None)
+    monkeypatch.setattr(checks, "get_urlhaus_api_key", lambda: None)
+    budgets = {}
+    def groq(key, model, timeout):
+        budgets["groq"] = timeout
+        return True, "OK"
+    def vt(key, indicator, timeout):
+        budgets["vt"] = timeout
+        return True, "OK"
+    monkeypatch.setattr(checks, "check_groq", groq)
+    monkeypatch.setattr(checks, "check_virustotal", vt)
+    assert main(arguments) == 0
+    assert budgets == {"groq": groq_timeout, "vt": provider_timeout}
 

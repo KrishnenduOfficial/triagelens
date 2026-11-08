@@ -1,3 +1,9 @@
+> Historical verification snapshot. Groq is now the sole runtime provider
+> (ADR-055). References below to Gemini, removed tools or unresolved WIRE-11
+> describe that earlier state; WIRE-11 is retired from active work after provider
+> replacement. Prior model scores are not Groq scores. See
+> [current Groq verification](groq_migration_20261108.md).
+
 # TriageLens Real Evaluation Run Report
 
 **Date of Execution:** 2026-11-06 00:38:34 UTC  

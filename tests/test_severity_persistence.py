@@ -191,14 +191,14 @@ def test_runner_and_api_agree_on_persisted_severity(monkeypatch, tmp_path, runne
         input_dir = tmp_path / "input"
         input_dir.mkdir()
         (input_dir / "alert.json").write_text(json.dumps([{"event_type":"ProcessStart", "is_malicious":True, "severity":"HIGH", "host":"offline-host", "user":"offline-user"}]), encoding="utf-8")
-        monkeypatch.setattr(config, "get_gemini_api_key", lambda: "offline-placeholder")
+        monkeypatch.setattr(config, "get_groq_api_key", lambda: "offline-placeholder")
         monkeypatch.setattr(cli, "EnrichmentEngine", lambda **kwargs: EnrichmentEngine(providers={}, daily_quotas={}, **kwargs))
 
         def run():
             return cli.run_pipeline(data_dir=str(input_dir))
     else:
         from scripts import run_evaluation as module
-        monkeypatch.setattr(module, "get_gemini_api_key", lambda: "offline-placeholder")
+        monkeypatch.setattr(module, "get_groq_api_key", lambda: "offline-placeholder")
         alert = NormalizedAlert(source_dataset="offline", source_file="fixture.json", event_type="ProcessStart",
                                 original_record={"is_malicious":True,"severity":"HIGH"})
 
@@ -206,7 +206,7 @@ def test_runner_and_api_agree_on_persisted_severity(monkeypatch, tmp_path, runne
             return module.run_evaluation_pipeline(timelines=[ThreatTimeline(grouping_key="offline", alerts=[alert], total_events=1)])
 
     monkeypatch.setattr(module, "DatabaseManager", RecordedDatabase)
-    monkeypatch.setattr(module, "GeminiTriageEngine", OfflineEngine)
+    monkeypatch.setattr(module, "GroqTriageEngine", OfflineEngine)
     app = None
     try:
         metrics = run()

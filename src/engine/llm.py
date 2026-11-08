@@ -1,4 +1,4 @@
-"""LLM-Assisted Triage Engine using the Google Gemini API.
+"""Shared privacy-preserving LLM triage pipeline.
 
 Provides structured threat analysis, severity scoring, and investigative recommendations
 while enforcing PII masking and defense against hallucinations.
@@ -63,7 +63,7 @@ Do not include any introductory remarks, markdown prose outside the JSON block, 
 class TriageProvider(Protocol):
     """Provider-independent interface protocol for LLM triage engines.
 
-    Enforces interchangeable AI backends (e.g. Gemini, Azure OpenAI, Anthropic)
+    Enforces interchangeable AI backends through a common input/output contract
     while maintaining strict input/output contracts and human-in-the-loop oversight.
     """
 
@@ -328,16 +328,21 @@ def summarize_enrichment(
     return _bound_enrichment_summary(summary)
 
 
-class GeminiTriageEngine:
+class TriageEngineBase:
     """Engine responsible for LLM-assisted alert triage and threat timeline analysis.
 
     Enforces PII/credential scrubbing before external transmission, communicates
-    with the Gemini REST API, defends against formatting hallucinations and prompt injections,
+    with concrete provider transports, defends against formatting hallucinations and prompt injections,
     and validates LLM responses against structured Pydantic schemas.
     """
 
-    DEFAULT_MODEL = "gemini-3.8-flash"
-    DEFAULT_FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    DEFAULT_MODEL = ""
+    DEFAULT_FALLBACK_MODELS = []
+    ENV_KEY = ""
+    ENV_MODEL = ""
+    ENV_FALLBACKS = ""
+    PROVIDER_ID = ""
+    PROVIDER_LABEL = "LLM"
 
 
     FORBIDDEN_EVALUATION_KEYS = {
@@ -447,11 +452,11 @@ class GeminiTriageEngine:
         cache_ttl_seconds: float = 3600,
         utc_clock: Optional[Callable[[], float]] = None,
     ) -> None:
-        """Initializes the GeminiTriageEngine.
+        """Initialize shared privacy, caching and transport settings.
 
         Args:
-            api_key: Gemini API key. Defaults to the GEMINI_API_KEY environment variable.
-            model: Gemini model identifier (e.g., 'gemini-flash-lite-latest').
+            api_key: Provider API key, or the concrete provider's environment setting.
+            model: Provider model identifier.
             fallback_models: Optional list of fallback model identifiers to try on 503/429/404.
             timeout: HTTP request timeout in seconds.
             scrubber: Optional custom PIIScrubber instance.
@@ -463,19 +468,18 @@ class GeminiTriageEngine:
             utc_clock: Optional epoch-seconds clock for cache validity and generation dates.
 
         Raises:
-            ValueError: If no API key is provided and GEMINI_API_KEY is not set.
+            ValueError: If no provider API key is configured.
         """
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.api_key = api_key or os.getenv(self.ENV_KEY)
         if not self.api_key:
             raise ValueError(
-                "GEMINI_API_KEY is required to initialize GeminiTriageEngine. "
-                "Provide it directly or configure the GEMINI_API_KEY environment variable."
+                f"{self.ENV_KEY} is required to initialize the triage engine."
             )
-        self.model = model or os.getenv("GEMINI_MODEL", self.DEFAULT_MODEL)
+        self.model = model or os.getenv(self.ENV_MODEL, self.DEFAULT_MODEL)
         if fallback_models is not None:
             self.fallback_models = list(fallback_models)
         else:
-            fb_env = os.getenv("GEMINI_FALLBACK_MODELS")
+            fb_env = os.getenv(self.ENV_FALLBACKS)
             if fb_env:
                 self.fallback_models = [m.strip() for m in fb_env.split(",") if m.strip()]
             else:
@@ -495,6 +499,18 @@ class GeminiTriageEngine:
             self.cache = LLMResponseCache()
         else:
             self.cache = None
+
+    def _generation_settings(self, candidate: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    def _prepare_request(self, candidate, user_prompt, generation):
+        raise NotImplementedError
+
+    def _response_text(self, response, candidate) -> str:
+        raise NotImplementedError
+
+    def _validate_assessment(self, assessment: Dict[str, Any]) -> bool:
+        return True
 
     def _extract_json(self, raw_text: str) -> Optional[Dict[str, Any]]:
         """Extracts and parses a JSON object from raw LLM output.
@@ -685,7 +701,7 @@ class GeminiTriageEngine:
     def analyze_timeline(self, timeline: ThreatTimeline) -> Optional[TriageVerdict]:
         """Performs AI-assisted triage analysis on a threat timeline.
 
-        Aggressively scrubs PII and credentials, prompts the Gemini API,
+        Aggressively scrubs PII and credentials, prompts the configured provider,
         parses the response, and returns a validated TriageVerdict.
 
         Args:
@@ -740,26 +756,6 @@ class GeminiTriageEngine:
             "Output ONLY the JSON assessment object."
         )
 
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_prompt}],
-                }
-            ],
-            "systemInstruction": {
-                "parts": [{"text": DFIR_SYSTEM_PROMPT}]
-            },
-            "generationConfig": {
-                "responseMimeType": "application/json",
-            },
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key,
-        }
-
         # 3. Transmit request with resilience and model fallback handling
         candidate_models = [self.model]
         for fb in self.fallback_models:
@@ -769,10 +765,7 @@ class GeminiTriageEngine:
         # Both cache layers validate the exact prepared evidence and inference policy.
         generation_by_model = {}
         for candidate in candidate_models:
-            generation = dict(payload['generationConfig'])
-            if not candidate.removeprefix('models/').startswith(('gemini-3.','gemini-3-')):
-                generation['temperature']=0.1
-            generation_by_model[candidate]=generation
+            generation_by_model[candidate] = self._generation_settings(candidate)
         evidence = {key:value for key,value in final_payload.items() if key not in ('timeline_id','grouping_key')}
         try:
             if not math.isfinite(self.utc_clock()):
@@ -783,9 +776,9 @@ class GeminiTriageEngine:
             if not math.isfinite(effective_ttl):
                 raise ValueError('Cache TTL must be finite')
             contract = CacheContract(str(timeline.timeline_id),fingerprint(evidence),fingerprint({
-                'provider':'gemini/v1beta','preparation_version':CACHE_PREPARATION_VERSION,
+                'provider':self.PROVIDER_ID,'preparation_version':CACHE_PREPARATION_VERSION,
                 'models':candidate_models,'generation':generation_by_model,
-                'system_instruction':payload['systemInstruction'],
+                'system_instruction':{'parts': [{'text': DFIR_SYSTEM_PROMPT}]},
                 'user_template':user_prompt.replace(sanitized_timeline_json,'<EVIDENCE_JSON>',1),
                 'schema':TriageVerdict.model_json_schema(),
             }),tuple(candidate_models),effective_ttl)
@@ -829,89 +822,81 @@ class GeminiTriageEngine:
         response = None
         answering_model = None
         for candidate in candidate_models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:generateContent"
-            generation_config = dict(generation_by_model[candidate])
-            candidate_payload = {**payload, "generationConfig": generation_config}
+            url, headers, candidate_payload = self._prepare_request(
+                candidate, user_prompt, generation_by_model[candidate])
             try:
                 sender = self.request_sender if self.request_sender is not None else httpx.post
                 note_acquisition('fresh')
                 candidate_response = sender(url, headers=headers, json=candidate_payload, timeout=self.timeout)
             except httpx.TimeoutException as exc:
                 safe_exc = self._safe_log_text(str(exc))
-                logger.warning(f"Gemini API request timed out ({candidate}) after {self.timeout}s: {safe_exc}")
+                logger.warning("%s API request timed out (%s) after %ss: %s",
+                               self.PROVIDER_LABEL, candidate, self.timeout, safe_exc)
                 continue
             except httpx.RequestError as exc:
                 safe_exc = self._safe_log_text(str(exc))
-                logger.warning(f"Gemini API network request error ({candidate}): {safe_exc}")
+                logger.warning("%s API network request error (%s): %s", self.PROVIDER_LABEL, candidate, safe_exc)
                 continue
 
             if candidate_response.status_code == 200:
                 response = candidate_response
                 answering_model = candidate
-                logger.info("Triage assessment successfully generated by Gemini model: %s", answering_model)
+                logger.info("Response received from %s model: %s", self.PROVIDER_LABEL, answering_model)
                 break
             elif candidate_response.status_code == 503:
                 safe_body = self._safe_log_text(candidate_response.text)
                 logger.warning(
-                    f"Gemini model '{candidate}' returned HTTP 503 (high demand): {safe_body}"
+                    "%s model '%s' returned HTTP 503 (high demand): %s", self.PROVIDER_LABEL, candidate, safe_body
                 )
                 continue
             elif candidate_response.status_code == 429:
                 safe_body = self._safe_log_text(candidate_response.text)
                 logger.warning(
-                    f"Gemini model '{candidate}' rate limit exceeded (HTTP 429): {safe_body}"
+                    "%s model '%s' rate limit exceeded (HTTP 429): %s", self.PROVIDER_LABEL, candidate, safe_body
                 )
                 continue
             elif candidate_response.status_code == 404:
                 safe_body = self._safe_log_text(candidate_response.text)
                 logger.error(
-                    f"Gemini model '{candidate}' not found / invalid (HTTP 404) - verify model identifier against official Google model catalog: {safe_body}"
+                    "%s model '%s' not found / invalid (HTTP 404): %s", self.PROVIDER_LABEL, candidate, safe_body
                 )
                 continue
             else:
                 safe_body = self._safe_log_text(candidate_response.text)
                 logger.error(
-                    f"Gemini API request failed ({candidate}) with HTTP {candidate_response.status_code}: {safe_body}"
+                    "%s API request failed (%s) with HTTP %s: %s", self.PROVIDER_LABEL,
+                    candidate, candidate_response.status_code, safe_body
                 )
                 break
 
         # 4. Handle complete failure across all candidates
         if response is None or response.status_code != 200:
-            logger.error("All Gemini API candidate models failed to return a successful triage response.")
+            logger.error("All %s API candidate models failed to return a successful triage response.", self.PROVIDER_LABEL)
             return None
 
-        # 5. Extract raw text from Gemini response structure
+        # 5. Extract assessment content using the provider's wire contract.
         try:
             res_data = response.json()
         except Exception as exc:
             safe_exc = self._safe_log_text(str(exc))
-            logger.error(f"Failed to decode Gemini response JSON: {safe_exc}")
+            logger.error("Failed to decode %s response JSON: %s", self.PROVIDER_LABEL, safe_exc)
             return None
 
-        raw_llm_text = ""
         try:
-            candidates = res_data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if parts:
-                    raw_llm_text = parts[0].get("text", "")
-        except (KeyError, IndexError, TypeError) as exc:
-            safe_exc = self._safe_log_text(str(exc))
-            logger.error(f"Unexpected response structure from Gemini API: {safe_exc}")
+            raw_llm_text = self._response_text(res_data, answering_model)
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            logger.error("Invalid or incomplete %s response; verdict withheld.", self.PROVIDER_LABEL)
             return None
-
-        # Fallback if mock or response provides text directly
-        if not raw_llm_text:
-            if "text" in res_data:
-                raw_llm_text = res_data["text"]
-            elif isinstance(res_data, str):
-                raw_llm_text = res_data
 
         # 6. Parse JSON from raw output (defend against hallucinations / conversational fluff)
         parsed_dict = self._extract_json(raw_llm_text)
         if not parsed_dict or not isinstance(parsed_dict, dict):
             safe_text = self._safe_log_text(raw_llm_text)
             logger.error(f"Failed to extract valid JSON object from LLM response: {safe_text}")
+            return None
+
+        if not self._validate_assessment(parsed_dict):
+            logger.error("%s assessment failed strict validation; verdict withheld.", self.PROVIDER_LABEL)
             return None
 
         # 7. Validate against Pydantic TriageVerdict schema
@@ -992,5 +977,3 @@ class GeminiTriageEngine:
             "attack_success_rate_pct": round(asr * 100, 2),
             "defense_effective": (asr == 0.0),
         }
-
-

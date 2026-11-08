@@ -30,3 +30,11 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+# Provider status
+
+TriageLens uses Groq `openai/gpt-oss-120b` for new triage. The dashboard reads
+persisted results through the backend; it never receives the Groq API key or calls
+Groq directly. Provider keys belong only in the root `.env`, never `VITE_*` values.
+History can include older models. Select an explicit run/cohort for a current-model
+comparison; stored results do not certify real-time provider availability. One
+operator synthetic Groq triage succeeded in 1248.8ms; quality benchmarking is pending.

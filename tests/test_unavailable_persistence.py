@@ -167,8 +167,8 @@ def test_evaluation_storage_failure_cannot_report_success(monkeypatch, tmp_path,
             raise sqlite3.OperationalError("offline outcome storage failure")
 
     monkeypatch.setattr(run_evaluation, "DatabaseManager", FailingDatabase)
-    monkeypatch.setattr(run_evaluation, "get_gemini_api_key", lambda: "offline-placeholder")
-    monkeypatch.setattr(run_evaluation, "GeminiTriageEngine", OfflineEngine)
+    monkeypatch.setattr(run_evaluation, "get_groq_api_key", lambda: "offline-placeholder")
+    monkeypatch.setattr(run_evaluation, "GroqTriageEngine", OfflineEngine)
     monkeypatch.setattr(OfflineEngine, "mode", "none")
     try:
         with pytest.raises(sqlite3.OperationalError, match="offline outcome storage failure"):
@@ -182,14 +182,14 @@ def test_evaluation_storage_failure_cannot_report_success(monkeypatch, tmp_path,
 @pytest.mark.parametrize("label", [True, None])
 def test_unavailable_report_does_not_label_missing_prediction_benign(monkeypatch, tmp_path, label):
     from scripts import run_evaluation
-    monkeypatch.setattr(run_evaluation, "get_gemini_api_key", lambda: "offline-placeholder")
-    monkeypatch.setattr(run_evaluation, "GeminiTriageEngine", OfflineEngine)
+    monkeypatch.setattr(run_evaluation, "get_groq_api_key", lambda: "offline-placeholder")
+    monkeypatch.setattr(run_evaluation, "GroqTriageEngine", OfflineEngine)
     monkeypatch.setattr(OfflineEngine, "mode", "none")
     output = tmp_path / "reports"
     metrics = run_evaluation.run_evaluation_pipeline(
         timelines=[timeline(label)], db_path=str(tmp_path / "report.db"), results_output_dir=str(output),
     )
-    report = (output / "evaluation_report_20261106.md").read_text(encoding="utf-8")
+    report = (output / "groq_evaluation_report.md").read_text(encoding="utf-8")
     assert "| Unavailable | `N/A` | `Unavailable`" in report
     assert "| Benign | `N/A`" not in report
     assert ("**Unknown**" if label is None else "**Malicious**") in report
@@ -263,20 +263,20 @@ def test_repeated_runner_failures_are_persisted_and_in_api_denominator(monkeypat
         input_dir = tmp_path / "input"
         input_dir.mkdir()
         (input_dir / "alert.json").write_text(json.dumps([{"event_type":"ProcessStart", "is_malicious":True, "host":"offline-host", "user":"offline-user"}]), encoding="utf-8")
-        monkeypatch.setattr(config, "get_gemini_api_key", lambda: "offline-placeholder")
+        monkeypatch.setattr(config, "get_groq_api_key", lambda: "offline-placeholder")
         monkeypatch.setattr(cli, "EnrichmentEngine", lambda **kwargs: EnrichmentEngine(providers={}, daily_quotas={}, **kwargs))
 
         def run():
             return cli.run_pipeline(data_dir=str(input_dir))
     else:
         from scripts import run_evaluation as module
-        monkeypatch.setattr(module, "get_gemini_api_key", lambda: "offline-placeholder")
+        monkeypatch.setattr(module, "get_groq_api_key", lambda: "offline-placeholder")
 
         def run():
             return module.run_evaluation_pipeline(timelines=[timeline()])
 
     monkeypatch.setattr(module, "DatabaseManager", RecordedDatabase)
-    monkeypatch.setattr(module, "GeminiTriageEngine", OfflineEngine)
+    monkeypatch.setattr(module, "GroqTriageEngine", OfflineEngine)
     app = create_app()
     try:
         with TestClient(app) as client:
@@ -305,7 +305,7 @@ def test_deliberately_inactive_cli_does_not_create_unavailable_outcome(monkeypat
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     (input_dir / "alert.json").write_text('[{"event_type":"ProcessStart"}]', encoding="utf-8")
-    monkeypatch.setattr(config, "get_gemini_api_key", lambda: None if skip == "no_key" else "offline-placeholder")
+    monkeypatch.setattr(config, "get_groq_api_key", lambda: None if skip == "no_key" else "offline-placeholder")
     monkeypatch.setattr(cli, "EnrichmentEngine", lambda **kwargs: EnrichmentEngine(providers={}, daily_quotas={}, **kwargs))
     opened = []
 

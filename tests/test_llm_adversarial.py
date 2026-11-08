@@ -15,7 +15,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from src.engine.llm import GeminiTriageEngine, LLMResponseCache, TriageProvider
+from conftest import PipelineTestEngine
+from src.engine.llm import LLMResponseCache, TriageProvider
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
@@ -54,16 +55,16 @@ def sample_timeline():
     )
 
 
-def build_gemini_api_response(text: str, status_code: int = 200) -> MagicMock:
-    """Helper to construct a mock httpx.Response mimicking Google Gemini generateContent."""
+def build_test_response(text: str, status_code: int = 200) -> MagicMock:
+    """Construct a response for the neutral shared-pipeline test transport."""
     mock_resp = MagicMock(spec=httpx.Response)
     mock_resp.status_code = status_code
     mock_resp.text = text
     mock_resp.json.return_value = {
-        "candidates": [
+        "outputs": [
             {
-                "content": {
-                    "parts": [{"text": text}],
+                "message": {
+                    "segments": [{"text": text}],
                     "role": "model",
                 },
                 "finishReason": "STOP",
@@ -80,14 +81,14 @@ def build_gemini_api_response(text: str, status_code: int = 200) -> MagicMock:
 
 def test_api_key_missing_raises_value_error(monkeypatch):
     """Verify engine refuses to initialize without an API key."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="GEMINI_API_KEY is required"):
-        GeminiTriageEngine()
+    monkeypatch.delenv("TEST_LLM_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="TEST_LLM_API_KEY is required"):
+        PipelineTestEngine()
 
 
 def test_api_key_provided_explicitly():
     """Verify engine accepts explicit API key argument."""
-    engine = GeminiTriageEngine(api_key="explicit_test_key_12345")
+    engine = PipelineTestEngine(api_key="explicit_test_key_12345")
     assert engine.api_key == "explicit_test_key_12345"
 
 
@@ -113,8 +114,8 @@ def test_hallucination_defense_markdown_code_fences(sample_timeline):
     ]
 }
 ```"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -150,8 +151,8 @@ Here is the structured incident verdict:
 
 Please let me know if you would like me to drill down into any specific artifact."""
 
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -175,8 +176,8 @@ def test_hallucination_defense_trailing_commas(sample_timeline):
         "No action required; log retained",
     ],
 }"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -199,8 +200,8 @@ def test_schema_violation_missing_severity(sample_timeline):
     "reasoning": ["Incomplete payload"],
     "recommended_actions": ["None"]
 }"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -216,8 +217,8 @@ def test_schema_violation_missing_confidence(sample_timeline):
     "reasoning": ["Incomplete payload"],
     "recommended_actions": ["None"]
 }"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -234,8 +235,8 @@ def test_schema_violation_invalid_confidence_range(sample_timeline):
     "reasoning": ["Confidence > 1.0"],
     "recommended_actions": ["None"]
 }"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -252,8 +253,8 @@ def test_schema_violation_invalid_severity_label(sample_timeline):
     "reasoning": ["Invalid severity value"],
     "recommended_actions": ["None"]
 }"""
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -264,8 +265,8 @@ def test_schema_violation_invalid_severity_label(sample_timeline):
 def test_unparsable_non_json_response(sample_timeline):
     """Verify engine survives LLM refusal or garbage natural language response."""
     raw_response = "I am an AI assistant and cannot evaluate security events without authorization."
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response(raw_response)
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response(raw_response)
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -304,9 +305,9 @@ def test_pii_leakage_prevention_on_wire():
         total_events=1,
     )
 
-    engine = GeminiTriageEngine(api_key="mock_key")
+    engine = PipelineTestEngine(api_key="mock_key")
 
-    mock_resp = build_gemini_api_response("""{
+    mock_resp = build_test_response("""{
         "severity": "INFORMATIONAL",
         "confidence_score": 0.99,
         "summary": "Scrubbing verification",
@@ -323,7 +324,7 @@ def test_pii_leakage_prevention_on_wire():
     # Extract the payload transmitted in the simulated HTTP request
     call_kwargs = mock_post.call_args.kwargs
     sent_payload = call_kwargs["json"]
-    sent_prompt_text = sent_payload["contents"][0]["parts"][0]["text"]
+    sent_prompt_text = sent_payload["inputs"][0]["segments"][0]["text"]
 
     # 1. Assert PII and Credentials are completely absent
     assert "soc_incident_lead@secret-corp.internal" not in sent_prompt_text
@@ -349,12 +350,12 @@ def test_pii_leakage_prevention_on_wire():
 
 
 def test_outage_simulation_http_503(sample_timeline):
-    """Verify engine handles Gemini 503 Service Unavailable gracefully without crashing."""
+    """Verify engine handles test transport 503 Service Unavailable gracefully without crashing."""
     mock_resp = MagicMock(spec=httpx.Response)
     mock_resp.status_code = 503
     mock_resp.text = "Service Temporarily Unavailable"
 
-    engine = GeminiTriageEngine(api_key="mock_key")
+    engine = PipelineTestEngine(api_key="mock_key")
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -369,7 +370,7 @@ def test_fallback_on_primary_model_http_503(sample_timeline):
     mock_503.status_code = 503
     mock_503.text = json.dumps({"error": {"code": 503, "message": "High demand"}})
 
-    mock_200 = build_gemini_api_response("""{
+    mock_200 = build_test_response("""{
         "severity": "HIGH",
         "confidence_score": 0.85,
         "summary": "Fallback model triage",
@@ -377,10 +378,10 @@ def test_fallback_on_primary_model_http_503(sample_timeline):
         "recommended_actions": ["Isolate host"]
     }""")
 
-    engine = GeminiTriageEngine(
+    engine = PipelineTestEngine(
         api_key="mock_key",
-        model="gemini-3.8-flash",
-        fallback_models=["gemini-flash-lite-latest"],
+        model="test-primary",
+        fallback_models=["test-fallback-a"],
     )
 
     with patch("httpx.post", side_effect=[mock_503, mock_200]) as mock_post:
@@ -393,12 +394,12 @@ def test_fallback_on_primary_model_http_503(sample_timeline):
 
 
 def test_outage_simulation_http_429_rate_limit(sample_timeline):
-    """Verify engine handles Gemini 429 Resource Exhausted gracefully without crashing."""
+    """Verify engine handles test transport 429 Resource Exhausted gracefully without crashing."""
     mock_resp = MagicMock(spec=httpx.Response)
     mock_resp.status_code = 429
     mock_resp.text = "Resource exhausted: Rate limit exceeded."
 
-    engine = GeminiTriageEngine(api_key="mock_key")
+    engine = PipelineTestEngine(api_key="mock_key")
 
     with patch("httpx.post", return_value=mock_resp):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -408,7 +409,7 @@ def test_outage_simulation_http_429_rate_limit(sample_timeline):
 
 def test_outage_simulation_timeout_exception(sample_timeline):
     """Verify engine handles connection or read timeout cleanly without crashing."""
-    engine = GeminiTriageEngine(api_key="mock_key", timeout=5.0)
+    engine = PipelineTestEngine(api_key="mock_key", timeout=5.0)
 
     with patch("httpx.post", side_effect=httpx.TimeoutException("Read timed out")):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -418,7 +419,7 @@ def test_outage_simulation_timeout_exception(sample_timeline):
 
 def test_outage_simulation_network_request_error(sample_timeline):
     """Verify engine handles socket/DNS network errors cleanly."""
-    engine = GeminiTriageEngine(api_key="mock_key")
+    engine = PipelineTestEngine(api_key="mock_key")
 
     with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused by peer")):
         verdict = engine.analyze_timeline(sample_timeline)
@@ -518,8 +519,8 @@ def test_no_ground_truth_or_provenance_leakage_in_prompt():
         total_events=1,
     )
 
-    engine = GeminiTriageEngine(api_key="mock_key")
-    mock_resp = build_gemini_api_response("""{
+    engine = PipelineTestEngine(api_key="mock_key")
+    mock_resp = build_test_response("""{
         "severity": "CRITICAL",
         "confidence_score": 0.99,
         "summary": "Mimikatz detected",
@@ -533,7 +534,7 @@ def test_no_ground_truth_or_provenance_leakage_in_prompt():
     assert mock_post.called
     call_args = mock_post.call_args
     sent_payload = call_args.kwargs["json"]
-    sent_prompt = sent_payload["contents"][0]["parts"][0]["text"]
+    sent_prompt = sent_payload["inputs"][0]["segments"][0]["text"]
 
     # 1. Assert label values and keywords are absent
     for forbidden_val in ("malicious", "attack", "benign", "T1003.001", "T1003", "Credential Dumping"):
@@ -651,7 +652,7 @@ def test_f3_credit_card_luhn_preserves_log_numbers_and_timestamps():
 
 def test_prompt_injection_defense_and_delimiters():
     """Verify DFIR_SYSTEM_PROMPT marks evidence untrusted and user_prompt uses <FORENSIC_EVIDENCE> delimiters."""
-    engine = GeminiTriageEngine(api_key="mock-key-for-test")
+    engine = PipelineTestEngine(api_key="mock-key-for-test")
     injection_alert = NormalizedAlert(
         source_dataset="test",
         source_file="test.json",
@@ -661,7 +662,7 @@ def test_prompt_injection_defense_and_delimiters():
     timeline = ThreatTimeline(grouping_key="test", alerts=[injection_alert], total_events=1)
 
     with patch("httpx.post") as mock_post:
-        mock_post.return_value = build_gemini_api_response(
+        mock_post.return_value = build_test_response(
             json.dumps({
                 "severity": "HIGH",
                 "confidence_score": 0.95,
@@ -675,8 +676,8 @@ def test_prompt_injection_defense_and_delimiters():
         assert mock_post.called
         call_kwargs = mock_post.call_args.kwargs
         sent_payload = call_kwargs["json"]
-        system_instruction = sent_payload["systemInstruction"]["parts"][0]["text"]
-        user_prompt = sent_payload["contents"][0]["parts"][0]["text"]
+        system_instruction = sent_payload["system"]["segments"][0]["text"]
+        user_prompt = sent_payload["inputs"][0]["segments"][0]["text"]
 
         # Defense 1: System prompt explicitly designates forensic evidence as untrusted
         assert "untrusted" in system_instruction.lower()
@@ -693,7 +694,7 @@ def test_prompt_injection_defense_and_delimiters():
 
 def test_measure_prompt_injection_attack_success_rate():
     """Empirically measure prompt injection resistance and verify 0.0% Attack Success Rate (ASR)."""
-    engine = GeminiTriageEngine(api_key="mock-key-for-test")
+    engine = PipelineTestEngine(api_key="mock-key-for-test")
 
     # Baseline clean attack timeline
     clean_alert = NormalizedAlert(
@@ -728,7 +729,7 @@ def test_measure_prompt_injection_attack_success_rate():
 
     with patch("httpx.post") as mock_post:
         # Mock LLM respecting system instructions and outputting HIGH despite injected overrides
-        mock_post.return_value = build_gemini_api_response(
+        mock_post.return_value = build_test_response(
             json.dumps({
                 "severity": "HIGH",
                 "confidence_score": 0.95,
@@ -751,28 +752,28 @@ def test_measure_prompt_injection_attack_success_rate():
         assert metrics["defense_effective"] is True
 
 
-def test_configurable_gemini_models_and_fallbacks(monkeypatch):
-    """Verify Gemini models are configured via GEMINI_MODEL and GEMINI_FALLBACK_MODELS env vars."""
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
-    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite,gemini-2.5-flash")
+def test_configurable_test_transport_models_and_fallbacks(monkeypatch):
+    """Verify test transport models are configured via TEST_LLM_MODEL and TEST_LLM_FALLBACK_MODELS env vars."""
+    monkeypatch.setenv("TEST_LLM_MODEL", "test-primary")
+    monkeypatch.setenv("TEST_LLM_FALLBACK_MODELS", "test-fallback-a,test-fallback-b")
 
-    engine = GeminiTriageEngine(api_key="mock-key")
-    assert engine.model == "gemini-3.8-flash"
-    assert engine.fallback_models == ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    engine = PipelineTestEngine(api_key="mock-key")
+    assert engine.model == "test-primary"
+    assert engine.fallback_models == ["test-fallback-a", "test-fallback-b"]
 
 
 def test_model_fallback_on_404_logs_error_and_records_answering_model():
     """Verify HTTP 404 logs an error and engine falls back to secondary model, recording its name."""
-    engine = GeminiTriageEngine(
+    engine = PipelineTestEngine(
         api_key="mock-key",
         model="unverified-invalid-model",
-        fallback_models=["gemini-3.8-flash"],
+        fallback_models=["test-primary"],
     )
     timeline = ThreatTimeline(grouping_key="test", alerts=[], total_events=0)
 
     # 404 for invalid model, 200 for fallback model
     resp_404 = MagicMock(spec=httpx.Response, status_code=404, text="Model not found")
-    resp_200 = build_gemini_api_response(
+    resp_200 = build_test_response(
         json.dumps({
             "severity": "LOW",
             "confidence_score": 0.9,
@@ -787,13 +788,13 @@ def test_model_fallback_on_404_logs_error_and_records_answering_model():
 
         assert mock_post.call_count == 2
         assert verdict is not None
-        # Must record that gemini-3.8-flash was the model that answered
-        assert verdict.model_name == "gemini-3.8-flash"
+        # Must record that test-primary was the model that answered
+        assert verdict.model_name == "test-primary"
 
 
 def test_f10_raw_logging_sanitizes_secrets_and_truncates(caplog):
     """Verify raw API errors and raw LLM text are scrubbed and truncated before logging (F10)."""
-    engine = GeminiTriageEngine(api_key="mock-key", model="gemini-3.8-flash", fallback_models=[])
+    engine = PipelineTestEngine(api_key="mock-key", model="test-primary", fallback_models=[])
     timeline = ThreatTimeline(grouping_key="test_f10", alerts=[], total_events=0)
 
     # 1. Test raw API error body logging with secrets and excessive length
@@ -820,7 +821,7 @@ def test_f10_raw_logging_sanitizes_secrets_and_truncates(caplog):
         f"I refuse to output JSON. Here is the leaked secret: password = '{secret_pwd}' "
         f"and aws_access_key = '{secret_aws_key}' " + ("B" * 600)
     )
-    mock_resp_200 = build_gemini_api_response(unparsable_llm_text)
+    mock_resp_200 = build_test_response(unparsable_llm_text)
 
     with caplog.at_level(logging.ERROR):
         with patch("httpx.post", return_value=mock_resp_200):
@@ -835,8 +836,8 @@ def test_f10_raw_logging_sanitizes_secrets_and_truncates(caplog):
 
 
 def test_triage_provider_protocol_conformance():
-    """Verify GeminiTriageEngine adheres to the provider-independent TriageProvider protocol (F11)."""
-    engine = GeminiTriageEngine(api_key="mock-key")
+    """Verify PipelineTestEngine adheres to the provider-independent TriageProvider protocol (F11)."""
+    engine = PipelineTestEngine(api_key="mock-key")
     assert isinstance(engine, TriageProvider)
     assert hasattr(engine, "model")
     assert callable(getattr(engine, "analyze_timeline"))
@@ -844,8 +845,8 @@ def test_triage_provider_protocol_conformance():
 
 def test_llm_response_cache_deduplication(sample_timeline):
     """Verify LLMResponseCache serves identical timeline prompts without redundant API requests (F11)."""
-    engine = GeminiTriageEngine(api_key="mock-key", enable_cache=True)
-    mock_resp = build_gemini_api_response(
+    engine = PipelineTestEngine(api_key="mock-key", enable_cache=True)
+    mock_resp = build_test_response(
         json.dumps({
             "severity": "HIGH",
             "confidence_score": 0.88,
@@ -878,8 +879,8 @@ def test_llm_response_cache_deduplication(sample_timeline):
 
 def test_uncertainty_and_missing_information_parsed(sample_timeline):
     """Verify uncertainty_level and missing_information are extracted and validated on TriageVerdict (F11)."""
-    engine = GeminiTriageEngine(api_key="mock-key", enable_cache=False)
-    mock_resp = build_gemini_api_response(
+    engine = PipelineTestEngine(api_key="mock-key", enable_cache=False)
+    mock_resp = build_test_response(
         json.dumps({
             "severity": "MEDIUM",
             "confidence_score": 0.72,

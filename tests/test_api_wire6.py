@@ -216,8 +216,8 @@ def test_run_evaluation_end_to_end_mode_with_enrichment(tmp_path: Path, monkeypa
         raw_llm_response="{}",
     )
 
-    with patch("scripts.run_evaluation.get_gemini_api_key", return_value="mock_gemini_key"), \
-         patch("scripts.run_evaluation.GeminiTriageEngine.analyze_timeline", return_value=mock_verdict):
+    with patch("scripts.run_evaluation.get_groq_api_key", return_value="mock_groq_key"), \
+         patch("scripts.run_evaluation.GroqTriageEngine.analyze_timeline", return_value=mock_verdict):
         metrics = run_evaluation_pipeline(
             timelines=[tl],
             db_path=str(db_file),

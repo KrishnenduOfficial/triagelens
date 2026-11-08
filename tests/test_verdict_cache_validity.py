@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import src.engine.llm as llm
+from conftest import PipelineTestEngine
 from src.engine.database import DatabaseManager
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -26,15 +27,15 @@ class Sender:
 
     def __call__(self,url,**kwargs):
         self.calls.append((url,kwargs))
-        if self.fail_primary and url.endswith('/offline-primary:generateContent'):
+        if self.fail_primary and url.endswith('/offline-primary:triage'):
             return httpx.Response(503,json={})
-        return httpx.Response(200,json={'candidates':[{'content':{'parts':[{'text':json.dumps({
+        return httpx.Response(200,json={'outputs':[{'message':{'segments':[{'text':json.dumps({
             'severity':'HIGH','confidence_score':0.9,'summary':'Fixture','reasoning':['Fixture'],
             'recommended_actions':['Review'],'uncertainty_level':'HIGH','missing_information':[]})}]}}]})
 
 
 def engine(sender, **kwargs):
-    return llm.GeminiTriageEngine(api_key='offline-placeholder',model=kwargs.pop('model','offline-primary'),
+    return PipelineTestEngine(api_key='offline-placeholder',model=kwargs.pop('model','offline-primary'),
                                   fallback_models=kwargs.pop('fallback_models',[]),request_sender=sender,**kwargs)
 
 
@@ -147,10 +148,10 @@ def test_sqlite_validation_preserves_history_and_refreshes_invalid_candidates(mo
     from scripts import run_evaluation
     path = str(tmp_path / 'cache.db')
     monkeypatch.setenv('DATABASE_PATH',path)
-    monkeypatch.setattr(run_evaluation,'get_gemini_api_key',lambda:'offline-placeholder')
+    monkeypatch.setattr(run_evaluation,'get_groq_api_key',lambda:'offline-placeholder')
     sender = Sender()
     selected = {'model':'offline-primary'}
-    monkeypatch.setattr(run_evaluation,'GeminiTriageEngine',lambda **kwargs:engine(sender,model=selected['model']))
+    monkeypatch.setattr(run_evaluation,'GroqTriageEngine',lambda **kwargs:engine(sender,model=selected['model']))
     assert run_evaluation.run_evaluation_pipeline(timelines=[timeline])['total']==1
     db = DatabaseManager(path)
     try:
@@ -206,8 +207,8 @@ def test_persistent_expiry_honors_custom_ttl_and_does_not_refresh(monkeypatch,tm
     ticks = [datetime(2026,1,1,tzinfo=timezone.utc).timestamp()]
     sender = Sender()
     monkeypatch.setenv('DATABASE_PATH',path)
-    monkeypatch.setattr(run_evaluation,'get_gemini_api_key',lambda:'offline-placeholder')
-    monkeypatch.setattr(run_evaluation,'GeminiTriageEngine',lambda **kwargs:engine(
+    monkeypatch.setattr(run_evaluation,'get_groq_api_key',lambda:'offline-placeholder')
+    monkeypatch.setattr(run_evaluation,'GroqTriageEngine',lambda **kwargs:engine(
         sender,utc_clock=lambda:ticks[0],cache=llm.LLMResponseCache(ttl_seconds=60,clock=lambda:ticks[0])))
     run_evaluation.run_evaluation_pipeline(timelines=[timeline])
     db = DatabaseManager(path)
@@ -230,7 +231,7 @@ def test_comparison_script_uses_shared_validation_without_adding_evaluation_rows
     from scripts import compare_models
     path = str(tmp_path / 'comparison.db')
     sender = Sender()
-    monkeypatch.setattr(compare_models,'GeminiTriageEngine',lambda **kwargs:engine(sender,model=kwargs['model']))
+    monkeypatch.setattr(compare_models,'GroqTriageEngine',lambda **kwargs:engine(sender,model=kwargs['model']))
     # The final request must find an older matching candidate, not just the latest.
     for command in ('fixture.exe','fixture.exe','changed.exe','fixture.exe'):
         timeline.alerts[0].original_record['CommandLine']=command
@@ -250,8 +251,8 @@ def test_disallowed_fallback_cache_cannot_mask_a_fresh_primary_failure(monkeypat
     sender = Sender(fail_primary=True)
     policy = {'fallbacks':['offline-fallback']}
     monkeypatch.setenv('DATABASE_PATH',path)
-    monkeypatch.setattr(run_evaluation,'get_gemini_api_key',lambda:'offline-placeholder')
-    monkeypatch.setattr(run_evaluation,'GeminiTriageEngine',lambda **kwargs:engine(sender,fallback_models=policy['fallbacks']))
+    monkeypatch.setattr(run_evaluation,'get_groq_api_key',lambda:'offline-placeholder')
+    monkeypatch.setattr(run_evaluation,'GroqTriageEngine',lambda **kwargs:engine(sender,fallback_models=policy['fallbacks']))
     assert run_evaluation.run_evaluation_pipeline(timelines=[timeline])['total']==1
     policy['fallbacks']=[]
     before = len(sender.calls)

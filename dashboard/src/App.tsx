@@ -48,8 +48,7 @@ export const App: React.FC = () => {
                 API Docs ↗
               </a>
               <div className="header-status-indicator">
-                <span className="status-ping" />
-                <span className="status-text mono">SOC Engine Online</span>
+                <span className="status-text mono">Evaluation dashboard</span>
               </div>
             </nav>
           </div>

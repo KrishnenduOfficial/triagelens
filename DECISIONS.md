@@ -5,9 +5,17 @@
 **Project:** TriageLens
 **Version:** 0.1.0
 **Status:** Initial decisions documented
-**Last Updated:** 2026-11-05
+**Last Updated:** 2026-11-08
 
 ---
+
+## Current decision status
+
+ADR-055 is authoritative for the sole supported runtime provider: Groq. The
+operator verified a schema-valid `openai/gpt-oss-120b` triage in 1248.8ms. WIRE-11
+is retired after provider replacement, not fixed upstream. Earlier provider/tool
+references below are decision history; removed paths are not current commands.
+Historical benchmark numbers must never be presented as Groq performance.
 
 ## 1. Purpose
 
@@ -82,6 +90,10 @@ Each processing stage should have a clearly defined responsibility.
 ---
 
 ### ADR-003: Gemini API as the Initial AI Provider
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
 
 **Status:** Accepted
 
@@ -351,7 +363,7 @@ The project's documentation must remain consistent with its actual implementatio
 
 **Consequences:**
 
-* `GEMINI.md` defines AI-agent working instructions.
+* `AGENTS.md` defines AI-agent working instructions.
 * `ARCHITECTURE.md` describes the intended system architecture.
 * `TASKS.md` tracks implementation progress.
 * `DECISIONS.md` records technical decisions.
@@ -565,6 +577,10 @@ Evaluating attack-only datasets without benign data produces artificially zero f
 
 ### ADR-023: LLM Prompt Injection Defense, Untrusted Evidence Delimitation, and Verified Model Architecture
 
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
+
 **Status:** Accepted (Verified with Google Generative Language API on 2026-11-06)
 
 **Decision:**
@@ -675,6 +691,10 @@ SOC workflows require both cost efficiency and probabilistic accountability. Rep
 ---
 
 ### ADR-026: Gemini 3 Generation Model Transition & Deprecation Lifecycle
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
 
 **Status:** Accepted (Empirically verified on 2026-11-06)
 
@@ -1070,6 +1090,10 @@ Enables reliable bulk alert triage within free-tier API quotas while preserving 
 
 ### ADR-037: Primary-Only Gemini Diagnostics and Safe Failure Reporting
 
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
+
 **Status:** Accepted — diagnostic support, not a WIRE-11 transport fix
 
 **Decision:**
@@ -1097,6 +1121,10 @@ a verdict at 15s or 30s. The root cause remains unconfirmed. See
 ---
 
 ### ADR-038: Gemini 3 Request Compatibility and Honest Smoke-Test Failures
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
 
 **Status:** Accepted — local request corrections; provider availability unresolved
 
@@ -1876,6 +1904,295 @@ No live requests or operator database migrations were run.
 
 ---
 
+### ADR-051 - Dashboard metric scopes with an explicit History default
+
+**Status:** Accepted and implemented - 2026-11-08 (ADR-047 stage-4 dashboard portion)
+
+**Authorization:** The operator approved stage-4 dashboard scope presentation while
+preserving default history behavior after the offline audit.
+
+**Decision:** Keep History selected on first load and preserve the bare
+`/api/metrics` request. Add explicit Run, Quality, and Fresh attempts controls;
+require a run UUID or registered cohort digest, with exactly one selector for
+attempts. Apply commits draft controls; refresh retries only that applied selection.
+No inferred latest run/cohort, unregistered manifest certification, or new discovery
+or write endpoint is introduced. The server remains responsible for selection,
+deduplication, and formulas; the dashboard never reweights its results.
+
+Extend the typed client with scope/unit/source, IDs, denominators, severity,
+calibration, intervals, and coverage. Validate core response values and matching
+server selection before displaying explicit scopes. Metadata-free older History
+responses remain usable, but source/provenance/absent extra fields are unknown.
+Never silently substitute History for a failed explicit request. Show API errors
+and applied identifiers. A new applied identity hides old values immediately;
+AbortController and request generation checks suppress outdated success/failure
+and callbacks after cleanup, including transports that ignore abort.
+
+**Presentation:** Label result rows, canonical quality pairs, and fresh logical
+attempts separately. Distinguish binary unknown labels from skipped observations
+and unavailable outcomes; disclose pending/interrupted/legacy/unverifiable/missing
+and repeated-evidence coverage. Empty/undefined classification denominators display
+N/A without changing backend values. Quality availability is not applicable;
+zero completed fresh attempts show N/A with an explanation. History/run availability
+is labeled result availability, not provider uptime. Show severity/calibration sample
+bases and Wilson intervals with an independence caveat. Remove unconditional live
+LLM/online status claims; no live provider probe is added.
+
+**Verification:** 48 new offline dashboard cases; full backend suite **578 passed,
+1 warning**. Production build succeeds; lint has one pre-existing TimelineFeed
+effect warning. Real in-process API responses for all five selector combinations
+validate and render through the actual dashboard modules. Node's built-in test
+runner and the installed compiler provide real TS/TSX imports/React rendering;
+test-only adapters, deferred promises, and network guards keep tests offline.
+No dependencies or existing test assertions were removed or weakened. The new
+legacy-availability assertion was corrected to target the availability card rather
+than accidentally reject a valid 100% precision value elsewhere on the page.
+
+**Limits:** Browser/native access hosts were unavailable, so interactive controls,
+visual layout, and viewport behavior were not verified in a browser. A temporary
+local fixture server was stopped after this check. Build artifacts stay ignored.
+CLI/generated-report labels remain a separate stage-4 follow-up; backend default
+semantics and operator databases are unchanged. WIRE-11 remains paused/unresolved.
+No live requests, commits, or pushes were made. See
+`docs/results/dashboard_scopes_20261108.md`.
+
+---
+
+### ADR-052 - Opt-in WIRE-11 variants and safe transport-phase diagnostics
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
+
+**Status:** Accepted and implemented - 2026-11-08 (diagnostic support; subsequent
+operator primary-only acceptance verified as recorded below)
+
+**Authorization:** The operator approved opt-in request-variant diagnostics with
+safe transport-phase tracing after the offline smoke-versus-triage audit.
+
+**Evidence:** Latest operator smoke output reported HTTP 200 in 34009.1ms. Actual
+primary-only triage subsequently read-timed out at 30s (30377.7ms) and 60s
+(60411.7ms), without a valid verdict or observed HTTP status. Earlier 429/daily
+quota evidence remains historical; these new timeouts do not establish quota
+exhaustion. Offline capture measured 114-byte low-thinking smoke versus a
+3617-byte full-triage request with unspecified thinking and JSON mode. Both use
+the same endpoint, authentication, and HTTPX timeout mechanism. HTTPX budgets
+apply per I/O operation, not as one wall-clock deadline. Cause remains unproven.
+
+**Decision:** Add `--variant {default,low-thinking}` and `--trace` to the existing
+operator diagnostic. Defaults remain the original full engine-generated request,
+15-second timeout, top-level `httpx.post`, no cache/fallback, and one send attempt.
+The explicit low-thinking variant is limited to Gemini-3-identified model names
+and changes only detached generation config; the full evidence/system prompts,
+JSON mode, local schema validation, model attribution, and single-request behavior
+remain. Do not add an automatic A/B loop, retries, output cap, different model,
+TLS/proxy bypass, production thinking change, or evaluation/cache persistence.
+Model naming does not guarantee server-side support; HTTP errors remain failures.
+
+**Tracing:** Only traced default-transport calls use a context-managed HTTPX Client,
+because top-level post does not accept trace extensions. Preserve transport defaults
+and the explicit request timeout. Observe target HTTP status via the response hook
+before body reading; never derive it from a proxy CONNECT trace tuple. A body
+timeout after 200 headers remains unsuccessful and schema-invalid. Record only
+fixed allow-listed connect/TLS/request/response phase names, started/complete/failed
+states, and finite clock-derived timing values. Ignore raw callback info entirely;
+cap events at 64 with a truncation flag. No events means unknown phase, not a guess.
+Phases may include proxy activity. Request metadata includes actual encoded body
+size, text lengths, effective generation variant, and all four timeout budgets.
+
+**Log privacy:** A real HTTPcore offline regression demonstrated raw headers and
+exception content in verbose library logs despite a safe callback. Context-local
+filters now withhold HTTPX/core logs only while the diagnostic sender executes;
+filters/contexts are restored on every path. Logger levels and unrelated threads'
+logs are preserved. No trace info, raw payload, header value, exception text, or
+credential is printed or persisted by the diagnostic. No verbose log level is
+enabled. Invalid variant values use a non-echoing CLI validator.
+
+**Verification:** 30 new offline cases, including actual HTTPX hooks and HTTPcore
+phase emission over an injected network backend, body/header timeout distinction,
+certificate-required TLS context, bounded/unknown traces, poisoned callback info,
+context/thread logging isolation, 429/503 no-retry, and unchanged defaults.
+Complete suite: **608 passed, 1 warning**. Existing tests were unchanged; no
+dependencies, network calls, or operator database operations were added.
+See `docs/results/wire11_request_variants_20261108.md`.
+
+**Limits:** This does not resolve upstream availability or prove why the primary
+timed out. A low-thinking success validates only that variant; unchanged-production
+verification still requires a successful baseline primary-only verdict. Trace
+events depend on the installed transport; unsupported events are ignored and no
+phase is fabricated. Live checks remain manual, one invocation at a time. Preserve
+the pending dashboard/visual/report work. WIRE-11 was OPEN at implementation.
+
+**Subsequent operator verification (2026-11-08):** After an operator credential/
+project update, the default primary-only diagnostic returned HTTP 200, matching
+requested/answering `gemini-3.8-flash`, success/schema true, 13254.6ms, one request,
+no cache/fallback, and completed response headers/body. It used a 60s budget and
+tracing, with unspecified thinking and no temperature override. Primary-only
+acceptance is met under these settings; no production code/policy was changed.
+Do not infer a proven root cause, sustained reliability, an untraced 15s-default
+pass, or completed live WIRE-6 wiring. Source: operator-supplied JSON, preserved
+in `docs/results/wire11_diagnostics_20261108.md`; no agent live probe was run.
+
+**Later recurrence:** A subsequent operator default request read-timed out at
+60394.6ms in response_headers after send completed at 383.5ms. Preserve the earlier
+success, but reopen WIRE-11 as intermittent; see ADR-053 and the latest evidence.
+
+---
+
+### ADR-053 - Opt-in matched HTTPX/curl comparison diagnostics
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
+
+**Status:** Accepted and implemented - 2026-11-08; WIRE-11 OPEN / INTERMITTENT
+
+**Authorization:** The operator approved implementing the matched comparison mode
+after the offline audit and a successful primary response followed by another timeout.
+
+**Context:** A default-variant schema-valid primary result at 13254.6ms proved one
+working request. A subsequent default run stalled after send and timed out waiting
+for response headers at 60394.6ms. The single-success acceptance label was too broad;
+preserve both results and reopen recurring WIRE-11. Neither invalid credentials,
+current quota exhaustion, nor a provider/network/Python root cause is established.
+An earlier curl timeout at 20s is historical and not a current matched comparison.
+
+**Decision:** Add optional `--comparison-client {httpx,curl}` to the existing
+diagnostic; default None keeps ordinary request construction and behavior. The
+comparison profile fixes only synthetic timeline identity, freezes actual JSON
+bytes, and matches HTTP/1.1, method/endpoint, public headers, Content-Length, JSON
+acceptance, identity encoding, and connection-close behavior. Report a versioned
+profile plus body/public-request SHA-256 fingerprints. Exclude keys from hashes;
+credential/project equality remains an operator prerequisite, not a hash claim.
+Keep the full triage prompt, optional explicitly recorded generation variant,
+primary attribution, disabled cache/fallback, and shared real verdict validation.
+No production inference/cache/policy/database change is introduced.
+
+**Dispatch:** Each invocation selects exactly one client. HTTPX uses a scoped
+HTTP/1.1 Client with normal verified TLS/proxy defaults and existing safe hooks.
+Curl uses an installed executable, `--disable --config -`, shell=False, hidden
+Windows helper mode, and private stdin for headers/key/body. Disable implicit
+curlrc, URL globbing, redirects, and retries; allow only the expected HTTPS model
+endpoint. Reject control characters/non-ASCII credentials and malformed model
+selectors before dispatch. Do not add TLS/proxy bypass, response files, raw output,
+alternate-client fallback, or automatic two-client loops. Mark injected test senders
+as injected rather than claiming an actual client invocation.
+
+**Outcomes/privacy:** Capture process output in memory and validate a fixed final
+stderr metrics record. Emit only numeric timing/size/status fields and known HTTP
+version values, plus exit code. Withhold raw stdout/stderr and exception messages.
+Treat curl exit-28 and process-guard timeouts distinctly from HTTPX ReadTimeout;
+retain known target status even when body consumption fails. Do not parse partial
+responses into success. Reject missing/malformed successful-process metrics,
+unexpected response protocol, and accepted bodies over 8 MiB. Proxy CONNECT status
+is not target status. No native curl timing is fabricated as an HTTPcore phase.
+
+**Limits:** Curl's whole-transfer deadline/connect timeout and 5s process guard
+differ from HTTPX's per-I/O timeout. Report native policies instead of calling
+their clocks equivalent. TLS implementations/trust stores and environment proxy/
+certificate handling may differ; report only override presence, never values.
+Matched fingerprints and settings are required before outcome comparison. A new
+matched HTTPX baseline is needed; older ordinary requests used different headers
+and a random identity. Different outcomes do not alone prove a Python-only fault.
+
+**Verification:** 33 new offline cases; full suite **641 passed, 1 warning**.
+An actual installed-curl/HTTPX loopback test verified identical method/path/headers/
+body for both default (3617 bytes) and low-thinking (3658 bytes), native metric
+parsing, and cleanup. It substituted only the local test endpoint, not a live
+provider or production TLS policy. No existing test was removed/weakened, no
+dependencies installed, and no agent provider calls or database changes were made.
+See `docs/results/wire11_transport_comparison_20261108.md`.
+
+---
+
+### ADR-054: Replace active Gemini inference with Groq
+
+> Provider-specific behavior superseded/retired by ADR-055. This entry is
+> historical; its remaining provider-independent safeguards still apply.
+
+
+**Status:** Accepted and implemented offline, 2026-11-08. Supersedes ADR-023/026
+for the active provider/model selection only; their historical evidence remains.
+
+**Authorization:** The operator explicitly requested replacing Gemini with Groq
+after configuring `GROQ_API_KEY` and approved completing the remaining migration.
+
+**Context:** Operator evidence shows recurrent full and simple generation timeouts
+using HTTPX/curl and the full request on Wi-Fi/hotspot. Model listing and token
+counting return HTTP 200. A prior schema-valid Gemini success remains historical;
+current invalid credentials, quota exhaustion and root cause are not established.
+Gemini WIRE-11 stays open; using another provider is not a fix to that incident.
+
+**Decision:** Use Groq chat completions and `openai/gpt-oss-120b` by default. Read
+`GROQ_API_KEY`, `GROQ_MODEL` and optional `GROQ_FALLBACK_MODELS`; no implicit fallback
+or retry is enabled. Keep explicit legacy Gemini tools, keys and regressions
+separate. Active CLI, evaluation, comparison and smoke checks select Groq directly.
+Use existing HTTPX, with no new SDK/dependency or arbitrary base URL setting.
+
+Share the privacy/prompt/cache pipeline through `TriageEngineBase`, with concrete
+provider wire-format hooks. Send strict JSON schema for the seven assessment fields;
+validate locally without coercing types or rescuing prose. Refusal, truncation,
+tool calls, model mismatch and invalid JSON are unavailable outcomes. Groq error
+content is withheld; bare `gsk_` credentials are included in PII scrubbing.
+
+Provider identity and exact generation policy enter cache fingerprints. Preserve
+stored Gemini verdicts, provenance, historical metrics and database schema. Never
+relabel earlier Gemini benchmark accuracy as Groq accuracy. Comparison continues
+to persist verdict cache only, not evaluation history. Human response authority
+and independent ground truth remain unchanged.
+
+**Operator verification:** `diagnose_groq.py --dry-run`, then separately one
+`--timeout 30 --trace` full synthetic request. Dry run and offline tests do not prove
+service availability. No agent provider calls are included in this migration.
+
+**Sources:** [Groq API](https://console.groq.com/docs/api-reference),
+[strict output](https://console.groq.com/docs/structured-outputs),
+[free-plan limits](https://console.groq.com/docs/rate-limits).
+Free-tier limits and model availability can change. The model allowlist follows
+documented strict-schema support; new model IDs require compatibility verification.
+
+### ADR-055: Sole Groq provider, verified live request and retirement cleanup
+
+**Status:** Accepted and implemented, 2026-11-08. Supersedes ADR-054's temporary
+legacy-provider retention and retires ADR-037/038/052/053 provider tooling.
+
+**Authorization:** The user explicitly requested Groq-only operation, removal of
+unnecessary Gemini files, correction of relevant Markdown and a later commit/push.
+
+**Evidence:** Operator-supplied `diagnose_groq.py --timeout 30 --trace` returned
+HTTP 200, requested/answering `openai/gpt-oss-120b`, success/schema_valid true,
+1248.8ms, one request, cache disabled, fallback zero and completed transport phases.
+No agent live call is claimed. One success establishes access for that request;
+benchmark accuracy, calibration and ongoing availability need separate evaluation.
+
+**Decision:** Remove the retired engine/export/configuration, old smoke function,
+two diagnostic scripts, four exclusive test files and three detailed WIRE-11
+troubleshooting reports. Replace the former provider-specific rules filename with
+`AGENTS.md` and preserve its working instructions. Shared pipeline tests use
+an explicit test-only neutral transport; applicable tracing tests now exercise the
+actual Groq diagnostic. Ordinary network guards and security assertions remain.
+
+WIRE-11 is retired as superseded by provider replacement. Its upstream cause was
+not repaired or proven; it is no longer a TriageLens blocker or scheduled follow-up.
+Keep a compact evidence summary in the migration report and decision history.
+
+Document current Groq capabilities from the implemented contract and actual live
+result. Keep earlier benchmark reports and stored rows honestly attributed as
+historical evidence. No rewritten scores, model labels, DB migration or history
+counting change. New reports use `groq_evaluation_report.md` and
+`groq_model_comparison_report.md` to avoid overwriting the old model reports.
+No new benchmark numbers or unlimited-free-service claim is made.
+
+**Consequences:** Groq is required for new cloud inference. Missing Groq credentials
+cannot invoke another provider. Existing retention/quotas and strict model allowlist
+still apply. Tests exclusive to deleted features are removed; shared coverage is
+ported, so current test totals differ from the historical 688-case migration run.
+No commit/push is performed by the cleanup; review the final diff first.
+
+**Verification:** 619 backend tests and 48 dashboard tests pass. One existing
+Starlette/HTTPX deprecation warning remains. Local Markdown links are valid and
+diff whitespace checks pass. No agent provider requests or production DB changes.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.
@@ -1885,7 +2202,7 @@ The following decisions are intentionally not finalized yet or have been resolve
 | Database       | **Resolved:** SQLite with WAL mode, foreign keys, and automated schema migrations (ADR-004, ADR-011, ADR-016, ADR-025) |
 | Backend        | **Resolved:** FastAPI REST endpoints with Pydantic schemas (ADR-005, ADR-012) |
 | Frontend       | **Resolved:** React 19 + TypeScript + Vite + Tailwind CSS in `dashboard/` (ADR-006) |
-| AI Model       | **Resolved:** Gemini 3 generation (`gemini-3.8-flash` primary, `gemini-3.5-flash-lite` & `gemini-3.1-flash-lite` fallbacks, ADR-023, ADR-026) |
+| AI Model       | **Resolved:** Groq `openai/gpt-oss-120b`, fallback opt-in (ADR-054); Gemini retained only for legacy diagnostics |
 | Dataset        | **Resolved:** 70-timeline balanced benchmark dataset (`data/eval_benchmark_70.json`, ADR-024) |
 | Correlation    | **Resolved:** Identity-driven (host + user) grouping with 30-min sliding time window and 50-event cap (ADR-021) |
 | Authentication | Open: Login, user roles, and authorization design for multi-analyst SOC teams |
@@ -1939,7 +2256,7 @@ The initial technical direction is:
 * **Core language:** Python
 * **Backend framework:** FastAPI
 * **Database:** SQLite
-* **AI provider:** Gemini API
+* **AI provider:** Groq API (ADR-054)
 * **Frontend language:** TypeScript
 * **Testing:** Pytest
 * **HTTP client:** HTTPX
