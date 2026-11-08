@@ -1,9 +1,9 @@
 # TriageLens
 
 **Active provider: Groq, `openai/gpt-oss-120b` (ADR-055).**
-A full synthetic triage succeeded on 2026-11-08: HTTP 200, schema-valid verdict,
-1248.8ms, one request, no cache or fallback. This proves one live integration
-success; benchmark accuracy and sustained availability remain unmeasured.
+A six-case live synthetic check on 2026-11-08 returned six valid verdicts:
+6/6 binary classifications matched the labels, but exact severity matched 1/6.
+This small selected sample does not establish general accuracy or service uptime.
 Gemini runtime support is removed. Historical results remain attributed correctly.
 
 > **An alert triage pipeline that measures how often its AI is wrong.**
@@ -84,15 +84,23 @@ or adversarial prompt. `GROQ_FALLBACK_MODELS` is empty by default.
 | Transport | Connection, TLS, upload and response phases completed |
 
 Evidence: [Groq migration and live verification](docs/results/groq_migration_20261108.md).
-The result is operator-supplied; no agent live provider request was made.
+That initial result was operator-supplied. A later agent-run sample is described below.
 A successful schema check does not establish correct severity or safe recommendations.
 
-### 3.3 Quality evaluation still required
+### 3.3 Six-case evaluation and remaining quality work
 
-Use independent ground-truth labels and explicit metric scopes to measure accuracy,
-false negatives, severity agreement, calibration, availability and injection
-resistance. Run a small sanitized evaluation before a larger quota-consuming run.
-The repository's 70-timeline dataset is synthetic, not a real-world SOC benchmark.
+Six preselected synthetic cases (three malicious, three benign) produced six
+HTTP 200/schema-valid verdicts with no retries, fallback, cache or enrichment.
+Binary counts were TP=3, TN=3, FP=0, FN=0. Exact severity agreement was 1/6 (16.7%).
+Mean request time was 1.24 seconds. Saved results matched the API's History, Run
+and Fresh attempts metrics and rendered through the dashboard's real component.
+
+The review found unsupported assertions and a recommendation to delete a dump
+without specifying evidence preservation first. Severity criteria and analyst-safe
+recommendations need review before a larger evaluation. Injection resistance,
+real-world generalization and sustained availability remain unmeasured. The
+repository's 70-case dataset is synthetic, not a real-world SOC benchmark.
+See the [six-case evidence and limitations](docs/results/groq_evaluation_report.md).
 
 ### 3.4 Historical benchmark evidence
 

@@ -11,6 +11,13 @@ reported HTTP 200, the expected answering model, a schema-valid full triage,
 1248.8ms, one request, no cache and no fallback. This verifies that request,
 not benchmark accuracy or guaranteed future availability.
 
+Subsequent agent-executed live verification: six preselected synthetic cases,
+six valid verdicts, TP=3/TN=3/FP=0/FN=0, but severity agreement only 1/6. API persisted
+metrics and real-component static rendering matched. See
+`docs/results/groq_evaluation_report.md`. Unsupported assertions and a destructive
+cleanup recommendation require an offline rubric/preservation audit before scaling.
+This does not close interactive UI, full CLI or prompt-injection verification.
+
 Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
 as superseded by the provider replacement, not repaired upstream. Historical
 benchmark reports and stored records retain their true model attribution.

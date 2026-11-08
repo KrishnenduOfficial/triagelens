@@ -7,6 +7,11 @@ The operator verified one full synthetic triage: HTTP 200, schema-valid output,
 1248.8ms, one request, no cache and no fallback. This does not establish benchmark
 accuracy or sustained availability. See [verification](docs/results/groq_migration_20261108.md).
 
+A subsequent authorized agent-run six-case sample produced six schema-valid
+verdicts, TP=3/TN=3/FP=0/FN=0, and exact severity agreement 1/6. Saved API metrics and
+static dashboard rendering matched. This selected synthetic sample is not a
+general performance claim. See [evaluation](docs/results/groq_evaluation_report.md).
+
 Gemini WIRE-11 is **retired / superseded by provider replacement**. Its upstream
 cause was not established or repaired. It is not an active blocker or a task to
 resume. Prior benchmark reports and stored outcomes retain historical attribution.
@@ -40,8 +45,10 @@ resume. Prior benchmark reports and stored outcomes retain historical attributio
 
 ## Next work
 
-- [ ] Run a small sanitized Groq evaluation using independent labels. Inspect severity,
+- [x] Run a small sanitized Groq evaluation using independent labels. Inspect severity,
   false negatives, unsupported reasoning, missing-information handling and calibration.
+- [ ] Audit severity criteria, evidence-qualified assertions and preservation-first
+  recommendations offline before changing prompts or running a larger benchmark.
 - [ ] Measure Groq prompt-injection resistance and availability; report sample size and scope.
 - [ ] Verify the normal CLI -> shared SQLite -> API -> dashboard workflow manually.
   Preserve default History behavior and select explicit run/cohort IDs for provider comparisons.
@@ -62,7 +69,8 @@ these without a scoped request. Human analysts retain final response authority.
 Latest offline verification: **619 backend tests passed**, with one existing
 Starlette/HTTPX deprecation warning; **48 dashboard tests passed**. Local Markdown
 link checks and `git diff --check` passed. Removed-provider tests explain the change
-from the pre-retirement 688-case suite. No agent live API requests were made.
+from the pre-retirement 688-case suite. Those offline checks made no provider
+requests; the separate live evaluation above made six authorized requests.
 
 Ordinary pytest stays offline, including with local credentials configured. Use
 injected transports and temporary databases. Never weaken security tests or claim

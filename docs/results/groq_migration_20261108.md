@@ -2,6 +2,12 @@
 
 ## Current outcome (ADR-054 and ADR-055)
 
+Follow-up: an authorized agent-executed [six-case evaluation](groq_evaluation_report.md)
+returned six valid verdicts and six correct binary labels, but only one exact
+severity match. Persistence, API scopes and static dashboard rendering were checked.
+That report records recommendation risks and small-sample limits. The original
+single-request migration evidence below remains historical.
+
 Groq is the sole supported runtime AI provider. The user explicitly requested
 removing the retired provider code and obsolete diagnostics, updating all relevant
 Markdown, and leaving the work ready for a later Git commit/push.
