@@ -135,7 +135,7 @@ old models; use explicit run/cohort selections for a current-provider comparison
 ### 5.2 Backend Setup
 
 1. **Clone the repository:**
-   ```bash
+   ```powershell
    git clone https://github.com/KrishnenduOfficial/triagelens.git
    cd triagelens
    ```
@@ -148,14 +148,15 @@ old models; use explicit run/cohort selections for a current-provider comparison
    On a POSIX shell, activation is `source .venv/bin/activate`.
 
 3. **Install dependencies:**
-   ```bash
+   ```powershell
    python -m pip install -r requirements.txt
    ```
 
 4. **Configure environment variables:**
    ```powershell
-   # For a new checkout only; preserve an existing configured .env.
-   Copy-Item .env.example .env
+   if (-not (Test-Path -LiteralPath .env)) {
+       Copy-Item .env.example .env
+   }
    ```
    Edit `.env` to configure your API keys and model parameters:
    ```env
@@ -163,9 +164,13 @@ old models; use explicit run/cohort selections for a current-provider comparison
    GROQ_MODEL=openai/gpt-oss-120b
    GROQ_FALLBACK_MODELS=
    DATABASE_PATH=data/triagelens.db
-   VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
-   ABUSEIPDB_API_KEY=your_abuseipdb_api_key_here
+   VIRUSTOTAL_API_KEY=
+   ABUSEIPDB_API_KEY=
    ```
+   Groq needs a real key for live triage. Intelligence credentials are optional:
+   enter real values for services you use and leave unused credentials blank,
+   including `URLHAUS_API_KEY` in the template. Example placeholder strings are
+   treated as configured credentials; they are not working API keys.
    *(Note: `TRIAGELENS_DB_PATH` is also recognized as an alias for `DATABASE_PATH`, and `VT_API_KEY` as an alias for `VIRUSTOTAL_API_KEY`).*
 
    CLI, API, and the evaluation runner share database resolution: explicit CLI
@@ -237,20 +242,29 @@ runs can contact both Groq and configured intelligence services and consume quot
    `docs/results/groq_evaluation_report.md`; the earlier model report is preserved.
    The separate `compare_models.py` runner writes `groq_model_comparison_report.md`.
 
-4. **Start the backend in a separate terminal:**
+4. **Start the backend in a separate terminal, from the project root:**
    ```powershell
-   uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+   .\.venv\Scripts\Activate.ps1
+   python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
    ```
    Configure the API's `DATABASE_PATH` to the same file as the CLI. Open
    `http://127.0.0.1:8000/docs` for the API or `/api/metrics` for stored metrics.
 
-5. **Start the dashboard in another terminal:**
+5. **Start the dashboard in another terminal, initially at the project root:**
    ```powershell
    cd dashboard
    npm ci
    npm run dev
    ```
    Open the local URL printed by Vite (normally `http://localhost:5173`).
+   The default backend URL is `http://localhost:8000`. For a different backend,
+   put the public URL in `dashboard/.env.local` before starting Vite:
+   ```env
+   VITE_API_BASE_URL=http://127.0.0.1:8000
+   ```
+   Vite uses the dashboard directory for its environment files; setting this only
+   in the root `.env` does not configure the frontend. Restart Vite after changes.
+   Groq and intelligence secrets stay in the root `.env`, never in `VITE_*` values.
 
 ---
 
@@ -277,7 +291,7 @@ runs can contact both Groq and configured intelligence services and consume quot
 
 From the project root, use these operator commands (each live command is separate):
 
-```bash
+```powershell
 python scripts/diagnose_groq.py --dry-run
 # One synthetic full-triage request, no cache/fallback/retry:
 python scripts/diagnose_groq.py --timeout 30 --trace
@@ -336,13 +350,18 @@ To ensure transparency and maintain defensible security engineering standards, t
 
 ## 8. Repository Structure
 
+Selected version-controlled paths are shown below; this is a structural summary.
+
 ```text
 triagelens/
   .env.example                  # Placeholder configuration; real .env is private
+  .gitignore                    # Excludes secrets, dependencies and runtime artifacts
   AGENTS.md                     # Project rules and working instructions
   ARCHITECTURE.md                # Components and data contracts
   DECISIONS.md                   # Versioned technical decisions
   TASKS.md                      # Current progress and next work
+  LICENSE                       # MIT license
+  pytest.ini                    # Backend test discovery configuration
   requirements.txt              # Pinned Python dependencies
   data/
     dummy_alerts.json            # Intake test fixture
