@@ -43,7 +43,12 @@ def test_http_429_retry_after_honored():
 
 def test_bounded_retries_with_backoff():
     """Verify that transient 429 with small Retry-After or 5xx retries and recovers."""
-    vt = VirusTotalProvider(api_key="mock_vt_key")
+    now = [0.0]
+
+    def advance(seconds):
+        now[0] += seconds
+
+    vt = VirusTotalProvider(api_key="mock_vt_key", clock=lambda: now[0], sleep_func=advance)
 
     mock_429 = MagicMock(spec=httpx.Response)
     mock_429.status_code = 429
@@ -60,8 +65,7 @@ def test_bounded_retries_with_backoff():
     }
 
     # First attempt returns 429 with tiny retry-after, second attempt succeeds with 200
-    with patch("httpx.get", side_effect=[mock_429, mock_200]) as mock_get, \
-         patch("time.sleep", return_value=None):
+    with patch("httpx.get", side_effect=[mock_429, mock_200]) as mock_get:
         res = vt.lookup_with_status("198.51.100.5", "ip")
         assert res.lookup_status == "ok"
         assert res.is_malicious is True

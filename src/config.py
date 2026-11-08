@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Automatically load environment variables from .env on import
 load_dotenv()
@@ -45,21 +46,36 @@ SUPPORTED_CONFIG_ALIASES = {
 }
 
 
-def get_database_path() -> str:
-    """Returns the configured SQLite database file path.
+def get_database_path(override: Optional[str] = None) -> str:
+    """Resolve a SQLite target consistently for CLI, API, and evaluation.
 
-    Checks canonical DATABASE_PATH, then TRIAGELENS_DB_PATH alias,
-    defaulting to 'data/triagelens.db'. Automatically creates parent
-    directories if not an in-memory database.
+    Precedence: explicit override, nonblank DATABASE_PATH, nonblank alias,
+    then data/triagelens.db. Relative paths use PROJECT_ROOT, never cwd.
+    Disk paths are absolute and their parents are created before returning.
+    Explicit blank overrides and filesystem errors fail before opening SQLite.
+    The exact :memory: sentinel remains available for deliberate ephemeral use.
     """
-    path = os.getenv("DATABASE_PATH") or os.getenv("TRIAGELENS_DB_PATH") or "data/triagelens.db"
-    clean_path = path.strip()
-    if clean_path != ":memory:":
-        try:
-            Path(clean_path).parent.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning("Could not create parent directory for database path '%s': %s", clean_path, e)
-    return clean_path
+    if override is not None:
+        clean_path = override.strip()
+        if not clean_path:
+            raise ValueError("Explicit database path must not be blank or empty")
+    else:
+        clean_path = next(
+            (value.strip() for value in (
+                os.getenv("DATABASE_PATH", ""), os.getenv("TRIAGELENS_DB_PATH", "")
+            ) if value.strip()),
+            "data/triagelens.db",
+        )
+    if clean_path == ":memory:":
+        return clean_path
+    path = Path(clean_path)
+    if not path.is_absolute():
+        if path.drive or path.root:
+            raise ValueError("Windows database paths must be fully qualified or project-relative")
+        path = PROJECT_ROOT / path
+    path = path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 def get_gemini_api_key() -> Optional[str]:

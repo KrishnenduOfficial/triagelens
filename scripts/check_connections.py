@@ -15,6 +15,7 @@ CRITICAL SECURITY AND OPERATIONAL MANDATES:
 """
 
 import argparse
+import math
 import os
 from pathlib import Path
 import sys
@@ -40,16 +41,17 @@ load_dotenv()
 
 
 def check_gemini(api_key: str, model: str, timeout: float) -> Tuple[bool, str]:
-    """Tests Google Gemini API connectivity with a minimal generateContent ping."""
+    """Tests lightweight connectivity only; this does not validate a triage verdict."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": api_key,
     }
     payload = {
-        "contents": [{"parts": [{"text": "ping"}]}],
-        "generationConfig": {"maxOutputTokens": 2},
+        "contents": [{"parts": [{"text": "Reply with OK."}]}],
     }
+    if model.removeprefix("models/").startswith(("gemini-3.", "gemini-3-")):
+        payload["generationConfig"] = {"thinkingConfig": {"thinkingLevel": "low"}}
 
     start = time.perf_counter()
     try:
@@ -61,15 +63,25 @@ def check_gemini(api_key: str, model: str, timeout: float) -> Tuple[bool, str]:
         if status_code == 200:
             try:
                 data = resp.json()
-                if isinstance(data, dict) and ("candidates" in data or "contents" in data or "text" in str(data)):
-                    parsing_ok = True
+                if isinstance(data, dict):
+                    parsing_ok = any(
+                        isinstance(part.get("text"), str) and bool(part["text"].strip())
+                        and not part.get("thought", False)
+                        for candidate in data.get("candidates", [])
+                        for part in candidate.get("content", {}).get("parts", [])
+                    )
             except Exception:
                 parsing_ok = False
 
         status_str = f"HTTP {status_code}"
         parse_str = "OK" if parsing_ok else "FAILED"
         success = (status_code == 200 and parsing_ok)
-        return success, f"Google Gemini ({model}): {status_str} | latency: {latency_ms:.1f}ms | parsing: {parse_str}"
+        category = {
+            429: "quota_or_rate_limit", 503: "service_unavailable",
+            401: "auth_error", 403: "auth_error", 404: "model_not_found",
+        }.get(status_code, "invalid_response" if status_code == 200 else "http_error")
+        failure = "" if success else f" | failure: {category}"
+        return success, f"Google Gemini ({model}): {status_str} | latency: {latency_ms:.1f}ms | parsing: {parse_str}{failure}"
 
     except Exception as exc:
         latency_ms = (time.perf_counter() - start) * 1000.0
@@ -183,6 +195,17 @@ def check_urlhaus(api_key: Optional[str], indicator: str, timeout: float) -> Tup
         return False, f"URLhaus: ERROR ({exc_name}) | latency: {latency_ms:.1f}ms | parsing: FAILED"
 
 
+def positive_timeout(value: str) -> float:
+    """Validate a bounded caller-selected timeout without echoing input."""
+    try:
+        timeout = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("Timeout must be positive and finite.") from None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise argparse.ArgumentTypeError("Timeout must be positive and finite.")
+    return timeout
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI entrypoint for connection smoke testing."""
     parser = argparse.ArgumentParser(
@@ -195,9 +218,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--timeout",
-        type=float,
-        default=5.0,
-        help="Timeout in seconds for each network probe (default: 5.0s).",
+        type=positive_timeout,
+        default=None,
+        help="Override timeout for all probes (defaults: Gemini 30s, other providers 5s).",
+    )
+    parser.add_argument(
+        "--gemini-timeout", type=positive_timeout, default=None,
+        help="Gemini-specific timeout override, taking precedence over --timeout.",
     )
     parser.add_argument(
         "--indicator",
@@ -207,9 +234,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    provider_timeout = args.timeout if args.timeout is not None else 5.0
+    gemini_timeout = args.gemini_timeout if args.gemini_timeout is not None else (
+        args.timeout if args.timeout is not None else 30.0
+    )
 
     print("=" * 65)
     print("TriageLens Live Connection Smoke Test")
+    print("Connectivity probes only; primary-model triage is verified separately with diagnose_gemini.py.")
     print("=" * 65)
 
     gemini_key = get_gemini_api_key()
@@ -233,7 +265,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 1. Google Gemini
     if gemini_key:
         tested_count += 1
-        ok, msg = check_gemini(gemini_key, gemini_model, args.timeout)
+        ok, msg = check_gemini(gemini_key, gemini_model, gemini_timeout)
         print(msg)
         if not ok:
             all_passed = False
@@ -243,7 +275,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 2. VirusTotal
     if vt_key:
         tested_count += 1
-        ok, msg = check_virustotal(vt_key, args.indicator, args.timeout)
+        ok, msg = check_virustotal(vt_key, args.indicator, provider_timeout)
         print(msg)
         if not ok:
             all_passed = False
@@ -253,7 +285,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 3. AbuseIPDB
     if abuse_key:
         tested_count += 1
-        ok, msg = check_abuseipdb(abuse_key, args.indicator, args.timeout)
+        ok, msg = check_abuseipdb(abuse_key, args.indicator, provider_timeout)
         print(msg)
         if not ok:
             all_passed = False
@@ -263,7 +295,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 4. URLhaus
     if urlhaus_key:
         tested_count += 1
-        ok, msg = check_urlhaus(urlhaus_key, args.indicator, args.timeout)
+        ok, msg = check_urlhaus(urlhaus_key, args.indicator, provider_timeout)
         print(msg)
         if not ok:
             all_passed = False

@@ -1,5 +1,97 @@
 # TASKS.md — TriageLens
 
+## Current verification update — 2026-11-08
+
+This update takes precedence over historical completion and test-count claims below.
+
+**Operator pause:** WIRE-11 is paused, still unresolved, pending Gemini quota
+availability. A one-time local Windows reminder was registered and verified Ready
+for **2026-11-08 13:40 IST** (`TriageLens-WIRE11-20261108-1340`). It prompts one
+primary-only diagnostic; it does not run an API check or close the issue. The popup
+requires the user to be signed in; StartWhenAvailable is enabled for missed starts.
+
+Earlier provider evidence: Gemini returned HTTP 429 `RESOURCE_EXHAUSTED` with a
+**daily free-tier request limit of 20** and `retryDelay=28163s` (about 7h 49m).
+That response confirmed daily quota exhaustion. Earlier
+503/timeouts are historical observations, not proof of a Python transport defect.
+Stop live probes until quota is available; WIRE-11 still needs successful
+primary-only triage after reset or an operator-approved quota change.
+
+Later operator output showed a successful smoke probe followed by a primary-only
+HTTP 429 with no valid verdict. Its sanitized output does not identify the exact
+quota window; WIRE-11 remains unresolved and paused. No new live checks were made.
+
+Follow-up: corrected Gemini 3 sampling configuration and smoke-probe token budget,
+timeout defaults, answer validation, and safe HTTP 429/503 failure reporting (ADR-038).
+Live verification still returned Gemini HTTP 429; WIRE-11 remains unresolved.
+Do not close it based on the local corrections or a successful fallback.
+
+Latest verification with the built-in pytest network guard: **451 passed,
+1 warning**. Unavailable-outcome persistence and availability reconstruction are
+fixed (ADR-045), verified by 19 new offline cases. Shared database-path resolution
+is fixed (ADR-044), verified by 27
+new offline cases. Per-attempt daily-quota enforcement is fixed (ADR-043), verified by
+29 new offline cases. Compact-summary byte budgeting is fixed (ADR-042), verified by 36
+new offline cases. Enrichment cache-expiry enforcement is fixed (ADR-041), verified by
+14 new offline cases. Recursive structured prompt isolation is fixed (ADR-040), verified
+by 27 new offline cases. The enrichment-isolation regression is fixed, with credential-present
+and credential-absent cases and six network-guard regressions. All Gemini diagnostic
+and request-correction cases also pass. Live WIRE-11 remains unresolved.
+
+* [x] WIRE-6 availability follow-up: persist failed attempted triage with null
+  verdict/prediction fields in both runners; safely migrate supported legacy
+  evaluation tables without disabling foreign keys. Verify repeated runs, unknown
+  labels, skipped triage, API-only unavailable history, migration rollback and
+  preservation, storage failure reporting, and generated report labels.
+  Evidence: `docs/results/unavailable_outcomes_20261108.md`.
+* [ ] WIRE-6 severity follow-up: persist/reconstruct severity evaluation fields;
+  the repeated-run audit reproduced their loss after a SQLite round trip.
+* [ ] Repeated evaluation policy: cached replay adds another evaluation row;
+  define unique-prediction versus attempt/run reporting before changing weighting.
+* [x] WIRE-6 path follow-up: resolve CLI/API/evaluation database targets through
+  one project-root-based helper, normalize blank environment settings, reject blank
+  explicit overrides and ambiguous Windows partial paths, create parents, and
+  propagate filesystem failures. Verify actual CLI-to-API persistence across cwd
+  changes with synthetic offline triage. Preserve both existing database files.
+  Evidence: `docs/results/database_paths_20261108.md`.
+* [x] WIRE-3 daily-quota follow-up: atomically reserve each built-in HTTP attempt,
+  including retries/timeouts, after RPM availability and before sending. Enforce
+  UTC dispatch-day budgets across SQLite connections and process-local engines;
+  leave cache/validation/local-throttle rejections free and quota denials uncached.
+  Legacy providers retain conservative per-dispatch accounting. Historical counts
+  cannot reconstruct prior attempts. Evidence: `docs/results/provider_attempt_quotas_20261108.md`.
+* [x] WIRE-11 diagnostic support: add `scripts/diagnose_gemini.py` using the actual
+  triage engine, synthetic evidence, an injected HTTP sender, disabled cache and
+  fallback, safe failure categories, elapsed timing, and verdict/model validation.
+* [x] WIRE-4 compact-summary follow-up: enforce a shared <800-byte budget on each
+  actual formatted summary fragment, including escaping and post-masking expansion.
+  Redact complete values before truncation, preserve raw evidence, prioritize numeric/status signals, mark omissions, and
+  withhold invalid serialized payloads. Evidence: `docs/results/compact_summary_budget_20261108.md`.
+* [x] WIRE-3 cache-expiry follow-up: SQLite misses invalidate local copies;
+  memory-only entries use injected monotonic deadlines. Verify exact positive and
+  negative expiry boundaries, SQLite-warmed deadlines, deleted rows, and unchanged
+  lookup/quota guards. Evidence: `docs/results/enrichment_cache_expiry_20261108.md`.
+* [x] Fix recursive ground-truth/provenance filtering under allow-listed alert
+  telemetry: nested dictionaries/lists, case/separator variants, source IDs,
+  grouping keys, and standalone labels/technique IDs. Verify preserved source data,
+  forensic strings, false/zero/null values, and independent provider intelligence.
+  Scope and limitations: `docs/results/prompt_isolation_20261108.md`.
+* [!] WIRE-11 remains **REPRODUCED**, not fixed: live primary-only triage produced
+  no valid verdict at 15s or 30s. Curl also timed out; a Python-only block is unproven.
+* [ ] WIRE-5: operator live provider verification after WIRE-11 is resolved.
+* [ ] WIRE-6 operator/live completion: choose the same database in both processes
+  and verify a successful primary-model job after WIRE-11 is resolved. Offline
+  shared-path persistence is fixed. Root database contains historical data while
+  `data/triagelens.db` was empty during audit; neither was moved or merged.
+* [x] Fix `test_run_evaluation_end_to_end_mode_with_enrichment` network isolation:
+  inject explicit provider stubs into the real enrichment engine, verify both
+  credential states, and assert attached/persisted enrichment results. Add a default
+  pytest guard against real HTTP/TCP requests and regressions for sync/async clients,
+  direct sockets, and injected transports (ADR-039). No production code changes
+  were needed for this isolation fix.
+
+Evidence, limitations, and operator commands: `docs/results/wire11_diagnostics_20261108.md`.
+
 **Project:** TriageLens
 **Version:** 0.1.0
 **Development Status:** Enhanced, Calibrated & Empirically Benchmarked

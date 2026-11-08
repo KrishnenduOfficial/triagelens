@@ -1,4 +1,78 @@
 # GEMINI.md â€” TriageLens
+## Current verification update — 2026-11-08
+
+Unavailable triage outcomes now persist with null verdict/prediction values in
+CLI and evaluation runs (ADR-045). API availability reconstructs those outcomes;
+skipped/inactive CLI triage is excluded. Supported legacy schemas migrate under a
+savepoint with FK checks enabled; custom inbound references are refused. Historical
+missing failures are not backfilled. The latest offline suite reports **451 passed,
+1 warning**, with 19 new cases. See `docs/results/unavailable_outcomes_20261108.md`.
+Severity persistence and cached replay weighting remain separate open findings.
+Latest operator evidence is smoke HTTP 200 followed by primary-only HTTP 429,
+with no valid verdict; its exact quota window is not shown. WIRE-11 remains paused.
+
+CLI/API/evaluation database paths now share project-root-based resolution (ADR-044).
+Blank environment values fall through; explicit blanks and ambiguous Windows
+partial paths fail. Parent creation is consistent and errors propagate. Existing
+databases remain separate and untouched; overrides affect only their invocation.
+That task's offline suite reported **432 passed, 1 warning**, with 27 new path cases,
+including real CLI persistence and API reads across working directories. See
+`docs/results/database_paths_20261108.md`. WIRE-6 still needs operator/live completion
+after WIRE-11 is resolved; this does not populate the currently empty default DB.
+
+Daily provider budgets now reserve every built-in HTTP attempt atomically (ADR-043),
+including retries and timeouts, on the UTC dispatch day. SQLite shares limits across
+connections; memory-only engines share a process-local ledger. Cache hits and local
+rejections are free. Quota denials are not cached. Legacy providers reserve once
+per dispatch until adopting the attempt hook; historical undercounts remain unknown.
+That task's offline suite reported **405 passed, 1 warning**, with 29 new quota cases.
+See `docs/results/provider_attempt_quotas_20261108.md`. WIRE-11 remains paused.
+
+Compact intelligence summaries now enforce a shared <800-byte final prompt-fragment
+budget (ADR-042), accounting for ASCII escaping, nested formatting, and masking
+expansion. Omissions are marked; raw evidence is preserved. That task's offline
+suite reports **376 passed, 1 warning**, including 36 new summary/validation cases.
+Complete values are redacted before truncation to prevent unmasked secret prefixes.
+See `docs/results/compact_summary_budget_20261108.md`. WIRE-11 remains paused.
+
+Enrichment cache-expiry enforcement is fixed (ADR-041). SQLite is authoritative
+when configured; memory-only entries use `cache_clock` (monotonic by default) with
+24-hour successful / 15-minute negative TTLs. Expired results cannot bypass lookup
+caps or quotas. Its verification reported **340 passed, 1 warning**, including
+14 new cache regressions. See `docs/results/enrichment_cache_expiry_20261108.md`.
+
+Recursive structured prompt isolation is fixed (ADR-040). The actual outbound
+prompt is tested against nested metadata and list bypasses while preserving
+source records, forensic strings, and independent provider detection counts.
+The prompt-isolation verification reported **326 passed, 1 warning**. See
+`docs/results/prompt_isolation_20261108.md` for the filtering boundary and evidence.
+WIRE-11 remains paused; no live provider calls were made for this fix.
+
+Pytest isolation is fixed (ADR-039): the end-to-end enrichment test injects provider
+stubs into the real engine and verifies persistence with credentials present and
+absent. `tests/conftest.py` blocks real HTTP/TCP attempts during tests. The normal
+isolation verification reported **299 passed, 1 warning**; Gemini's live quota/service issue remains
+unresolved. No live provider checks were run during the isolation fix.
+
+Latest Gemini response confirms HTTP 429 `RESOURCE_EXHAUSTED`, a daily free-tier
+limit of 20 requests, and a server-provided retry delay of 28163 seconds. The
+blocker for that response was daily quota exhaustion; do not keep probing or change transport
+settings to address it. WIRE-11 requires a successful primary-only verdict after
+quota becomes available. Earlier timeout/503 observations do not establish their
+own root cause and must not be rewritten as proven quota failures.
+
+Follow-up request corrections are recorded in ADR-038. Gemini 3 triage now uses
+provider-default sampling; the smoke probe has a meaningful token/latency budget.
+Live follow-up returned HTTP 503 and 429. WIRE-11 remains unresolved; do not mask
+the failure by renaming fallback output as primary success.
+
+WIRE-11 is **REPRODUCED**, not fixed. Primary-only synthetic triage returned no
+valid verdict at 15s or 30s; curl also timed out. Do not assume a Python-only,
+IPv6, proxy, or certificate root cause. `scripts/diagnose_gemini.py` now verifies
+actual primary triage separately from lightweight connectivity, without fallback
+or cache. See `docs/results/wire11_diagnostics_20261108.md` and the current update
+in `TASKS.md`; older completion/test-count claims below are historical.
+
 ## 1. Project Identity
 
 **Project Name:** TriageLens

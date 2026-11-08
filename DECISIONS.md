@@ -1068,6 +1068,356 @@ Enables reliable bulk alert triage within free-tier API quotas while preserving 
 
 ---
 
+### ADR-037: Primary-Only Gemini Diagnostics and Safe Failure Reporting
+
+**Status:** Accepted — diagnostic support, not a WIRE-11 transport fix
+
+**Decision:**
+
+* Keep lightweight connectivity checks separate from successful triage verification.
+* `scripts/diagnose_gemini.py` uses the existing triage engine and synthetic evidence,
+  with cache disabled, no fallback candidates, and one request per invocation.
+* Success requires a validated `TriageVerdict` attributed to the requested primary.
+* Inject the HTTP POST sender for offline tests. Keep the production default
+  `httpx.post` behavior, certificate verification, and 15-second timeout unchanged.
+* Diagnostic output contains status, elapsed time, failure category, schema validity,
+  and model attribution. Withhold response bodies, verdict content, exception text,
+  and credentials; disable detailed engine error logging for this diagnostic.
+* Do not interpret a successful ping, a fallback verdict, or an increased timeout as
+  evidence that WIRE-11 is fixed.
+
+**Evidence and limitations:**
+
+On 2026-11-08 both HTTPX and Windows curl timed out on primary generation after
+successful TLS negotiation. Model metadata and fallback generation succeeded.
+One plain primary ping succeeded, but actual primary-only triage did not produce
+a verdict at 15s or 30s. The root cause remains unconfirmed. See
+`docs/results/wire11_diagnostics_20261108.md`.
+
+---
+
+### ADR-038: Gemini 3 Request Compatibility and Honest Smoke-Test Failures
+
+**Status:** Accepted — local request corrections; provider availability unresolved
+
+**Decision:**
+
+* Remove the custom `temperature=0.1` override for Gemini 3 triage candidates,
+  retaining the old setting for earlier models. Google's migration guidance
+  recommends provider-default sampling for Gemini 3; do not silently reduce the
+  production triage thinking level or switch the configured primary.
+* For the lightweight smoke check, replace `maxOutputTokens=2` with a short-reply
+  instruction and `thinkingConfig.thinkingLevel=low` on Gemini 3. Output limits
+  include reasoning tokens, so a two-token cap cannot reliably test generation.
+* Use a 30-second default Gemini smoke timeout; retain five seconds for intelligence
+  providers. Preserve an explicit `--timeout` override, and add `--gemini-timeout`.
+  Validate both budgets as positive finite numbers.
+* Require actual nonempty, non-thought candidate text for smoke success. Explicitly
+  report HTTP 503 (`service_unavailable`) and 429 (`quota_or_rate_limit`) as failures.
+* Do not bypass TLS, change primary-model attribution, or claim WIRE-11 fixed until
+  the actual primary-only triage returns a valid verdict.
+
+**Evidence:**
+
+Live follow-up returned primary HTTP 503; supported low-thinking probes also
+returned 503. Streaming returned 429. The corrected smoke command returned 429
+in 810.1ms while VirusTotal and AbuseIPDB succeeded. A further attempt to inspect
+safe quota metadata timed out; daily versus per-minute quota scope is unconfirmed.
+
+**Sources:**
+[Gemini 3.8 migration](https://ai.google.dev/gemini-api/docs/latest-model),
+[thinking and token limits](https://ai.google.dev/gemini-api/docs/generate-content/thinking).
+
+**Consequences:** Future benchmark runs must record the changed request settings.
+Local request errors are corrected; upstream capacity/quota remains an external
+dependency and must not be hidden by a successful fallback or metadata request.
+
+---
+
+### ADR-039: Offline Pytest Enforcement and End-to-End Provider Injection
+
+**Status:** Accepted
+
+**Context:** The end-to-end evaluation test stubbed Gemini but let the enrichment
+engine auto-register real providers from local credentials. The audit reproduced
+an unwanted external HTTP attempt despite the documented offline test contract.
+
+**Decision:**
+
+* Inject explicit `ThreatIntelProvider` stubs through the existing enrichment
+  constructor in the test. Keep real routing, caching, attachment, evaluation,
+  and SQLite persistence; verify each provider call and both persisted results.
+* Run the existing end-to-end case with dummy credentials both present and absent.
+  Preserve all previous evaluation assertions and add enrichment assertions.
+* Add an autouse pytest fixture that rejects real synchronous/asynchronous HTTPX
+  transports, TCP connection creation, and direct socket connect/connect_ex calls.
+  Allow only the standard-library Windows socketpair connection needed by asyncio.
+  ASGI/MockTransport and injected senders continue to work without network access.
+* Keep this enforcement entirely in `tests/`; production code must neither detect
+  pytest nor import its fixtures or mocking frameworks. Live checks remain explicit
+  operator commands outside pytest.
+
+**Verification:** The strengthened test first failed under the network guard with
+dummy credentials. After provider injection, both credential cases and six guard
+regressions passed. The normal full suite reported `299 passed, 1 warning in 11.52s`.
+The remaining warning is the existing Starlette HTTPX TestClient deprecation.
+
+**Consequences:** Developer credentials cannot silently enable live enrichment in
+this test, and future unstubbed HTTP/TCP calls fail at the test boundary. This does
+not close WIRE-11 or establish live end-to-end provider success.
+
+---
+
+### ADR-040: Recursive Structured Telemetry Isolation at the Prompt Boundary
+
+**Status:** Accepted — enforcement of ADR-008 and ADR-017
+
+**Context:** The original serializer filtered only one dictionary level below an
+allowed root field and passed lists through unchanged. Offline interception of the
+actual outbound prompt reproduced nested labels, ATT&CK IDs, and provenance leaks.
+
+**Decision:**
+
+* Retain the existing root telemetry allow-list. Copy dictionary/list/tuple values
+  recursively under accepted fields before the normal PII/secret masking steps.
+* Match forbidden metadata keys using case-folded alphanumeric names, covering
+  separator/case variants such as `GroundTruthLabel`, `source.file`, and `sourceId`.
+  Include source IDs and grouping keys in provenance exclusions. Preserve the
+  existing ground-truth/MITRE/verdict key-family exclusions at every depth.
+* Omit standalone classification values (malicious, benign, attack, suspicious,
+  and TP/FP/TN/FN label phrases) and complete technique IDs such as `T1003.001`.
+  Classification phrases tolerate case and whitespace/underscore/hyphen separators.
+* Preserve forensic text, command lines, absolute/relative paths, addresses,
+  numeric identifiers, and false/zero/null values. Remove containers left empty
+  after filtering, retaining their parent event. Keep independent provider summaries
+  separate so VirusTotal malicious detection counts and reputation remain evidence.
+* Do not mutate source alerts, independent labels, timeline metadata, or provider
+  records. Exercise the actual request boundary with injected senders in tests.
+
+**Boundary:** This is structured telemetry filtering. Free-form strings, including
+JSON encoded inside strings and prose mentioning labels or technique IDs, remain
+text. Dataset adapters must keep evaluation/provenance out of observable text;
+this change does not certify arbitrary text or every future metadata alias as safe.
+
+**Verification:** New regressions initially reported `26 failed, 1 passed`.
+A relative-path edge case was reproduced and corrected. The final offline suite
+reported `326 passed, 1 warning in 9.42s`, including 27 new prompt-isolation cases.
+No existing tests were removed, skipped, or loosened. WIRE-11 remains paused.
+
+---
+
+### ADR-041: Authoritative SQLite Cache Expiry and Timed Memory-Only Entries
+
+**Status:** Accepted — enforcement of ADR-029 cache lifetimes
+
+**Context:** SQLite rejected expired entries, but the enrichment engine then
+returned their untimed memory copies. Both successful and negative lookups could
+remain stale indefinitely in the same engine. Entries loaded shortly before their
+SQLite deadline also outlived that deadline in memory.
+
+**Decision:**
+
+* When configured, SQLite remains authoritative for every cache lookup. A persistent
+  miss invalidates the matching local result before provider/cap/quota handling.
+  Never extend a stored deadline when warming an engine or resurrect deleted rows.
+* For memory-only engines, record an absolute deadline using an optional injected
+  `cache_clock`, defaulting to `time.monotonic`. A hit requires `now < deadline`;
+  hits do not extend that deadline. Evict stale local state when the key is accessed.
+* Keep the existing result mapping and 24-hour `ok` / 15-minute non-`ok` TTL policy.
+  Preserve SQLite's schema and existing wall-clock expiry checks.
+* Refresh through the existing lookup cap, daily quota, and provider dispatch.
+  Return `skipped` or `quota_exceeded` if a fresh lookup is disallowed, rather than
+  returning expired intelligence. Fresh hits consume no additional lookup budget.
+
+**Verification:** New offline regressions first reported `13 failed, 1 passed`.
+After implementation, the focused cache/enrichment/quota/database selection reported
+`51 passed in 1.34s`; the full suite reported `340 passed, 1 warning in 8.05s`.
+Fourteen new cases cover positive/negative expiry boundaries, memory-only clocks,
+SQLite-warmed deadlines, deleted rows, refresh budgets, and fresh-hit accounting.
+Provider stubs and simulated clocks were used; no real sleeps or API calls occurred.
+
+**Consequences:** Stored entries may remain physically present after expiry, but
+cannot be served by these lookup paths. This change adds no background eviction,
+database migration, dependency, or new quota policy. WIRE-11 remains paused.
+
+---
+
+### ADR-042: Compact Intelligence Budget at the Final Prompt Boundary
+
+**Status:** Accepted — enforcement and scope clarification of ADR-030
+
+**Context:** All provider projection branches could exceed the documented 800-byte
+limit. Character/tag counts did not bound JSON bytes, and PII masking could expand
+an initially small summary. Existing tests used small selected fields despite large
+raw responses, leaving this gap undetected.
+
+**Decision:**
+
+* Enforce **strictly fewer than 800 UTF-8 bytes per `intel_summary` object**. Count
+  the JSON fragment from its opening `{` through its closing `}`, with current
+  `indent=2`, ASCII escaping, and six-column nesting inside the evidence JSON.
+  The field name, surrounding enrichment metadata, entire prompt, and additional
+  escaping in the outer HTTP request JSON are outside this particular budget.
+* Redact complete projected values before any string truncation, using the engine's
+  scrubber (or the default scrubber for standalone utility calls). Apply one shared
+  deterministic limiter, then reapply it after full-payload structural/string masking,
+  before response-cache key calculation or sending. ISP truncation also follows redaction.
+* Keep normal fitting summaries unchanged. Under pressure, prioritize detection
+  counters, scores/reputation, and status fields; retain a fitting subset of optional
+  text/tags, shortening strings only at whole code-point boundaries with `...`.
+* Reserve space for `summary_truncated: true` whenever content is shortened,
+  omitted, or invalid. Retain existing ISP/tag projection caps and mark their
+  omissions too. Preserve full raw provider records.
+* Do not shorten/clamp numeric values to fit. Omit oversized/non-finite numeric
+  signals; invalid supplied counters are omitted and marked instead of crashing
+  triage. Existing missing-counter default mappings are otherwise unchanged.
+* Validate masked JSON and its enrichment structure before budgeting; withhold
+  requests if invalid. Serialize the bounded safe payload without another
+  size-expanding masking pass.
+
+**Verification:** New tests initially reported `26 failed, 3 passed`. The focused
+summary/LLM/prompt selection then reported `90 passed in 0.52s`. Added fail-closed
+cases reproduced non-object payload handling before its guard was completed.
+Final review reproduced a fake key becoming an unmasked prefix when cut before
+redaction, and the ordering was corrected. The final suite reported
+`376 passed, 1 warning in 8.82s`, including 36 new cases.
+No existing tests were deleted, skipped, or loosened. All checks were offline.
+
+**Consequences:** This is a per-summary byte contract, not a total prompt/token
+budget or proof against every feed-based injection. Tests measure actual outbound
+fragments so a future prompt-layout change must update the contract and limiter
+together. No database schema or dependency changes were required. WIRE-11 stays paused.
+
+---
+
+### ADR-043: Atomic Daily Quota Reservation for Each Provider Attempt
+
+**Status:** Accepted and implemented with explicit user approval (2026-11-08).
+
+**Context:** Counting one completed lookup undercounted retries, charged local
+rejections, allowed concurrent workers to overshoot, and charged the response day.
+Daily limits were also unenforced without SQLite.
+
+**Decision:** VirusTotal, AbuseIPDB, and URLhaus reserve quota immediately before
+every HTTP send, including retries. The shared rate-limiter gate establishes RPM
+availability, waits if allowed, then atomically reserves daily quota before
+recording the RPM slot. Denials consume neither reservation nor slot. Timeouts,
+HTTP failures, and malformed responses retain reservations conservatively.
+Validation, missing credentials, local throttling, and cache hits make no sends
+and consume no daily quota for these providers. Logical lookup caps stay separate.
+
+SQLite uses one conditional UPSERT and commit per reservation across independent
+connections. The dispatch UTC day is selected after any RPM wait. Without SQLite,
+a locked process-local ledger is shared by engines; `quota_clock` and `quota_ledger`
+allow deterministic injection. Positive limits cap attempts; None/non-positive
+limits retain existing unlimited semantics. No schema migration is needed.
+
+A scoped context callback selects the current engine ledger for each send,
+including shared provider instances, and is restored after exceptions. Reservation
+storage errors propagate before sending. Providers support injected HTTP sender,
+clock, and sleep callbacks. Quota denials are not cached across the next UTC day.
+
+**Limitations:** This is a local attempt budget, not a provider billing counter.
+Direct provider calls outside an engine have RPM enforcement but no daily ledger.
+Opaque legacy providers retain one conservative reservation per dispatch; counting
+their internal retries requires adoption of the attempt hook. Memory-only budgets
+reset on restart and do not span processes. Existing SQLite counts may undercount
+historical attempts and cannot be reconstructed; no retrospective rewrite is made.
+WIRE-11 remains paused and unresolved.
+
+**Evidence:** `docs/results/provider_attempt_quotas_20261108.md` records 29 new
+offline cases and the complete suite result: **405 passed, 1 warning**.
+
+---
+
+### ADR-044: Shared Project-Root Database Path Resolution
+
+**Status:** Accepted and implemented with explicit approval (2026-11-08).
+
+**Context:** CLI and API shared a config getter but relative paths depended on
+cwd. CLI/evaluation overrides bypassed parent creation. Whitespace canonical
+settings masked aliases and returned an empty SQLite filename, selecting an
+unintended temporary database. Audit found historical records in the root file
+and an empty configured `data/triagelens.db`.
+
+**Decision:** Extend `config.get_database_path(override=None)` and route CLI and
+evaluation overrides through it; the API already calls the same helper. Select
+explicit override, nonblank canonical setting, nonblank alias, then the existing
+`data/triagelens.db` default. Trim before selection. Reject explicitly blank
+overrides. Resolve relative disk paths against the root derived from
+`src/config.py`, return absolute paths, and create parents consistently. Propagate
+filesystem failures before opening SQLite. Reject Windows drive-relative and
+root-relative paths unless fully qualified; these can depend on current-drive
+state. Preserve the explicit `:memory:` sentinel, which is connection-local.
+
+An override affects only its invocation; it does not mutate environment settings
+or redirect an already-running API. Operators must configure both processes with
+the same target and restart the API after changes. Caller-injected DatabaseManager
+instances and low-level DatabaseManager behavior are unchanged.
+
+**Compatibility:** Relative paths formerly based on cwd now use the source project
+root. Use an absolute path to retain a target elsewhere. No database is renamed,
+merged, discovered, or selected based on its contents. The historical root file
+remains separate from the default; selecting it requires explicit configuration.
+This fixes path consistency, not missing historical data or Gemini availability.
+CLI metrics cover its current run while API metrics reconstruct persisted history;
+offline equality tests use a fresh database. Live WIRE-6 completion remains pending.
+
+**Verification:** 27 new offline cases include real CLI intake, timeline creation,
+stubbed triage, persisted evaluation, API reads across cwd changes, configuration
+precedence, memory semantics, explicit overrides, parent failures, Windows partial
+paths, preservation, and evaluation-runner routing. The existing default-path
+assertion now requires the absolute project-root target; no test was weakened.
+See `docs/results/database_paths_20261108.md` for exact outputs.
+
+---
+
+### ADR-045: Persist Unavailable Triage Outcomes and Reconstruct Availability
+
+**Status:** Accepted and implemented with explicit approval (2026-11-08).
+
+**Context:** CLI discarded attempted triage failures. The evaluation runner counted
+them in memory but skipped SQLite persistence. Legacy NOT NULL outcome columns
+and conversion of None to a string/false prevented accurate round trips. API
+history therefore overstated availability even when paths were consistent.
+
+**Decision:** Every attempted logical triage that returns no verdict or raises an
+Exception produces one Unavailable evaluation. Both runners persist it with SQL
+NULL verdict_id, llm_prediction, correctness, and confidence. Ground-truth boolean
+or unknown state is preserved independently. A successful verdict remains available
+even when ground truth is unknown. No prediction is fabricated for an unavailable
+outcome. Deliberately inactive CLI triage (skip flag, no usable engine/key) remains
+outside the attempt denominator. Internal provider retries are not separate outcomes.
+
+Availability retains the existing formula: (labelled results + unknown-label
+results) / (labelled results + unknown-label results + unavailable outcomes).
+Unavailable outcomes affect neither the confusion matrix nor calibration samples.
+The existing empty-denominator value 1.0 is a convention, not observed service
+uptime. CLI summaries cover the current run; API summaries reconstruct all stored
+evaluation rows. Cached results retain their existing counting behavior.
+
+New schemas allow null verdict/prediction fields. Existing supported schemas are
+rebuilt under a savepoint without disabling foreign keys. Preserve original columns,
+values, IDs, indexes, triggers, and AUTOINCREMENT high-water marks; verify foreign
+keys and restore the old table if rebuilding fails. Custom inbound references to
+evaluations are refused before rebuilding to prevent cascading deletions; they
+require a separate migration. Migration runs on next init_db and is repeatable.
+
+Timeline/evaluation persistence errors propagate instead of reporting a complete
+evaluation run. Generated reports distinguish Unavailable predictions and Unknown
+ground truth from benign outcomes. Ground truth remains outside model predictions.
+
+**Limitations:** Do not infer or backfill historical missing failures: a timeline
+without a verdict may have been deliberately skipped. Historical availability can
+remain optimistic. Severity-field persistence and cached replay weighting are
+separate unresolved findings. WIRE-11 and operator/live WIRE-6 remain unresolved.
+No live checks or operator database migrations were executed for this task.
+
+**Verification:** See `docs/results/unavailable_outcomes_20261108.md` for initial
+failures, migration checks, report-label regressions, and final offline results.
+
+---
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

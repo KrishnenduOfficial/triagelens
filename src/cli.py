@@ -86,7 +86,7 @@ def run_pipeline(
     Returns:
         Dictionary of final accuracy evaluation metrics.
     """
-    db_file = db_path or config.get_database_path()
+    db_file = config.get_database_path(db_path)
     logger.info("=" * 65)
     logger.info("Initializing TriageLens Pipeline")
     logger.info("Target Data Directory : %s", data_dir)
@@ -226,16 +226,16 @@ def run_pipeline(
                         verdict.summary[:60] + "..." if len(verdict.summary) > 60 else verdict.summary,
                     )
 
-                    # Evaluate verdict against deterministic ground truth
-                    eval_result = accuracy_tracker.evaluate(verdict, tl)
-                    db.insert_evaluation(eval_result)
-                    logger.info(
-                        "  -> Ground Truth Evaluation: Category='%s' | Match=%s",
-                        eval_result.category,
-                        eval_result.is_correct,
-                    )
                 else:
                     logger.warning("  -> AI triage produced no verdict (rate limit, timeout, or schema rejection).")
+                # Every attempted triage contributes an outcome, even without a verdict.
+                eval_result = accuracy_tracker.evaluate(verdict, tl)
+                db.insert_evaluation(eval_result)
+                logger.info(
+                    "  -> Ground Truth Evaluation: Category='%s' | Match=%s",
+                    eval_result.category,
+                    eval_result.is_correct,
+                )
             else:
                 logger.info("  -> AI Triage bypassed (LLM engine inactive).")
 
@@ -258,6 +258,8 @@ def run_pipeline(
     logger.info("F1-Score                    : %.2f%%", metrics.get("f1_score", 0.0) * 100)
     logger.info("Confusion Matrix Counts     : TP=%d, TN=%d, FP=%d, FN=%d", metrics.get("tp", 0), metrics.get("tn", 0), metrics.get("fp", 0), metrics.get("fn", 0))
     logger.info("Total Evaluated Records     : %d (Unlabeled: %d)", metrics.get("total", 0), metrics.get("unknown", 0))
+    logger.info("Unavailable AI Outcomes    : %d", metrics.get("unavailable", 0))
+    logger.info("AI Availability Rate       : %.2f%%", metrics.get("availability_rate", 1.0) * 100)
     logger.info("=" * 65)
 
     return metrics
@@ -277,7 +279,7 @@ def main() -> None:
     parser.add_argument(
         "--db-path",
         default=None,
-        help="Path to SQLite database file (default: 'triagelens.db' or DATABASE_PATH)",
+        help="SQLite path override; relative paths use the project root (default: DATABASE_PATH, TRIAGELENS_DB_PATH, or data/triagelens.db). Configure the API with the same target.",
     )
     parser.add_argument(
         "--group-by",

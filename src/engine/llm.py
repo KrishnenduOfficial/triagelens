@@ -11,7 +11,7 @@ import os
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 import httpx
 from pydantic import ValidationError
 
@@ -112,11 +112,96 @@ class LLMResponseCache:
         return True
 
 
-def summarize_enrichment(enr: EnrichmentResult) -> Dict[str, Any]:
-    """Distills raw provider enrichment JSON into a compact, normalized, injection-resistant summary.
+ENRICHMENT_SUMMARY_MAX_BYTES = 800
+# With indent=2, intel_summary is an object six columns into the evidence JSON.
+_SUMMARY_CONTEXT_INDENT = 6
+_SUMMARY_FIELD_PRIORITY = {
+    name: index for index, name in enumerate((
+        "stats", "abuse_confidence_score", "total_reports", "reputation",
+        "query_status", "url_status", "host_status", "country_code",
+        "threat", "threat_label", "isp", "tags",
+    ))
+}
 
-    Enforces strict size boundaries (< 800 bytes) and strips all raw scan dictionaries,
-    payload dumps, and user-submitted comments to defend against prompt injection.
+
+def _summary_fits(summary: Dict[str, Any]) -> bool:
+    """Measure the formatted UTF-8 fragment as it appears inside the prompt."""
+    try:
+        rendered = json.dumps(summary, indent=2, ensure_ascii=True, allow_nan=False)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    size = len(rendered.encode("utf-8")) + _SUMMARY_CONTEXT_INDENT * rendered.count("\n")
+    return size < ENRICHMENT_SUMMARY_MAX_BYTES
+
+
+def _bound_enrichment_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep a deterministic evidence-first subset; never alter numeric signals."""
+    if _summary_fits(summary):
+        return dict(summary)
+
+    bounded: Dict[str, Any] = {"summary_truncated": True}
+
+    def ordered_items(mapping):
+        return sorted(mapping.items(), key=lambda item: (
+            _SUMMARY_FIELD_PRIORITY.get(item[0], 12 if isinstance(item[1], (int, float, bool)) else 13),
+            str(item[0]),
+        ))
+
+    def add(container, key, value):
+        def put(candidate):
+            if isinstance(container, list):
+                container.append(candidate)
+            else:
+                container[key] = candidate
+
+        def remove():
+            if isinstance(container, list):
+                container.pop()
+            else:
+                container.pop(key)
+
+        put(value)
+        if _summary_fits(bounded):
+            return
+        remove()
+
+        if isinstance(value, str):
+            # Binary search whole code points; JSON escaping decides byte cost.
+            low, high, best = 1, min(len(value) - 1, ENRICHMENT_SUMMARY_MAX_BYTES), 0
+            while low <= high:
+                middle = (low + high) // 2
+                put(value[:middle] + "...")
+                fits = _summary_fits(bounded)
+                remove()
+                if fits:
+                    best, low = middle, middle + 1
+                else:
+                    high = middle - 1
+            if best:
+                put(value[:best] + "...")
+        elif isinstance(value, (dict, list)):
+            nested = {} if isinstance(value, dict) else []
+            put(nested)
+            if not _summary_fits(bounded):
+                remove()
+                return
+            items = ordered_items(value) if isinstance(value, dict) else enumerate(value)
+            for child_key, child in items:
+                add(nested, child_key, child)
+            if not nested:
+                remove()
+        # Oversized numbers/non-JSON values are omitted, never clamped or zeroed.
+
+    for key, value in ordered_items(summary):
+        if key != "summary_truncated":
+            add(bounded, key, value)
+    return bounded
+
+
+def _project_enrichment_summary(enr: EnrichmentResult) -> Dict[str, Any]:
+    """Project provider signals while excluding raw comments, scans, and dumps.
+
+    Byte enforcement is shared by summarize_enrichment and the final prompt path.
     """
     if not isinstance(enr.raw_response, dict):
         return {}
@@ -131,12 +216,12 @@ def summarize_enrichment(enr: EnrichmentResult) -> Dict[str, Any]:
         summary: Dict[str, Any] = {}
         stats = attributes.get("last_analysis_stats", {})
         if isinstance(stats, dict) and stats:
-            summary["stats"] = {
-                "malicious": int(stats.get("malicious", 0)),
-                "suspicious": int(stats.get("suspicious", 0)),
-                "undetected": int(stats.get("undetected", 0)),
-                "harmless": int(stats.get("harmless", 0)),
-            }
+            summary["stats"] = {}
+            for field in ("malicious", "suspicious", "undetected", "harmless"):
+                try:
+                    summary["stats"][field] = int(stats.get(field, 0))
+                except (ValueError, TypeError, OverflowError):
+                    summary["summary_truncated"] = True
 
         pop_class = attributes.get("popular_threat_classification")
         if isinstance(pop_class, dict) and "suggested_threat_label" in pop_class:
@@ -151,16 +236,21 @@ def summarize_enrichment(enr: EnrichmentResult) -> Dict[str, Any]:
 
     elif provider == "abuseipdb":
         data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
-        summary = {
-            "abuse_confidence_score": int(data.get("abuseConfidenceScore", data.get("abuse_confidence_score", 0))),
-            "total_reports": int(data.get("totalReports", data.get("total_reports", 0))),
-        }
+        summary = {}
+        for field, raw_value in (
+            ("abuse_confidence_score", data.get("abuseConfidenceScore", data.get("abuse_confidence_score", 0))),
+            ("total_reports", data.get("totalReports", data.get("total_reports", 0))),
+        ):
+            try:
+                summary[field] = int(raw_value)
+            except (ValueError, TypeError, OverflowError):
+                summary["summary_truncated"] = True
         country = data.get("countryCode") or data.get("country_code")
         if country:
             summary["country_code"] = str(country)
         isp = data.get("isp")
         if isp:
-            summary["isp"] = str(isp)[:100]
+            summary["isp"] = str(isp)
         return summary
 
     elif provider == "urlhaus":
@@ -170,6 +260,8 @@ def summarize_enrichment(enr: EnrichmentResult) -> Dict[str, Any]:
                 summary[key] = str(raw[key])
         if "tags" in raw and isinstance(raw["tags"], list):
             summary["tags"] = [str(t) for t in raw["tags"][:10]]
+            if len(raw["tags"]) > 10:
+                summary["summary_truncated"] = True
         return summary
 
     else:
@@ -190,6 +282,26 @@ def summarize_enrichment(enr: EnrichmentResult) -> Dict[str, Any]:
             if isinstance(v, (str, int, float, bool)):
                 summary[k] = v
         return summary
+
+
+def summarize_enrichment(
+    enr: EnrichmentResult, *, scrubber: Optional[PIIScrubber] = None
+) -> Dict[str, Any]:
+    """Return provider signals below 800 formatted UTF-8 bytes, marking omissions.
+
+    The budget includes JSON escaping and intel_summary's nested indentation.
+    Redact complete values before truncation so recognizable secrets cannot become
+    unmasked prefixes. Raw evidence is preserved. The engine reapplies the budget
+    after its full-payload masking, which can expand strings further.
+    """
+    redactor = scrubber if scrubber is not None else PIIScrubber()
+    summary = redactor.scrub_dict(_project_enrichment_summary(enr))
+    if (enr.provider or "").strip().lower() == "abuseipdb":
+        isp = summary.get("isp")
+        if isinstance(isp, str) and len(isp) > 100:
+            summary["isp"] = isp[:100]
+            summary["summary_truncated"] = True
+    return _bound_enrichment_summary(summary)
 
 
 class GeminiTriageEngine:
@@ -224,7 +336,20 @@ class GeminiTriageEngine:
         "dataset_source",
         "dataset",
         "source",
+        "source_id",
+        "grouping_key",
     }
+
+    # Metadata spelling must not change its meaning at the prompt boundary.
+    _FORBIDDEN_METADATA_NAMES = frozenset(
+        re.sub(r"[^a-z0-9]", "", key.casefold())
+        for key in FORBIDDEN_EVALUATION_KEYS | FORBIDDEN_PROVENANCE_KEYS
+    )
+    _CLASSIFICATION_VALUES = frozenset({
+        "malicious", "benign", "attack", "suspicious",
+        "truepositive", "falsepositive", "truenegative", "falsenegative",
+    })
+    _OMIT_TELEMETRY_VALUE = object()
 
     ALLOWLISTED_FIELDS = {
         # Process and execution
@@ -293,6 +418,8 @@ class GeminiTriageEngine:
         scrubber: Optional[PIIScrubber] = None,
         enable_cache: bool = True,
         cache: Optional[LLMResponseCache] = None,
+        request_sender: Optional[Callable[..., httpx.Response]] = None,
+        include_error_details: bool = True,
     ) -> None:
         """Initializes the GeminiTriageEngine.
 
@@ -304,6 +431,8 @@ class GeminiTriageEngine:
             scrubber: Optional custom PIIScrubber instance.
             enable_cache: Whether to cache LLM responses for identical sanitized timeline inputs.
             cache: Custom LLMResponseCache instance. Defaults to a new bounded in-memory cache.
+            request_sender: Optional injected HTTP POST callable; defaults to httpx.post.
+            include_error_details: Include sanitized error text in logs. Diagnostics disable it.
 
         Raises:
             ValueError: If no API key is provided and GEMINI_API_KEY is not set.
@@ -324,6 +453,8 @@ class GeminiTriageEngine:
             else:
                 self.fallback_models = list(self.DEFAULT_FALLBACK_MODELS)
         self.timeout = timeout
+        self.request_sender = request_sender
+        self.include_error_details = include_error_details
         self.scrubber = scrubber or PIIScrubber()
         self.enable_cache = enable_cache
         if cache is not None:
@@ -391,12 +522,57 @@ class GeminiTriageEngine:
         """
         if not text:
             return ""
+        if not self.include_error_details:
+            return "[details withheld]"
         # 1. Scrub secrets, PII, API tokens, passwords, and cloud keys
         scrubbed = self.scrubber.scrub(str(text))
         # 2. Truncate if exceeding bounds to prevent log flooding
         if len(scrubbed) > max_length:
             return scrubbed[:max_length] + f"... [truncated {len(scrubbed) - max_length} chars]"
         return scrubbed
+
+    @classmethod
+    def _is_forbidden_metadata_key(cls, key: str) -> bool:
+        """Recognize metadata despite case, spaces, or separator variations."""
+        normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
+        return normalized in cls._FORBIDDEN_METADATA_NAMES or any(
+            token in normalized for token in ("groundtruth", "mitre", "verdict")
+        )
+
+    @classmethod
+    def _sanitize_telemetry_value(cls, value: Any) -> Any:
+        """Copy nested JSON telemetry, omitting evaluation/provenance metadata.
+
+        Only standalone classification values and technique IDs are omitted.
+        Command lines, file paths, and other free-form evidence remain intact.
+        The omission sentinel keeps legitimate False, zero, and null values distinct.
+        Independent provider summaries must not pass through this telemetry filter.
+        """
+        if isinstance(value, dict):
+            cleaned = {}
+            for key, child in value.items():
+                key_text = str(key)
+                if cls._is_forbidden_metadata_key(key_text):
+                    continue
+                sanitized = cls._sanitize_telemetry_value(child)
+                if sanitized is not cls._OMIT_TELEMETRY_VALUE:
+                    cleaned[key_text] = sanitized
+            return cleaned if cleaned else cls._OMIT_TELEMETRY_VALUE
+        if isinstance(value, (list, tuple)):
+            cleaned_items = []
+            for child in value:
+                sanitized = cls._sanitize_telemetry_value(child)
+                if sanitized is not cls._OMIT_TELEMETRY_VALUE:
+                    cleaned_items.append(sanitized)
+            return cleaned_items if cleaned_items else cls._OMIT_TELEMETRY_VALUE
+        if isinstance(value, str):
+            # Normalize label separators, not path punctuation (e.g. ./benign).
+            normalized = re.sub(r"[\s_-]", "", value.strip().casefold())
+            if normalized in cls._CLASSIFICATION_VALUES or re.fullmatch(
+                r"T[0-9]{4}(?:\.[0-9]{3})?", value.strip(), re.IGNORECASE
+            ):
+                return cls._OMIT_TELEMETRY_VALUE
+        return value
 
     def _build_sanitized_triage_payload(self, timeline: ThreatTimeline) -> Dict[str, Any]:
         """Builds a strictly allow-listed, sanitized triage payload from a ThreatTimeline.
@@ -421,34 +597,14 @@ class GeminiTriageEngine:
                     k_str = str(k).strip()
                     lower_k = k_str.lower()
 
-                    # Strictly skip evaluation and provenance keys
-                    if lower_k in self.FORBIDDEN_EVALUATION_KEYS or lower_k in self.FORBIDDEN_PROVENANCE_KEYS:
+                    if self._is_forbidden_metadata_key(k_str):
                         continue
-                    if any(bad in lower_k for bad in ("mitre", "ground_truth", "verdict")):
-                        continue
-
-                    # If value is a string matching forbidden ground truth label or MITRE technique ID, omit it
-                    if isinstance(v, str):
-                        lower_val = v.strip().lower()
-                        if lower_val in ("malicious", "benign", "attack"):
-                            continue
-                        if re.match(r"^t\d{4}(?:\.\d{3})?$", lower_val):
-                            continue
 
                     # Allow-list filter
                     if lower_k in self.ALLOWLISTED_FIELDS:
-                        if isinstance(v, dict):
-                            # Sanitize nested dictionary (e.g. Network)
-                            clean_nested = {
-                                nk: nv
-                                for nk, nv in v.items()
-                                if str(nk).strip().lower() not in self.FORBIDDEN_EVALUATION_KEYS
-                                and str(nk).strip().lower() not in self.FORBIDDEN_PROVENANCE_KEYS
-                                and not any(bad in str(nk).strip().lower() for bad in ("mitre", "ground_truth", "verdict"))
-                            }
-                            details[k_str] = clean_nested
-                        else:
-                            details[k_str] = v
+                        sanitized = self._sanitize_telemetry_value(v)
+                        if sanitized is not self._OMIT_TELEMETRY_VALUE:
+                            details[k_str] = sanitized
 
             if details:
                 event_entry["details"] = details
@@ -470,7 +626,7 @@ class GeminiTriageEngine:
                 enr_entry["note"] = f"Intelligence unavailable ({status}); must not be assumed clean."
 
             if isinstance(enr.raw_response, dict):
-                summary = summarize_enrichment(enr)
+                summary = summarize_enrichment(enr, scrubber=self.scrubber)
                 if summary:
                     enr_entry["intel_summary"] = summary
             sanitized_enrichments.append(enr_entry)
@@ -511,6 +667,29 @@ class GeminiTriageEngine:
         # String-level regex scrubbing as second defensive layer
         sanitized_timeline_json = self.scrubber.scrub(timeline_clean_json)
 
+        # Redaction can expand text. Budget the final safe summaries before caching
+        # or sending, then serialize once without another size-expanding transform.
+        try:
+            final_payload = json.loads(sanitized_timeline_json)
+        except (ValueError, TypeError):
+            logger.error("Sanitized triage payload is invalid JSON; request withheld.")
+            return None
+        if not isinstance(final_payload, dict):
+            logger.error("Sanitized triage payload is not an object; request withheld.")
+            return None
+        final_enrichments = final_payload.get("enrichment_data", [])
+        if not isinstance(final_enrichments, list) or any(
+            not isinstance(entry, dict)
+            or ("intel_summary" in entry and not isinstance(entry["intel_summary"], dict))
+            for entry in final_enrichments
+        ):
+            logger.error("Sanitized enrichment structure is invalid; request withheld.")
+            return None
+        for entry in final_enrichments:
+            if isinstance(entry.get("intel_summary"), dict):
+                entry["intel_summary"] = _bound_enrichment_summary(entry["intel_summary"])
+        sanitized_timeline_json = json.dumps(final_payload, indent=2, ensure_ascii=True, default=str)
+
         # Check in-memory LLM response cache
         cache_key = hashlib.sha256(f"{sanitized_timeline_json}:{self.model}".encode("utf-8")).hexdigest()
         if self.enable_cache and self.cache is not None:
@@ -541,7 +720,6 @@ class GeminiTriageEngine:
                 "parts": [{"text": DFIR_SYSTEM_PROMPT}]
             },
             "generationConfig": {
-                "temperature": 0.1,
                 "responseMimeType": "application/json",
             },
         }
@@ -561,8 +739,13 @@ class GeminiTriageEngine:
         answering_model = None
         for candidate in candidate_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:generateContent"
+            generation_config = dict(payload["generationConfig"])
+            if not candidate.removeprefix("models/").startswith(("gemini-3.", "gemini-3-")):
+                generation_config["temperature"] = 0.1
+            candidate_payload = {**payload, "generationConfig": generation_config}
             try:
-                candidate_response = httpx.post(url, headers=headers, json=payload, timeout=self.timeout)
+                sender = self.request_sender if self.request_sender is not None else httpx.post
+                candidate_response = sender(url, headers=headers, json=candidate_payload, timeout=self.timeout)
             except httpx.TimeoutException as exc:
                 safe_exc = self._safe_log_text(str(exc))
                 logger.warning(f"Gemini API request timed out ({candidate}) after {self.timeout}s: {safe_exc}")

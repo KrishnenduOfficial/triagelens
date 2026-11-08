@@ -7,7 +7,7 @@
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-263_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-451_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -97,7 +97,7 @@ TriageLens operates as a modular, pipeline-driven architecture where security te
 ## 2. Core Engineering Principles
 
 1. **Human Analyst Authority:** AI output provides structured evidence and suggested response actions, never autonomous remediation.
-2. **Independent Ground Truth (ADR-008):** AI predictions and verified ground truth labels are strictly separated. The LLM is never permitted to evaluate its own correctness or access ground-truth metadata in prompts.
+2. **Independent Ground Truth (ADR-008):** AI predictions and reference labels are stored and evaluated separately. The prompt serializer recursively filters structured evaluation/provenance metadata beneath allow-listed telemetry fields, including nested lists and key variants (ADR-040). Original evidence and independent provider detection counts are preserved. Dataset adapters must keep labels and provenance out of free-form observable text; see the [prompt-isolation verification](docs/results/prompt_isolation_20261108.md).
 3. **Prompt Injection Boundary Isolation (ADR-023):** Adversarial log telemetry is encapsulated inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML delimiters, instructing the model to treat all evidence strictly as untrusted forensic data.
 4. **Wire-Level PII & Secret Scrubbing (ADR-018, ADR-019):** Cloud API keys, AWS/GCP tokens, private keys, passwords, bearer tokens, emails, and Luhn-validated credit cards are redacted before network egress.
 5. **Measurable Confidence Calibration (ADR-025):** Model confidence scores are evaluated using Brier scores and Expected Calibration Error (ECE) across 5 probability bins.
@@ -187,7 +187,7 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Gemini communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (263 passing tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest 9.2 (451 passing tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind | Dark-mode SOC analyst investigation console |
 
 ---
@@ -239,11 +239,69 @@ TriageLens was tested in a head-to-head empirical evaluation comparing `gemini-3
    ```
    *(Note: `TRIAGELENS_DB_PATH` is also recognized as an alias for `DATABASE_PATH`, and `VT_API_KEY` as an alias for `VIRUSTOTAL_API_KEY`).*
 
+   CLI, API, and the evaluation runner share database resolution: explicit CLI
+   override, nonblank `DATABASE_PATH`, nonblank `TRIAGELENS_DB_PATH`, then
+   `data/triagelens.db`. Relative paths use the project root containing `src/`,
+   regardless of the process working directory; absolute paths retain their target.
+   Parent directories are created consistently. Blank explicit overrides and
+   filesystem errors fail before SQLite opens. Windows drive-only/root-only paths
+   must be replaced with fully qualified or ordinary project-relative paths.
+   `:memory:` explicitly selects an ephemeral database local to each connection.
+
+   `--db-path` affects only that CLI/evaluation invocation. Configure the API with
+   the same target and restart it after changing configuration. Existing databases
+   are not moved or merged. The historical root `triagelens.db` is separate from
+   the default `data/triagelens.db`; to select it, use `DATABASE_PATH=triagelens.db`
+   consistently for both processes. A genuinely empty selected database still
+   produces zero metrics. See the [path verification](docs/results/database_paths_20261108.md).
+
 ---
 
 ### 5.3 Run Automated Test Suite
 
-TriageLens contains a comprehensive test suite of 263 unit, adversarial, security, and regression tests (mocking all external APIs so no live network calls or credentials are required):
+TriageLens contains 451 unit, adversarial, security, and regression test cases.
+External providers use injected stubs or test-scoped mocks. An autouse guard in
+`tests/conftest.py` rejects real HTTP/TCP attempts; local credentials do not enable
+live calls. The end-to-end enrichment case verifies both credential states while
+retaining real enrichment routing and SQLite persistence. Live smoke checks must
+be run separately, outside pytest.
+
+Enrichment caches enforce 24-hour successful and 15-minute negative TTLs. SQLite
+is authoritative when configured; expired/deleted rows invalidate memory copies.
+Memory-only engines use monotonic deadlines with an injectable clock for tests.
+Refreshes still respect lookup caps and daily quotas. See the
+[cache-expiry verification](docs/results/enrichment_cache_expiry_20261108.md).
+
+Daily budgets count every built-in provider HTTP attempt, including retries and
+timeouts. SQLite atomically reserves on the dispatch UTC day across connections;
+without SQLite, engines share a process-local budget that resets on restart.
+Cache hits and local rejections are free; quota denials are not cached. Logical
+lookup caps remain separate. Legacy custom providers reserve once per dispatch
+until adopting the attempt hook. Existing historical undercounts cannot be
+reconstructed. See the [quota verification](docs/results/provider_attempt_quotas_20261108.md).
+
+Attempted triage that returns no verdict or raises an exception is persisted as
+`Unavailable`, preserving null prediction/verdict fields. Availability counts
+labelled and unknown-label results over those results plus unavailable attempts;
+failures are excluded from confusion-matrix and calibration samples. Deliberately
+skipped/inactive CLI triage is outside this denominator. CLI metrics cover the
+current run; API metrics cover stored history. An empty denominator retains the
+existing 1.0 convention and does not prove service availability.
+
+Supported legacy evaluation tables migrate on the next database initialization,
+preserving records and foreign keys. Custom tables referencing evaluations need
+an explicit separate migration. Historical missing failures cannot be backfilled
+reliably, so old availability may remain optimistic. Generated reports distinguish
+unavailable predictions from benign verdicts. See the
+[unavailable-outcome verification](docs/results/unavailable_outcomes_20261108.md).
+
+Provider `intel_summary` objects stay strictly below 800 UTF-8 bytes as formatted
+inside the final prompt's evidence JSON. The shared limiter accounts for escaping,
+indentation, and masking expansion; it prioritizes numeric/status evidence and
+marks shortened or omitted content with `summary_truncated: true`. Full raw records
+remain available. Complete values are redacted before truncation. This is a
+per-summary limit, separate from total prompt size.
+See the [byte-budget verification](docs/results/compact_summary_budget_20261108.md).
 
 ```bash
 pytest -v
@@ -251,7 +309,7 @@ pytest -v
 
 Expected output:
 ```text
-======================== 263 passed, 1 warning ========================
+======================== 451 passed, 1 warning ========================
 ```
 
 ---
@@ -320,6 +378,49 @@ Follow this checklist to verify that the dashboard and backend reflect the CLI p
   - Click **Run Query** and verify matching alerts are returned and highlighted.
 
 ---
+
+### 5.6 Primary Gemini Triage Diagnostics (WIRE-11)
+
+The smoke probe now gives Gemini a 30-second timeout by default, requests a short
+reply without a two-token output cap, and uses low thinking for Gemini 3 models.
+Threat-intelligence probes retain their five-second defaults. `--timeout N`
+explicitly overrides all probes; `--gemini-timeout N` overrides Gemini alone.
+Success requires nonempty answer text, not merely a `candidates` field. HTTP 503
+is reported as `service_unavailable`; HTTP 429 as `quota_or_rate_limit`, without
+printing upstream response bodies. These service failures still exit nonzero.
+
+The triage engine now leaves sampling temperature at the provider default for
+Gemini 3 candidates, following Google's migration guidance. It retains the existing
+temperature setting for older candidates and does not silently lower triage thinking
+effort. This request change requires fresh evaluation before comparing new results
+with historical benchmarks.
+
+The lightweight `scripts/check_connections.py` probe checks connectivity; it does
+not establish that the primary can generate a valid triage verdict. For that check:
+
+```bash
+python scripts/diagnose_gemini.py --dry-run
+python scripts/diagnose_gemini.py
+# Optional explicit diagnostic budget; this does not change the engine default:
+python scripts/diagnose_gemini.py --timeout 30
+```
+
+Run live checks manually, outside pytest. The diagnostic sends one synthetic
+timeline to the configured primary, disables fallback and cache, and writes no
+database records. Exit 0 requires a schema-valid verdict from that primary; exit 1
+reports a missing key or failed check. Dry-run exits 0 without a request and reports
+credential presence only. Invalid timeout arguments exit 2 before any request.
+
+JSON output reports HTTP status, total elapsed milliseconds, model attribution,
+schema validity, and a safe failure category. It withholds response/verdict content,
+exception messages, and keys. TLS verification remains enabled. HTTPX's timeout is
+a per-operation budget, not a strict total wall-clock deadline; `elapsed_ms` measures
+the entire engine attempt. `read_timeout` means the response read stalled, whereas
+`invalid_verdict` means HTTP succeeded but no acceptable verdict was produced.
+
+**Current status:** WIRE-11 remains **REPRODUCED**, not fixed. Diagnostics do not
+establish a Python-only network failure. See the
+[diagnostic evidence](docs/results/wire11_diagnostics_20261108.md).
 
 ## 6. API Reference
 
@@ -398,7 +499,7 @@ triagelens/
 │   └── utils/                 # Security & extraction utilities
 │       ├── extraction.py      # Indicator extraction and validation
 │       └── masking.py         # PIIScrubber regex & Luhn credit-card defense
-├── tests/                     # 263 passing adversarial, security, and unit tests
+├── tests/                     # 451 passing adversarial, security, and unit test cases
 │   ├── test_api_adversarial.py
 │   ├── test_database_adversarial.py
 │   ├── test_enrichment.py

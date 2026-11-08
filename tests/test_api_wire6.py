@@ -18,8 +18,10 @@ import pytest
 from src.api.main import create_app
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
+from src.engine.enrichment import EnrichmentEngine, ThreatIntelProvider
 from src.models.alert import NormalizedAlert
 from src.models.evaluation import EvaluationResult
+from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
 
@@ -146,13 +148,46 @@ def test_api_metrics_equals_recomputed_tracker_metrics(tmp_path: Path):
     assert api_metrics["total"] == expected_metrics["total"] == 1
 
 
-def test_run_evaluation_end_to_end_mode_with_enrichment(tmp_path: Path):
+@pytest.mark.parametrize("credentials_configured", [False, True])
+def test_run_evaluation_end_to_end_mode_with_enrichment(tmp_path: Path, monkeypatch, credentials_configured):
     """Verify that scripts/run_evaluation.py end-to-end mode runs through enrichment and persists evaluations."""
     from scripts.run_evaluation import run_evaluation_pipeline
 
+    # Test both local credential states using placeholders, never real secrets.
+    for name in ("VIRUSTOTAL_API_KEY", "VT_API_KEY", "ABUSEIPDB_API_KEY", "URLHAUS_API_KEY", "AUTH_KEY"):
+        if credentials_configured:
+            monkeypatch.setenv(name, "offline-placeholder")
+        else:
+            monkeypatch.delenv(name, raising=False)
+
+    class StubProvider(ThreatIntelProvider):
+        def __init__(self, provider_name):
+            super().__init__()
+            self.provider_name = provider_name
+            self.calls = []
+
+        @property
+        def name(self):
+            return self.provider_name
+
+        def lookup_with_status(self, indicator, indicator_type):
+            self.calls.append((indicator, indicator_type))
+            return EnrichmentResult(
+                indicator=indicator, indicator_type=indicator_type, provider=self.name,
+                is_malicious=True, lookup_status="ok", raw_response={"fixture": True},
+            )
+
+    providers = {name: StubProvider(name) for name in ("virustotal", "abuseipdb")}
+
+    def create_offline_enrichment(**kwargs):
+        return EnrichmentEngine(providers=providers, daily_quotas={}, **kwargs)
+
+    # Retain real routing, caching, pipeline attachment, and SQLite persistence.
+    monkeypatch.setattr("scripts.run_evaluation.EnrichmentEngine", create_offline_enrichment)
+
     db_file = tmp_path / "eval_e2e.db"
 
-    # Create dummy benchmark dataset with 2 alerts having indicators
+    # Create one labelled fixture alert with an indicator.
     alerts = [
         NormalizedAlert(
             source_dataset="test",
@@ -197,4 +232,11 @@ def test_run_evaluation_end_to_end_mode_with_enrichment(tmp_path: Path):
     conn = db.connect()
     count = conn.execute("SELECT COUNT(*) FROM evaluations;").fetchone()[0]
     assert count == 1
+    assert all(provider.calls == [("198.51.100.55", "ip")] for provider in providers.values())
+    assert {result.provider for result in tl.enrichment_data} == set(providers)
+    enrichments = db.get_enrichments("198.51.100.55")
+    assert len(enrichments) == 2
+    assert {row["provider"] for row in enrichments} == set(providers)
+    assert all(row["lookup_status"] == "ok" for row in enrichments)
+    db.close()
 

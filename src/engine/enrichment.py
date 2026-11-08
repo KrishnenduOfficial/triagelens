@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 import base64
 import collections
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import logging
 import os
@@ -25,6 +26,30 @@ from src.config import (
 from src.models.enrichment import EnrichmentResult
 
 logger = logging.getLogger(__name__)
+
+_ATTEMPT_QUOTA_GATE: ContextVar[Optional[Callable[[], bool]]] = ContextVar(
+    "enrichment_attempt_quota_gate", default=None
+)
+
+
+class InMemoryQuotaLedger:
+    """Thread-safe process-local attempt budget when SQLite is not configured."""
+
+    def __init__(self):
+        self._usage: Dict[Tuple[str, str], int] = {}
+        self._lock = threading.Lock()
+
+    def reserve(self, provider: str, date_key: str, limit: Optional[int]) -> bool:
+        key = (provider.strip().lower(), date_key)
+        with self._lock:
+            used = self._usage.get(key, 0)
+            if limit is not None and limit > 0 and used >= limit:
+                return False
+            self._usage[key] = used + 1
+            return True
+
+
+_MEMORY_QUOTA_LEDGER = InMemoryQuotaLedger()
 
 
 def parse_retry_after(header_val: Optional[str]) -> Optional[float]:
@@ -90,7 +115,7 @@ class ProviderRateLimiter:
         with self._lock:
             penalty = (
                 float(retry_after_seconds)
-                if retry_after_seconds is not None and retry_after_seconds > 0
+                if retry_after_seconds is not None and retry_after_seconds >= 0
                 else 60.0
             )
             self.retry_after_until = self._now() + penalty
@@ -101,7 +126,10 @@ class ProviderRateLimiter:
             self.retry_after_until = None
             self._timestamps.clear()
 
-    def acquire_or_wait(self, max_wait_seconds: float = 60.0) -> bool:
+    def acquire_or_wait(
+        self, max_wait_seconds: float = 60.0,
+        request_guard: Optional[Callable[[], bool]] = None,
+    ) -> bool:
         """Attempts to acquire a rate limit slot, pausing via sleep_func up to max_wait_seconds.
 
         If a slot is available immediately, records the request and returns True.
@@ -109,6 +137,8 @@ class ProviderRateLimiter:
         or retry_after penalty to expire. If wait_time <= max_wait_seconds, pauses via
         self.sleep_func, prunes expired timestamps, records the request, and returns True.
         If wait_time > max_wait_seconds, returns False without sleeping.
+        request_guard runs under the limiter lock after any wait and before a slot
+        is recorded. A false result consumes no slot; exceptions prevent the send.
         """
         with self._lock:
             now = self._now()
@@ -120,6 +150,8 @@ class ProviderRateLimiter:
             if len(self._timestamps) < self.requests_per_minute and (
                 self.retry_after_until is None or now >= self.retry_after_until
             ):
+                if request_guard is not None and not request_guard():
+                    return False
                 self._timestamps.append(now)
                 return True
 
@@ -145,6 +177,12 @@ class ProviderRateLimiter:
             new_now = self._now()
             while self._timestamps and self._timestamps[0] <= new_now - 60.0:
                 self._timestamps.popleft()
+            if len(self._timestamps) >= self.requests_per_minute or (
+                self.retry_after_until is not None and new_now < self.retry_after_until
+            ):
+                return False
+            if request_guard is not None and not request_guard():
+                return False
             self._timestamps.append(new_now)
             if self.retry_after_until is not None and new_now >= self.retry_after_until:
                 self.retry_after_until = None
@@ -154,9 +192,42 @@ class ProviderRateLimiter:
 class ThreatIntelProvider(ABC):
     """Abstract Base Class for threat intelligence providers."""
 
-    def __init__(self):
+    uses_attempt_quota_gate = False
+
+    def __init__(
+        self, request_sender: Optional[Callable[..., httpx.Response]] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+    ):
         self.last_status: str = "ok"
         self.last_result: Optional[EnrichmentResult] = None
+        self.request_sender = request_sender
+        self._sleep_func = sleep_func
+
+    def _sleep(self, seconds: float) -> None:
+        sleeper = self._sleep_func if self._sleep_func is not None else time.sleep
+        sleeper(seconds)
+
+    def _attempt_denial(self, indicator: str, indicator_type: str) -> Optional[EnrichmentResult]:
+        """Reserve an RPM slot and daily quota immediately before a real send."""
+        quota_denied = False
+        gate = _ATTEMPT_QUOTA_GATE.get()
+
+        def reserve():
+            nonlocal quota_denied
+            if gate is not None and not gate():
+                quota_denied = True
+                return False
+            return True
+
+        max_wait = self.max_wait_seconds if self.wait_mode else 0.0
+        if self.rate_limiter.acquire_or_wait(max_wait, request_guard=reserve):
+            return None
+        return EnrichmentResult(
+            indicator=indicator, indicator_type=indicator_type, provider=self.name,
+            is_malicious=False,
+            lookup_status="quota_exceeded" if quota_denied else "rate_limited",
+            raw_response={"error": "Daily quota exceeded" if quota_denied else "Client rate limit active"},
+        )
 
     @property
     @abstractmethod
@@ -183,6 +254,8 @@ class ThreatIntelProvider(ABC):
 class VirusTotalProvider(ThreatIntelProvider):
     """Threat intelligence provider implementing VirusTotal API v3."""
 
+    uses_attempt_quota_gate = True
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -192,6 +265,7 @@ class VirusTotalProvider(ThreatIntelProvider):
         requests_per_minute: Optional[int] = None,
         clock: Optional[Callable[[], float]] = None,
         sleep_func: Optional[Callable[[float], None]] = None,
+        request_sender: Optional[Callable[..., httpx.Response]] = None,
     ):
         """Initializes the VirusTotal provider.
 
@@ -203,7 +277,9 @@ class VirusTotalProvider(ThreatIntelProvider):
             requests_per_minute: Rate limit ceiling per minute (default: 4 for free tier).
             clock: Injected clock function returning unix epoch float (for testing).
             sleep_func: Injected sleep function taking float seconds (for testing).
+            request_sender: Optional HTTP GET callable; defaults to httpx.get.
         """
+        super().__init__(request_sender=request_sender, sleep_func=sleep_func)
         self.api_key = api_key or get_virustotal_api_key()
         self.timeout = timeout
         self.base_url = "https://www.virustotal.com/api/v3"
@@ -219,7 +295,7 @@ class VirusTotalProvider(ThreatIntelProvider):
             else requests_per_minute
         )
         self.rate_limiter = ProviderRateLimiter(
-            requests_per_minute=rpm, clock=clock, sleep_func=sleep_func
+            requests_per_minute=rpm, clock=clock, sleep_func=self._sleep
         )
 
     @property
@@ -271,34 +347,6 @@ class VirusTotalProvider(ThreatIntelProvider):
                 lookup_status="error",
             )
 
-        if self.wait_mode:
-            acquired = self.rate_limiter.acquire_or_wait(max_wait_seconds=self.max_wait_seconds)
-            if not acquired:
-                logger.warning(
-                    "VirusTotal rate limit wait exceeded %ss; throttling %s",
-                    self.max_wait_seconds,
-                    indicator,
-                )
-                return EnrichmentResult(
-                    indicator=indicator,
-                    indicator_type=clean_type,
-                    provider=self.name,
-                    is_malicious=False,
-                    raw_response={"error": "Client rate limit active (max wait exceeded)"},
-                    lookup_status="rate_limited",
-                )
-        else:
-            if not self.rate_limiter.can_request():
-                logger.warning("VirusTotal client-side rate limit active; throttling %s", indicator)
-                return EnrichmentResult(
-                    indicator=indicator,
-                    indicator_type=clean_type,
-                    provider=self.name,
-                    is_malicious=False,
-                    raw_response={"error": "Client rate limit active"},
-                    lookup_status="rate_limited",
-                )
-
         headers = {
             "x-apikey": self.api_key,
             "Accept": "application/json",
@@ -306,12 +354,14 @@ class VirusTotalProvider(ThreatIntelProvider):
 
         max_retries = 2
         for attempt in range(max_retries + 1):
+            denial = self._attempt_denial(indicator, clean_type)
+            if denial is not None:
+                return denial
             try:
-                response = httpx.get(url, headers=headers, timeout=self.timeout)
+                sender = self.request_sender if self.request_sender is not None else httpx.get
+                response = sender(url, headers=headers, timeout=self.timeout)
 
                 if response.status_code == 200:
-                    if not getattr(self, "wait_mode", False):
-                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -376,7 +426,7 @@ class VirusTotalProvider(ThreatIntelProvider):
                         retry_after,
                     )
                     if retry_after is not None and retry_after <= 2.0 and attempt < max_retries:
-                        time.sleep(retry_after)
+                        self._sleep(retry_after)
                         continue
                     return EnrichmentResult(
                         indicator=indicator,
@@ -411,7 +461,7 @@ class VirusTotalProvider(ThreatIntelProvider):
 
                 elif 500 <= response.status_code < 600:
                     if attempt < max_retries:
-                        time.sleep(0.02 * (2 ** attempt))
+                        self._sleep(0.02 * (2 ** attempt))
                         continue
                     return EnrichmentResult(
                         indicator=indicator,
@@ -434,7 +484,7 @@ class VirusTotalProvider(ThreatIntelProvider):
 
             except httpx.TimeoutException:
                 if attempt < max_retries:
-                    time.sleep(0.02 * (2 ** attempt))
+                    self._sleep(0.02 * (2 ** attempt))
                     continue
                 logger.error("VirusTotal API request timed out for indicator: %s", indicator)
                 return EnrichmentResult(
@@ -469,17 +519,28 @@ class VirusTotalProvider(ThreatIntelProvider):
 class AbuseIPDBProvider(ThreatIntelProvider):
     """Threat intelligence provider implementing AbuseIPDB API v2."""
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 5.0):
+    uses_attempt_quota_gate = True
+
+    def __init__(
+        self, api_key: Optional[str] = None, timeout: float = 5.0, *,
+        clock: Optional[Callable[[], float]] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+        request_sender: Optional[Callable[..., httpx.Response]] = None,
+        wait_mode: Optional[bool] = False, max_wait_seconds: Optional[float] = None,
+    ):
         """Initializes the AbuseIPDB provider.
 
         Args:
             api_key: Optional AbuseIPDB API key. Defaults to ABUSEIPDB_API_KEY environment variable.
             timeout: HTTP request timeout in seconds (default: 5.0).
         """
+        super().__init__(request_sender=request_sender, sleep_func=sleep_func)
         self.api_key = api_key or get_abuseipdb_api_key()
         self.timeout = timeout
         self.base_url = "https://api.abuseipdb.com/api/v2/check"
-        self.rate_limiter = ProviderRateLimiter(requests_per_minute=60)
+        self.wait_mode = get_enrichment_wait_mode() if wait_mode is None else wait_mode
+        self.max_wait_seconds = get_enrichment_max_wait_seconds() if max_wait_seconds is None else max_wait_seconds
+        self.rate_limiter = ProviderRateLimiter(requests_per_minute=60, clock=clock, sleep_func=self._sleep)
 
     @property
     def name(self) -> str:
@@ -510,17 +571,6 @@ class AbuseIPDBProvider(ThreatIntelProvider):
                 lookup_status="error",
             )
 
-        if not self.rate_limiter.can_request():
-            logger.warning("AbuseIPDB client-side rate limit active; throttling %s", indicator)
-            return EnrichmentResult(
-                indicator=indicator.strip(),
-                indicator_type="ip",
-                provider=self.name,
-                is_malicious=False,
-                raw_response={"error": "Client rate limit active"},
-                lookup_status="rate_limited",
-            )
-
         headers = {
             "Key": self.api_key,
             "Accept": "application/json",
@@ -532,14 +582,16 @@ class AbuseIPDBProvider(ThreatIntelProvider):
 
         max_retries = 2
         for attempt in range(max_retries + 1):
+            denial = self._attempt_denial(indicator.strip(), clean_type)
+            if denial is not None:
+                return denial
             try:
-                response = httpx.get(
+                sender = self.request_sender if self.request_sender is not None else httpx.get
+                response = sender(
                     self.base_url, headers=headers, params=params, timeout=self.timeout
                 )
 
                 if response.status_code == 200:
-                    if not getattr(self, "wait_mode", False):
-                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -597,7 +649,7 @@ class AbuseIPDBProvider(ThreatIntelProvider):
                     retry_after = extract_retry_after(response)
                     self.rate_limiter.record_rate_limit(retry_after)
                     if retry_after is not None and retry_after <= 2.0 and attempt < max_retries:
-                        time.sleep(retry_after)
+                        self._sleep(retry_after)
                         continue
                     return EnrichmentResult(
                         indicator=indicator.strip(),
@@ -630,7 +682,7 @@ class AbuseIPDBProvider(ThreatIntelProvider):
 
                 elif 500 <= response.status_code < 600:
                     if attempt < max_retries:
-                        time.sleep(0.02 * (2 ** attempt))
+                        self._sleep(0.02 * (2 ** attempt))
                         continue
                     return EnrichmentResult(
                         indicator=indicator.strip(),
@@ -653,7 +705,7 @@ class AbuseIPDBProvider(ThreatIntelProvider):
 
             except httpx.TimeoutException:
                 if attempt < max_retries:
-                    time.sleep(0.02 * (2 ** attempt))
+                    self._sleep(0.02 * (2 ** attempt))
                     continue
                 return EnrichmentResult(
                     indicator=indicator.strip(),
@@ -686,17 +738,28 @@ class AbuseIPDBProvider(ThreatIntelProvider):
 class URLhausProvider(ThreatIntelProvider):
     """Threat intelligence provider implementing abuse.ch URLhaus API."""
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 5.0):
+    uses_attempt_quota_gate = True
+
+    def __init__(
+        self, api_key: Optional[str] = None, timeout: float = 5.0, *,
+        clock: Optional[Callable[[], float]] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+        request_sender: Optional[Callable[..., httpx.Response]] = None,
+        wait_mode: Optional[bool] = False, max_wait_seconds: Optional[float] = None,
+    ):
         """Initializes the URLhaus provider.
 
         Args:
             api_key: Optional abuse.ch Auth-Key. Defaults to URLHAUS_API_KEY environment variable.
             timeout: HTTP request timeout in seconds (default: 5.0).
         """
+        super().__init__(request_sender=request_sender, sleep_func=sleep_func)
         self.api_key = api_key or get_urlhaus_api_key()
         self.timeout = timeout
         self.base_url = "https://urlhaus-api.abuse.ch/v1"
-        self.rate_limiter = ProviderRateLimiter(requests_per_minute=100)
+        self.wait_mode = get_enrichment_wait_mode() if wait_mode is None else wait_mode
+        self.max_wait_seconds = get_enrichment_max_wait_seconds() if max_wait_seconds is None else max_wait_seconds
+        self.rate_limiter = ProviderRateLimiter(requests_per_minute=100, clock=clock, sleep_func=self._sleep)
 
     @property
     def name(self) -> str:
@@ -724,31 +787,22 @@ class URLhausProvider(ThreatIntelProvider):
                 lookup_status="error",
             )
 
-        if not self.rate_limiter.can_request():
-            logger.warning("URLhaus client-side rate limit active; throttling %s", clean_indicator)
-            return EnrichmentResult(
-                indicator=clean_indicator,
-                indicator_type="url" if clean_type == "url" else "domain",
-                provider=self.name,
-                is_malicious=False,
-                raw_response={"error": "Client rate limit active"},
-                lookup_status="rate_limited",
-            )
-
         headers = {"Accept": "application/json"}
         if self.api_key:
             headers["Auth-Key"] = self.api_key
 
         max_retries = 2
         for attempt in range(max_retries + 1):
+            denial = self._attempt_denial(clean_indicator, "url" if clean_type == "url" else "domain")
+            if denial is not None:
+                return denial
             try:
-                response = httpx.post(
+                sender = self.request_sender if self.request_sender is not None else httpx.post
+                response = sender(
                     endpoint, data=payload, headers=headers, timeout=self.timeout
                 )
 
                 if response.status_code == 200:
-                    if not getattr(self, "wait_mode", False):
-                        self.rate_limiter.record_request()
                     try:
                         raw_json = response.json()
                     except Exception as exc:
@@ -820,7 +874,7 @@ class URLhausProvider(ThreatIntelProvider):
                     retry_after = extract_retry_after(response)
                     self.rate_limiter.record_rate_limit(retry_after)
                     if retry_after is not None and retry_after <= 2.0 and attempt < max_retries:
-                        time.sleep(retry_after)
+                        self._sleep(retry_after)
                         continue
                     return EnrichmentResult(
                         indicator=clean_indicator,
@@ -863,7 +917,7 @@ class URLhausProvider(ThreatIntelProvider):
 
                 elif 500 <= response.status_code < 600:
                     if attempt < max_retries:
-                        time.sleep(0.02 * (2 ** attempt))
+                        self._sleep(0.02 * (2 ** attempt))
                         continue
                     return EnrichmentResult(
                         indicator=clean_indicator,
@@ -886,7 +940,7 @@ class URLhausProvider(ThreatIntelProvider):
 
             except httpx.TimeoutException:
                 if attempt < max_retries:
-                    time.sleep(0.02 * (2 ** attempt))
+                    self._sleep(0.02 * (2 ** attempt))
                     continue
                 return EnrichmentResult(
                     indicator=clean_indicator,
@@ -940,6 +994,9 @@ class EnrichmentEngine:
         daily_quotas: Optional[Dict[str, Optional[int]]] = None,
         wait_mode: Optional[bool] = None,
         max_wait_seconds: Optional[float] = None,
+        cache_clock: Optional[Callable[[], float]] = None,
+        quota_clock: Optional[Callable[[], float]] = None,
+        quota_ledger: Optional[InMemoryQuotaLedger] = None,
     ):
         """Initializes the enrichment engine with caching, rate limiting, and lookup caps.
 
@@ -947,9 +1004,13 @@ class EnrichmentEngine:
             providers: Optional dictionary mapping provider names to provider instances.
             db: Optional DatabaseManager instance for persistent cross-run caching and daily quotas.
             max_lookups_per_run: Optional cap on external lookups allowed in a single pipeline run.
-            daily_quotas: Optional dictionary mapping provider names to daily lookup quotas.
+            daily_quotas: Optional provider daily attempt budgets (UTC days).
             wait_mode: Whether to enable wait mode on auto-registered rate-limited providers.
             max_wait_seconds: Maximum wait seconds for rate limiter pausing.
+            cache_clock: Injected seconds clock for memory-only TTLs; defaults to
+                time.monotonic. SQLite retains its existing persisted deadlines.
+            quota_clock: Optional UTC epoch clock for attempt reservation days.
+            quota_ledger: Optional process-local ledger for memory-only engines.
         """
         self.providers: Dict[str, ThreatIntelProvider] = {}
         self.db = db
@@ -957,6 +1018,9 @@ class EnrichmentEngine:
         self.lookups_this_run = 0
         self.TTL_POSITIVE_SECONDS = 86400  # 24 hours
         self.TTL_NEGATIVE_SECONDS = 900    # 15 minutes
+        self.cache_clock = cache_clock if cache_clock is not None else time.monotonic
+        self.quota_clock = quota_clock
+        self.quota_ledger = quota_ledger if quota_ledger is not None else _MEMORY_QUOTA_LEDGER
 
         if daily_quotas is not None:
             self.daily_quotas = {k.lower(): v for k, v in daily_quotas.items()}
@@ -996,12 +1060,25 @@ class EnrichmentEngine:
             else:
                 logger.info("[Enrichment] URLhaus provider registered (keyless).")
 
-        # In-memory cache: (provider, indicator_type, indicator) -> EnrichmentResult
+        # Preserve the public result mapping; deadlines apply to memory-only mode.
         self.cache: Dict[str, EnrichmentResult] = {}
+        self._cache_expires_at: Dict[str, float] = {}
 
     def register_provider(self, provider: ThreatIntelProvider) -> None:
         """Registers a threat intelligence provider."""
         self.providers[provider.name.lower()] = provider
+
+    def _reserve_quota(self, provider_name: str) -> bool:
+        """Atomically reserve an attempt on its dispatch UTC day; never refund."""
+        limit = self.daily_quotas.get(provider_name)
+        date_key = None
+        if self.quota_clock is not None:
+            date_key = datetime.fromtimestamp(self.quota_clock(), timezone.utc).strftime("%Y-%m-%d")
+        if self.db is not None:
+            return self.db.reserve_quota_request(provider_name, limit, date_key)
+        if date_key is None:
+            date_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return self.quota_ledger.reserve(provider_name, date_key, limit)
 
     def get_providers_for_indicator(self, indicator_type: str) -> List[str]:
         """Returns the registered provider names that handle the given indicator type."""
@@ -1031,7 +1108,7 @@ class EnrichmentEngine:
         """
         cache_key = self._get_cache_key(indicator, indicator_type, provider_name)
 
-        # 1. Check persistent SQLite cache first
+        # 1. SQLite is authoritative when configured, including expiry/deletion.
         if self.db is not None:
             cached_db = self.db.get_cached_enrichment(cache_key)
             if cached_db is not None:
@@ -1039,10 +1116,16 @@ class EnrichmentEngine:
                 logger.debug("Persistent SQLite cache hit for %s", cache_key)
                 return cached_db
 
-        # 2. Check in-memory cache
-        if cache_key in self.cache:
-            logger.debug("Enrichment memory cache hit for %s", cache_key)
-            return self.cache[cache_key]
+        # 2. Only memory-only engines may serve a locally timed cache entry.
+        elif cache_key in self.cache:
+            expires_at = self._cache_expires_at.get(cache_key)
+            if expires_at is not None and self.cache_clock() < expires_at:
+                logger.debug("Enrichment memory cache hit for %s", cache_key)
+                return self.cache[cache_key]
+
+        # Never resurrect an entry that SQLite rejected or whose local TTL elapsed.
+        self.cache.pop(cache_key, None)
+        self._cache_expires_at.pop(cache_key, None)
 
         # 3. Check per-run lookup cap
         if (
@@ -1064,42 +1147,33 @@ class EnrichmentEngine:
                 lookup_status="skipped",
             )
 
-        # 4. Check persistent daily quota
+        # 4. Built-ins reserve per send; opaque legacy providers reserve per dispatch.
         p_name = provider_name.strip().lower()
-        if self.daily_quotas and p_name in self.daily_quotas:
-            quota = self.daily_quotas[p_name]
-            if quota is not None and quota > 0:
-                if self.db is not None and hasattr(self.db, "check_quota_available"):
-                    if not self.db.check_quota_available(p_name, max_daily_quota=quota):
-                        logger.warning(
-                            "Enrichment daily quota exceeded for provider '%s' (limit: %d). Skipping %s",
-                            provider_name,
-                            quota,
-                            indicator,
-                        )
-                        return EnrichmentResult(
-                            indicator=indicator,
-                            indicator_type=indicator_type.strip().lower(),
-                            provider=provider_name,
-                            is_malicious=False,
-                            raw_response={"error": "Daily quota exceeded", "limit": quota},
-                            lookup_status="quota_exceeded",
-                        )
-
         provider = self.providers.get(p_name)
         if not provider:
             logger.debug("Threat intelligence provider '%s' is not registered", provider_name)
             return None
 
+        per_attempt = getattr(provider, "uses_attempt_quota_gate", False) is True
+        if not per_attempt and not self._reserve_quota(p_name):
+            return EnrichmentResult(
+                indicator=indicator, indicator_type=indicator_type.strip().lower(),
+                provider=provider_name, is_malicious=False,
+                raw_response={"error": "Daily quota exceeded", "limit": self.daily_quotas.get(p_name)},
+                lookup_status="quota_exceeded",
+            )
+
         self.lookups_this_run += 1
         # Provider dispatch without testing library dependencies
         result: Optional[EnrichmentResult] = None
-        if hasattr(provider, "lookup_with_status"):
-            result = provider.lookup_with_status(indicator, indicator_type)
-        elif hasattr(provider, "lookup"):
-            result = provider.lookup(indicator, indicator_type)
-        else:
-            result = None
+        token = _ATTEMPT_QUOTA_GATE.set(lambda: self._reserve_quota(p_name) if per_attempt else True)
+        try:
+            if hasattr(provider, "lookup_with_status"):
+                result = provider.lookup_with_status(indicator, indicator_type)
+            elif hasattr(provider, "lookup"):
+                result = provider.lookup(indicator, indicator_type)
+        finally:
+            _ATTEMPT_QUOTA_GATE.reset(token)
 
         if result is None:
             last_res = getattr(provider, "last_result", None)
@@ -1117,17 +1191,19 @@ class EnrichmentEngine:
                 )
 
         if result is not None:
-            if self.db is not None and result.lookup_status not in ("skipped", "quota_exceeded"):
-                if hasattr(self.db, "increment_quota_usage"):
-                    self.db.increment_quota_usage(p_name, count=1)
-            self.cache[cache_key] = result
+            # A denied budget must be reconsidered on the next attempt/day.
+            if result.lookup_status == "quota_exceeded":
+                return result
+            ttl = (
+                self.TTL_POSITIVE_SECONDS
+                if result.lookup_status == "ok"
+                else self.TTL_NEGATIVE_SECONDS
+            )
             if self.db is not None:
-                ttl = (
-                    self.TTL_POSITIVE_SECONDS
-                    if result.lookup_status == "ok"
-                    else self.TTL_NEGATIVE_SECONDS
-                )
                 self.db.set_cached_enrichment(cache_key, result, ttl_seconds=ttl)
+            else:
+                self._cache_expires_at[cache_key] = self.cache_clock() + ttl
+            self.cache[cache_key] = result
 
         return result
 

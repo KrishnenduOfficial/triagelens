@@ -83,7 +83,7 @@ def run_evaluation_pipeline(
         raise ValueError("GEMINI_API_KEY environment variable is missing or empty.")
 
     engine = GeminiTriageEngine(api_key=api_key)
-    target_db = db_path or get_database_path()
+    target_db = get_database_path(db_path)
     db = DatabaseManager(db_path=target_db)
     db.init_db()
 
@@ -149,14 +149,15 @@ def run_evaluation_pipeline(
             print(f"(cached: {verdict.model_name}) -> Severity: {verdict.severity} ", end="", flush=True)
         else:
             # 2. Execute live LLM triage
-            try:
-                if not db.get_timeline(tl.timeline_id):
-                    db.insert_timeline(tl)
-            except Exception:
-                pass
+            if not db.get_timeline(tl.timeline_id):
+                db.insert_timeline(tl)
 
             t0 = time.time()
-            verdict = engine.analyze_timeline(tl)
+            try:
+                verdict = engine.analyze_timeline(tl)
+            except Exception:
+                # The attempted prediction is unavailable; persist it below.
+                verdict = None
             elapsed = time.time() - t0
 
             if verdict:
@@ -173,11 +174,8 @@ def run_evaluation_pipeline(
 
         # 3. Evaluate against independent ground truth (ADR-008)
         eval_result = tracker.evaluate(verdict, tl)
-        if eval_result and eval_result.verdict_id:
-            try:
-                db.insert_evaluation(eval_result)
-            except Exception as e:
-                print(f"[DB eval err: {e}] ", end="")
+        # Persistence failures must not produce a successful but incomplete report.
+        db.insert_evaluation(eval_result)
 
         status_symbol = "OK" if eval_result.is_correct else "ERR"
         print(f"[{eval_result.category}] {status_symbol}")
@@ -188,9 +186,15 @@ def run_evaluation_pipeline(
             "grouping_key": tl.grouping_key,
             "total_events": tl.total_events,
             "ground_truth_bool": eval_result.ground_truth,
-            "ground_truth_label": "Malicious" if eval_result.ground_truth is True else "Benign",
+            "ground_truth_label": (
+                "Unknown" if eval_result.ground_truth is None
+                else "Malicious" if eval_result.ground_truth else "Benign"
+            ),
             "llm_prediction_bool": eval_result.llm_prediction,
-            "llm_prediction_label": "Malicious" if eval_result.llm_prediction is True else "Benign",
+            "llm_prediction_label": (
+                "Unavailable" if eval_result.llm_prediction is None
+                else "Malicious" if eval_result.llm_prediction else "Benign"
+            ),
             "severity_prediction": verdict.severity if verdict else "N/A",
             "category": eval_result.category,
             "is_correct": eval_result.is_correct,
@@ -311,6 +315,8 @@ Prediction errors predominantly occurred in low-evidence, 1–2 event scenarios 
     print("EVALUATION RUN COMPLETE")
     print("=" * 70)
     print(f"Total Evaluated: {tracker.total_evaluated}")
+    print(f"Unavailable:     {metrics['unavailable']}")
+    print(f"Availability:    {metrics['availability_rate']*100:.1f}%")
     print(f"Accuracy:        {metrics['accuracy']*100:.1f}%")
     print(f"Precision:       {metrics['precision']*100:.1f}%")
     print(f"Recall:          {metrics['recall']*100:.1f}%")
@@ -351,7 +357,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db-path",
         default=None,
-        help="Target SQLite database path (defaults to DATABASE_PATH)",
+        help="SQLite path override; relative paths use the project root (default: DATABASE_PATH, TRIAGELENS_DB_PATH, or data/triagelens.db)",
     )
     parser.add_argument(
         "--end-to-end",

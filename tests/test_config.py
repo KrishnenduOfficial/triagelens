@@ -67,7 +67,7 @@ def test_database_path_canonical_and_alias(monkeypatch, tmp_path):
     # Default fallback when neither is set
     monkeypatch.delenv("DATABASE_PATH", raising=False)
     monkeypatch.delenv("TRIAGELENS_DB_PATH", raising=False)
-    assert get_database_path() == "data/triagelens.db"
+    assert get_database_path() == str(Path(__file__).resolve().parent.parent / "data" / "triagelens.db")
 
 
 def test_api_uses_file_database_by_default(monkeypatch, tmp_path):

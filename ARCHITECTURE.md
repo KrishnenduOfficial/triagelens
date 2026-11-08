@@ -27,6 +27,24 @@ The six primary stages are:
 
 The architecture is designed to run on modest hardware without requiring a locally hosted AI model or a full SIEM deployment.
 
+## Shared Database Target (ADR-044)
+
+CLI, API, and `scripts/run_evaluation.py` use `config.get_database_path(override)`.
+Selection is an explicit override, then the first nonblank canonical/alias setting,
+then `data/triagelens.db`. Relative paths resolve against the root containing `src/`,
+derived from `src/config.py`, independently of cwd. The resolver returns an absolute
+disk path and creates its parent; failures propagate before SQLite is opened.
+Explicit blanks and partially qualified Windows paths are rejected. `:memory:`
+remains an intentional connection-local exception. Injected DatabaseManager
+instances and low-level DatabaseManager paths retain their caller-owned behavior.
+
+An override changes only its invocation; the API must independently select the
+same file. Existing databases are never discovered, merged, moved, or preferred
+based on row counts. The legacy root database remains separate from the default.
+API state selects its database at startup, so configuration changes require a
+restart. Path consistency is verified offline with real CLI persistence and API
+reads; live primary-model verification remains blocked under WIRE-11.
+
 ## Core Design Philosophy
 
 * Lightweight infrastructure.
@@ -196,6 +214,45 @@ Enriched alert records containing:
 
 ---
 
+### Compact Threat-Intelligence Summaries (ADR-030, ADR-042)
+
+Compact provider summaries have a separate byte contract (ADR-030, ADR-042): each
+`intel_summary` object is strictly below 800 UTF-8 bytes as formatted inside the
+final evidence JSON, including ASCII escaping and nested indentation. A shared
+limiter runs after projection/full-value redaction and after full-payload masking. It prioritizes
+numeric/status signals, marks omissions with `summary_truncated: true`, and preserves
+full raw records. Invalid masked JSON/enrichment structure withholds the request.
+This cap excludes enrichment wrappers and the rest of the prompt.
+
+### Enrichment Cache Lifetimes (ADR-029, ADR-041)
+
+Successful (`ok`) lookups have a 24-hour TTL; non-`ok` provider results use the
+existing 15-minute negative TTL. When SQLite is configured, its persisted expiry
+is authoritative on every lookup. A miss invalidates any local copy before the
+normal lookup-cap and quota checks. Loading a cached record into a new engine
+does not extend its deadline. Memory-only engines use an injected `cache_clock`
+(default `time.monotonic`) and reject entries at or after their deadline. Fresh
+hits consume no lookup budget; expired local state is removed when accessed.
+
+### Daily Provider Attempt Budgets (ADR-043)
+
+Each built-in provider reserves daily quota immediately before every HTTP send,
+including retries and failures. RPM availability is checked first; reservations
+use the dispatch UTC day after any wait. SQLite atomically checks/increments in a
+conditional UPSERT shared across connections. Memory-only engines share a locked
+process-local ledger, which resets on restart; separate processes require SQLite.
+`quota_clock` and `quota_ledger` are injectable. Quota storage failures stop sends.
+Timeout reservations are retained conservatively. This measures local attempts,
+not remote billing. Old persisted undercounts cannot be reconstructed.
+
+Cache hits, built-in validation/missing-key rejections, and local throttling
+consume no daily quota. Quota denials are not cached. Logical per-run lookup caps
+remain separate from retry counts. Scoped callbacks select the current engine
+budget even for shared providers. Opaque legacy providers reserve once per
+dispatch until they adopt the per-attempt hook; direct provider calls outside an
+engine have no daily ledger. Optional provider sender/clock/sleep callbacks enable
+offline verification. See `docs/results/provider_attempt_quotas_20261108.md`.
+
 ## 3.3 Timeline Builder
 
 **Responsibility:** Correlate related security events into a chronological investigation timeline.
@@ -263,7 +320,7 @@ Google Gemini API (Generative Language API v1beta):
 
 ### Processing Pipeline
 
-1. **Deterministic Redaction:** Strip evaluation/ground-truth keys and dataset provenance to prevent prompt data leakage (ADR-008).
+1. **Deterministic Redaction:** Retain allow-listed telemetry roots and recursively copy their structured values, excluding evaluation/ground-truth keys and dataset provenance regardless of case/separator variants. Remove standalone classification values and complete technique IDs while preserving forensic strings and false/zero/null values. Original records and independent provider intelligence remain intact (ADR-008, ADR-017, ADR-040). Dataset adapters must keep evaluation metadata out of free-form observable text.
 2. **PII & Secret Scrubbing:** Mask API keys, private keys, passwords, bearer tokens, IP addresses, emails, and SSNs using `PIIScrubber` with Luhn credit-card defense (ADR-019).
 3. **Prompt Injection Defense & Boundary Isolation:** Encapsulate untrusted log telemetry inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML tags. Instruct the model that log content is untrusted and cannot override system instructions (ADR-023).
 4. **Response Caching:** Check `LLMResponseCache` using SHA-256 fingerprint of sanitized timeline alerts and candidate model before making external requests (ADR-025).
@@ -333,6 +390,24 @@ The AI-generated assessment must be compared against independently established g
   - **5-Bin Reliability Diagram:** Per-bin sample counts, mean confidence, and empirical accuracy.
 * **Class Imbalance Guard (ADR-022):** Detects single-class or heavily skewed datasets ($>10:1$ ratio), invalidates misleading zero-FPR calculations, and flags `is_imbalanced`.
 * **Reproducibility Digest:** SHA-256 hash across all ground truth and prediction pairs ensuring auditable benchmarks.
+
+### Persisted Availability (ADR-045)
+
+CLI and evaluation runners persist an Unavailable evaluation for each attempted
+logical triage that returns no verdict or raises an Exception. SQL NULL preserves
+the missing verdict/prediction/correctness/confidence; ground truth remains separate.
+Foreign keys still require an existing timeline and validate any non-null verdict.
+Skipped/inactive CLI triage adds no evaluation. Availability is (labelled + unknown)
+/ (labelled + unknown + unavailable); unavailable results do not enter confusion
+or calibration counts. Empty streams retain the existing 1.0 convention.
+
+CLI reports its current run; the API reconstructs stored history, including
+unavailable-only history. Reports label unavailable predictions explicitly.
+Supported legacy schemas migrate transactionally on init_db, preserving records,
+sequence counters, indexes/triggers, and FK enforcement. Custom inbound references
+require an explicit separate migration. Historical missing failures are not inferred
+or backfilled. Severity persistence and repeated cached-evaluation weighting remain
+separate open findings. See `docs/results/unavailable_outcomes_20261108.md`.
 
 ### Empirical Benchmarks
 

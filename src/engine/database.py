@@ -7,6 +7,7 @@ foreign key enforcement, and thread-safe concurrent execution.
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import re
 import sqlite3
 import threading
 from typing import Any, Dict, List, Optional, Union
@@ -226,9 +227,9 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS evaluations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timeline_id TEXT NOT NULL,
-                    verdict_id TEXT NOT NULL,
+                    verdict_id TEXT,
                     ground_truth INTEGER,
-                    llm_prediction INTEGER NOT NULL,
+                    llm_prediction INTEGER,
                     is_correct INTEGER,
                     category TEXT NOT NULL,
                     evaluated_at TEXT NOT NULL,
@@ -247,6 +248,8 @@ class DatabaseManager:
             if "severity_prediction" not in existing_eval_cols:
                 cursor.execute("ALTER TABLE evaluations ADD COLUMN severity_prediction TEXT;")
 
+            self._migrate_unavailable_evaluations(conn)
+
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_enrichments_indicator ON enrichments(indicator);")
@@ -255,6 +258,60 @@ class DatabaseManager:
 
             conn.commit()
             logger.info("Database schema initialized successfully.")
+
+    def _migrate_unavailable_evaluations(self, conn: sqlite3.Connection) -> None:
+        """Make legacy outcome columns nullable atomically, retaining FK checks.
+
+        Preserve the original table definition, columns, row IDs, indexes, triggers,
+        and AUTOINCREMENT high-water mark. A failed copy/check restores the old table.
+        """
+        columns = list(conn.execute("PRAGMA table_info(evaluations)"))
+        required = {row["name"] for row in columns if row["notnull"]}
+        if not required.intersection({"verdict_id", "llm_prediction"}):
+            return
+        # Dropping a referenced child table could cascade into custom extensions.
+        # Such schemas need an explicit migration rather than silent row loss.
+        tables = list(conn.execute("SELECT name FROM sqlite_master WHERE type='table'"))
+        for table in tables:
+            quoted = '"' + table["name"].replace('"', '""') + '"'
+            if any(row["table"].lower() == "evaluations" for row in conn.execute(f"PRAGMA foreign_key_list({quoted})")):
+                raise ValueError("Custom tables referencing evaluations require an explicit migration")
+        original_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluations'"
+        ).fetchone()[0]
+        definition = original_sql[original_sql.index("("):]
+        for column in ("verdict_id", "llm_prediction"):
+            if column in required:
+                definition, changes = re.subn(
+                    rf'(\b{column}\b["`\]]?\s+(?:TEXT|INTEGER))\s+NOT\s+NULL\b',
+                    r'\1', definition, count=1, flags=re.IGNORECASE,
+                )
+                if changes != 1:
+                    raise ValueError("Unsupported legacy evaluation column declaration")
+        objects = [row[0] for row in conn.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name='evaluations' "
+            "AND type IN ('index','trigger') AND sql IS NOT NULL"
+        )]
+        sequence = conn.execute("SELECT seq FROM sqlite_sequence WHERE name='evaluations'").fetchone()
+        names = ", ".join('"' + row["name"].replace('"', '""') + '"' for row in columns)
+        conn.execute("SAVEPOINT migrate_unavailable_evaluations")
+        try:
+            conn.execute('CREATE TABLE "evaluations_nullable" ' + definition)
+            conn.execute(f'INSERT INTO evaluations_nullable ({names}) SELECT {names} FROM evaluations')
+            if list(conn.execute("PRAGMA foreign_key_check(evaluations_nullable)")):
+                raise sqlite3.IntegrityError("Legacy evaluation foreign-key check failed")
+            conn.execute("DROP TABLE evaluations")
+            conn.execute("ALTER TABLE evaluations_nullable RENAME TO evaluations")
+            for sql in objects:
+                conn.execute(sql)
+            if sequence is not None:
+                conn.execute("DELETE FROM sqlite_sequence WHERE name='evaluations'")
+                conn.execute("INSERT INTO sqlite_sequence(name,seq) VALUES('evaluations',?)", (sequence[0],))
+            conn.execute("RELEASE SAVEPOINT migrate_unavailable_evaluations")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT migrate_unavailable_evaluations")
+            conn.execute("RELEASE SAVEPOINT migrate_unavailable_evaluations")
+            raise
 
     # =====================================================================
     # Generic Parameterized Query Helpers
@@ -613,6 +670,32 @@ class DatabaseManager:
             conn.commit()
             return self.get_quota_usage(provider_norm, target_date)
 
+    def reserve_quota_request(
+        self, provider: str, max_daily_quota: Optional[int], date_key: Optional[str] = None
+    ) -> bool:
+        """Atomically reserve one outbound attempt, including across connections.
+
+        The quota day is selected at reservation time, never after the response.
+        Failed/ambiguous sends keep their reservation conservatively.
+        """
+        target_date = date_key or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        limit = max_daily_quota if max_daily_quota is not None and max_daily_quota > 0 else None
+        with self._lock:
+            conn = self.connect()
+            cursor = conn.execute(
+                """
+                INSERT INTO enrichment_quotas (provider, date_key, request_count)
+                VALUES (?, ?, 1)
+                ON CONFLICT(provider, date_key) DO UPDATE SET
+                    request_count = enrichment_quotas.request_count + 1
+                WHERE ? IS NULL OR enrichment_quotas.request_count < ?;
+                """,
+                (provider.strip().lower(), target_date, limit, limit),
+            )
+            reserved = cursor.rowcount == 1
+            conn.commit()
+            return reserved
+
     def check_quota_available(
         self, provider: str, max_daily_quota: Optional[int], date_key: Optional[str] = None
     ) -> bool:
@@ -718,7 +801,8 @@ class DatabaseManager:
         """Inserts an EvaluationResult record.
 
         Strict Foreign Keys: timeline_id must exist in timelines,
-        and verdict_id must exist in verdicts.
+        and a non-null verdict_id must exist in verdicts. Unavailable predictions
+        preserve SQL NULL for both verdict_id and llm_prediction.
 
         Args:
             evaluation: EvaluationResult instance.
@@ -729,7 +813,7 @@ class DatabaseManager:
         with self._lock:
             conn = self.connect()
             timeline_id_str = str(evaluation.timeline_id)
-            verdict_id_str = str(evaluation.verdict_id)
+            verdict_id_str = str(evaluation.verdict_id) if evaluation.verdict_id is not None else None
             now_str = datetime.now(timezone.utc).isoformat()
 
             gt_int = (
@@ -737,7 +821,7 @@ class DatabaseManager:
                 if evaluation.ground_truth is not None
                 else None
             )
-            pred_int = 1 if evaluation.llm_prediction else 0
+            pred_int = int(evaluation.llm_prediction) if evaluation.llm_prediction is not None else None
             correct_int = (
                 (1 if evaluation.is_correct else 0)
                 if evaluation.is_correct is not None
@@ -785,7 +869,9 @@ class DatabaseManager:
                 data["ground_truth"] = (
                     bool(data["ground_truth"]) if data["ground_truth"] is not None else None
                 )
-                data["llm_prediction"] = bool(data["llm_prediction"])
+                data["llm_prediction"] = (
+                    bool(data["llm_prediction"]) if data["llm_prediction"] is not None else None
+                )
                 data["is_correct"] = (
                     bool(data["is_correct"]) if data["is_correct"] is not None else None
                 )
