@@ -153,6 +153,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
   real-data performance unmeasured. Reviewed cohorts, real inference, intervals and
   analyst error review remain outstanding; the README links to these limits.
 
+- [x] T2.1 hunting DSL: bounded AST parser and SQLite dialect compiler,
+  explicit type/substring semantics, cooperative execution deadlines, saved query
+  definitions and offline differential checks. See `docs/HUNTING_DSL.md` and ADR-015.
+  Verification: 84 hunting tests (including 800 seeded differential queries), 43
+  API/database regressions and the full 921-test offline backend suite passed;
+  one existing Starlette/HTTPX warning. No dependencies or live provider calls.
+  PostgreSQL, saved-query UI/API and hard real-time cancellation are not provided.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

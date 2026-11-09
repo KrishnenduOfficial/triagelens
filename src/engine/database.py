@@ -278,6 +278,13 @@ class DatabaseManager:
             self._migrate_unavailable_evaluations(conn)
             self._init_provenance(conn)
 
+            # Query definitions are separate from detections, labels and AI verdicts.
+            cursor.execute("""CREATE TABLE IF NOT EXISTS saved_hunting_queries (
+                name TEXT PRIMARY KEY CHECK(length(name) BETWEEN 1 AND 100),
+                query TEXT NOT NULL CHECK(length(query) BETWEEN 1 AND 2000),
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );""")
+
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_enrichments_indicator ON enrichments(indicator);")

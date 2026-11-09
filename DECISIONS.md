@@ -394,6 +394,16 @@ Security analysts expect KQL-style syntax (e.g., `event_type == "ProcessCreate" 
 
 **Superseding terminology note (T0.3):** This implementation supports a limited KQL-style hunting filter translated to SQLite; it is not full KQL. Use “KQL-style hunting filter” in user-facing text. Parser behavior and internal compatibility names are unchanged.
 
+**T2.1 extension (2026-11-09):** The hunting filter now parses to an immutable AST
+and compiles through a SQL dialect interface (SQLite implemented; PostgreSQL deferred).
+See [HUNTING_DSL.md](docs/HUNTING_DSL.md) for grammar, type rules and limits.
+Parentheses and NOT are supported; precedence is NOT, AND, OR. Comparisons require
+compatible scalar types; missing/null/incompatible values remain UNKNOWN under NOT.
+Substring wildcards are now literal; numeric/text coercion is intentionally removed.
+Parsing/row limits and cooperative SQL deadlines bound work; API timeouts return 408.
+Saved query definitions occupy their own table; saving does not run or persist hits.
+Seeded differential tests use an independent test-only Python evaluator; no new dependencies.
+
 ---
 
 ### ADR-016: Repository Hygiene and Credential Sanitization Standards

@@ -16,7 +16,7 @@ from src import config
 from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
 from src.engine.metric_scopes import MetricSelectionError, scoped_metrics
-from src.engine.hunting import KQLParseError, ThreatHuntingEngine
+from src.engine.hunting import HuntTimeoutError, KQLParseError, ThreatHuntingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +270,11 @@ def create_app(
         try:
             matched = hunting_engine.execute_hunt(hunt_req.query, limit=hunt_req.limit)
             return [alert.model_dump(mode="json") for alert in matched]
+        except HuntTimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Hunting filter execution timed out. Narrow the filter and retry.",
+            ) from None
         except KQLParseError as parse_err:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
