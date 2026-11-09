@@ -285,6 +285,12 @@ runs can contact both Groq and configured intelligence services and consume quot
    ```powershell
    python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db
    ```
+   Save the `Evaluation run:` UUID and the final `PIPELINE EXECUTION SUMMARY`
+   for the comparison below. A configured Groq key and completed triage outcomes
+   are needed for a meaningful AI metric comparison; missing credentials skip
+   triage. This command makes live requests and may consume quota; one run of
+   this synthetic input produced 50 timelines, potentially requiring 50 triage
+   requests before retries. Check your available quota before starting.
    To skip Groq while retaining enrichment:
    ```powershell
    python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db --skip-llm
@@ -292,18 +298,18 @@ runs can contact both Groq and configured intelligence services and consume quot
    **`--skip-llm` is not an offline switch:** intelligence lookups can still occur.
    Use the guarded test suite for offline verification.
 
-3. **Optional benchmark evaluation:**
+3. **Check the database populated by that run:**
    ```powershell
-   python scripts/run_evaluation.py --end-to-end
+   python -c "import sqlite3; c=sqlite3.connect('file:data/triagelens.db?mode=ro', uri=True); print('timelines:', c.execute('SELECT COUNT(*) FROM timelines').fetchone()[0], 'evaluations:', c.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0]); c.close()"
    ```
-   This can process the full 70-timeline synthetic benchmark and make many provider
-   requests. Review quota before running it. The generated report is
-   `docs/results/groq_evaluation_report.md`; the earlier model report is preserved.
-   The separate `compare_models.py` runner writes `groq_model_comparison_report.md`.
+   The read-only open fails if the file is missing. Existing rows can be from
+   earlier runs; the Run selection below isolates this run. A zero evaluation
+   count does not demonstrate populated AI metrics.
 
 4. **Start the backend in a separate terminal, from the project root:**
    ```powershell
    .\.venv\Scripts\Activate.ps1
+   $env:DATABASE_PATH = 'data/triagelens.db'
    python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
    ```
    Configure the API's `DATABASE_PATH` to the same file as the CLI. Open
@@ -330,12 +336,17 @@ runs can contact both Groq and configured intelligence services and consume quot
 ### 5.5 Manual Click-Through Verification Checklist
 
 - [ ] Open `/health` on the API and verify database connectivity.
-- [ ] Open `/api/metrics` and compare values for the same scope and dataset.
-  Default History includes prior evaluations; it need not equal the latest CLI
-  run's summary. Zero counts or N/A can be valid for empty/unlabelled selections.
-- [ ] On dashboard `/`, check metrics, confusion counts, availability and coverage.
-  Run, Quality and Fresh attempts require the corresponding explicit IDs. Check
-  loading/error states; the UI does not certify live provider availability.
+- [ ] Open `http://127.0.0.1:8000/api/metrics?scope=run&run_id=<UUID>`,
+  replacing `<UUID>` with the CLI's `Evaluation run:` value. Compare `tp`, `tn`,
+  `fp`, `fn`, `total`, `unknown`, `abstained` and `unavailable` with the CLI
+  summary; compare applicable rates after converting API fractions to percentages.
+- [ ] On dashboard `/`, select **Run** under **Scope**, enter the same UUID in
+  **Run UUID**, and click **Apply selection**. Verify the displayed Run ID, then
+  compare confusion counts, binary-labeled results, unscored outcomes, undetermined
+  dispositions, unavailable outcomes and applicable rates with the API and CLI.
+  Default History includes earlier evaluations and need not match the latest run.
+  N/A can be valid when a rate's denominator is zero; the CLI may print 0% instead.
+  Check loading/error states; the UI does not certify live provider availability.
 - [ ] Use the timeline list on `/` and follow a row to `/timeline/:id`. Verify its
   alert details, intelligence and stored verdict. There is no `/timelines` page or
   incident-detail drawer in the current router.
@@ -343,6 +354,9 @@ runs can contact both Groq and configured intelligence services and consume quot
   `CommandLine contains "powershell"`. A valid query may return zero matching rows.
 - [ ] Check that failed triage is unavailable rather than a benign prediction and
   that historical model results remain distinguishable from new Groq results.
+- [ ] Record whether the same-run numbers match and share screenshots of the CLI
+  summary and dashboard selection/results, with sensitive information removed.
+  Do not claim this check passed until the operator confirms it on populated data.
 
 ---
 
