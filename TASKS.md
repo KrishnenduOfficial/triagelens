@@ -140,6 +140,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
   baseline and attack samples are not representative of all data. Own Windows logs
   and reviewed labels remain needed for the chosen mixed cohort; see ADR-061.
 
+- [ ] T1.4 evaluation protocol (partial): offline reviewed-EVTX intake, fixed
+  source/duplicate-event grouping, persisted split/freeze checks, fresh repeated
+  inference, bounded request estimates and per-run metrics are implemented; see
+  ADR-062. Real reviewed cohorts, a separately approved live run, complete analyst
+  review of every FP/FN and end-to-end enrichment/latency remain outstanding.
+  Event-level review/import is available; a 14-event local prefix sample is pending
+  independent review. Source category alone is not a binary label.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

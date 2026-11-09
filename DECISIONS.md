@@ -2512,6 +2512,18 @@ Report aggregate differences, perfect sample separation and missing data without
 Exclude unknown/conflicting labels; never send truth or provenance to inference.
 Limits: descriptive sample checks cannot prove absence of shortcuts or label accuracy.
 
+### ADR-062: Fixed offline-first evaluation protocol
+**Status:** Partial implementation for T1.4; offline verification only.
+Require operator-reviewed whole-file labels; fail closed on unmapped selected events.
+Persist seed, fixed source/duplicate-event groups and integrity hashes locally.
+Freeze inference settings and source hashes before test use; tuning discipline is procedural.
+Use one cache-disabled engine for repeated, separately persisted evaluation runs.
+Report scored and input balance, Wilson intervals, techniques, availability, acquisition
+latency and every FP/FN as pending analyst review. Estimates are not token caps.
+Limits: cohort is memory-capped; enrichment is precomputed or disabled, not end-to-end.
+Real labels, live approval and calls, and every-error analyst review remain outstanding.
+Event review binds decisions to saved telemetry; uncertainty is excluded, and cases contain one event.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

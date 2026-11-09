@@ -9,6 +9,7 @@ docs/results/groq_evaluation_report.md with all required metadata.
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,12 +27,244 @@ from src.cli import detect_indicator_type
 from src.config import get_database_path, get_groq_api_key
 from src.engine.database import DatabaseManager
 from src.engine.enrichment import EnrichmentEngine
+from src.engine.benign import BenignEvtxAdapter
+from src.engine.evtx import EvtxIntakeEngine
+from src.engine.ground_truth import DatasetGroundTruthMapper
 from src.engine.evaluation import AccuracyTracker, DatasetGroundTruthConfig
+from src.engine.evaluation_protocol import (make_manifest, select_split, frozen_configuration,
+                                            verify_freeze, summarize, digest, collect_review_samples,
+                                            write_review_csv, import_review)
 from src.engine.groq import GroqTriageEngine
 from src.engine.provenance import evaluation_run
+from src.engine.timeline import TimelineBuilder
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
 from src.models.triage import TriageVerdict
+
+
+def protocol_settings(engine):
+    """Capture the actual inference configuration, without credentials."""
+    source_root = Path(__file__).resolve().parent.parent
+    source_files = ["scripts/run_evaluation.py", "src/engine/evaluation_protocol.py",
+                    "src/engine/evaluation.py", "src/engine/llm.py", "src/engine/groq.py",
+                    "src/engine/triage_policy.py", "src/models/evidence.py", "src/models/triage.py",
+                    "src/utils/masking.py"]
+    return {"provider": engine.PROVIDER_ID, "model": engine.model,
+            "fallback_models": engine.fallback_models, "timeout": engine.timeout,
+            "pacing": [engine._rpm, engine._tpm, engine._token_estimate, engine._max_wait],
+            "policy_version": engine.POLICY_VERSION,
+            "evidence_contract_version": engine.EVIDENCE_CONTRACT_VERSION,
+            "system_prompt_hash": digest(engine._system_prompt()),
+            "generation_hash": digest({model: engine._generation_settings(model)
+                                       for model in [engine.model, *engine.fallback_models]}),
+            "source_hashes": {path: hashlib.sha256((source_root / path).read_bytes()).hexdigest()
+                              for path in source_files},
+            "cache": False, "enrichment": "precomputed_or_disabled"}
+
+
+def run_protocol(timelines, manifest, split, settings, frozen, engine, db_path, repetitions=1):
+    """Run a fixed cohort with fresh acquisitions and one persisted run per repetition.
+
+    Caller obtains approval for all network use. Engine is injected so ordinary tests
+    remain offline. Protocol reports contain sensitive local evaluation metadata.
+    """
+    if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
+        raise ValueError("repetitions must be a positive integer")
+    selected = select_split(timelines, manifest, split)
+    if any(a.ground_truth_metadata is None or a.ground_truth_metadata.status != "mapped"
+           or a.ground_truth_label not in ("malicious", "benign")
+           for t in selected for a in t.alerts):
+        raise ValueError("Protocol requires independently mapped labels for every selected event")
+    if settings != protocol_settings(engine):
+        raise ValueError("Runtime inference settings differ from protocol settings")
+    if split == "test":
+        verify_freeze(manifest, settings, frozen)
+    if getattr(engine, "enable_cache", None) is not False:
+        raise ValueError("Protocol repetitions require cache disabled")
+    reports = []
+    inserted = set()
+    for repetition in range(1, repetitions + 1):
+        db = DatabaseManager(db_path=get_database_path(str(db_path) if db_path is not None else None))
+        with evaluation_run(db, 'evaluation') as run:
+            tracker = AccuracyTracker()
+            records = []
+            for ordinal, timeline in enumerate(selected, 1):
+                existing = db.get_timeline(timeline.timeline_id)
+                if existing and timeline.timeline_id not in inserted:
+                    raise ValueError("Protocol requires a fresh database for selected timeline IDs")
+                if not existing:
+                    db.insert_timeline(timeline)
+                    inserted.add(timeline.timeline_id)
+                observation = run.observe(timeline, ordinal)
+                start = time.monotonic()
+                acquisition = run.acquire(engine, timeline, observation)
+                elapsed = time.monotonic() - start
+                if acquisition.origin == "cache" or (acquisition.verdict is not None and acquisition.origin != "fresh"):
+                    raise ValueError("Cached or unverified acquisition cannot be counted as a repetition")
+                result = tracker.evaluate(acquisition.verdict, timeline)
+                run.complete(observation, result, timeline, tracker, verdict=acquisition.verdict,
+                             failure_category=acquisition.failure_category)
+                techniques = sorted({technique for a in timeline.alerts
+                                     for technique in a.ground_truth_metadata.technique_ids})
+                records.append({"result": result, "techniques": techniques,
+                                "elapsed_seconds": elapsed, "origin": acquisition.origin})
+            report = summarize(records)
+            report.update({"repetition": repetition, "run_id": run.run_id, "split": split})
+            reports.append(report)
+    return reports
+
+
+def protocol_intake(sources, max_events):
+    """Build a bounded local cohort from explicitly reviewed whole EVTX files."""
+    if not isinstance(sources, list) or not sources or max_events < 1:
+        raise ValueError("A source list and positive event cap are required")
+    alerts = []
+    seen_paths = set()
+    counters = {"files": 0, "events": 0, "parser_errors": 0, "normalization_errors": 0,
+                "files_failed": 0, "missing_timestamps": 0, "invalid_timestamps": 0}
+    for item in sources:
+        if (not isinstance(item, dict) or set(item) != {"root", "file", "source", "label", "reviewed"}
+                or item["reviewed"] is not True or item["label"] not in ("benign", "malicious")
+                or item["source"] not in ("local", "public", "attack")):
+            raise ValueError("Every source must specify root, file, source, label and whole-file review")
+        root = Path(item["root"]).resolve()
+        key = item["file"]
+        path = (root / key).resolve()
+        if not path.is_relative_to(root) or path.suffix.lower() != ".evtx":
+            raise ValueError("Each file must be an EVTX file within its source root")
+        if path in seen_paths:
+            raise ValueError("Each source file may appear only once")
+        seen_paths.add(path)
+        if item["source"] in ("local", "public"):
+            if item["label"] != "benign":
+                raise ValueError("Baseline files require reviewed benign labels")
+            adapter = BenignEvtxAdapter(root, source=item["source"], reviewed_files={key: True})
+            engine = adapter.engine
+            batches = adapter.ingest(key)
+        else:
+            mapper = DatasetGroundTruthMapper(root, file_labels={key: item["label"]})
+            engine = EvtxIntakeEngine(ground_truth_mapper=mapper)
+            batches = engine.ingest_evtx(path)
+        for batch in batches:
+            alerts.extend(batch)
+            if len(alerts) > max_events:
+                raise ValueError("Cohort exceeds the event cap; no partial cohort was written")
+        stats = engine.stats
+        for name in ("parser_errors", "normalization_errors", "files_failed",
+                     "missing_timestamps", "invalid_timestamps"):
+            counters[name] += getattr(stats, name)
+        counters["files"] += 1
+    counters["events"] = len(alerts)
+    if not alerts or counters["files_failed"] or counters["parser_errors"] or counters["normalization_errors"]:
+        raise ValueError("Intake failed or contained parser/normalization errors; cohort not written")
+    return TimelineBuilder().build_timelines(alerts), counters
+
+
+def protocol_command(args):
+    """Prepare/freeze/estimate offline, or execute an explicitly approved bounded run.
+
+    Cohort JSON is a local list of serialized ThreatTimeline objects produced after
+    reviewed EVTX intake and correlation. Store it and reports outside version control.
+    """
+    if not args.protocol_out:
+        raise ValueError("Protocol output path is required")
+    if args.end_to_end or args.max_lookups is not None or args.pacing != 2.0:
+        raise ValueError("Protocol mode uses provider pacing and precomputed or disabled enrichment")
+    if args.protocol_mode == "review-prepare":
+        if not args.protocol_sources or not args.protocol_candidates:
+            raise ValueError("Review preparation requires source and candidate paths")
+        if Path(args.protocol_out).resolve() == Path(args.protocol_candidates).resolve():
+            raise ValueError("Candidate and review paths must differ")
+        with open(args.protocol_sources, encoding="utf-8") as stream:
+            paths = json.load(stream)
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise ValueError("Review sources must be a JSON list of EVTX paths")
+        alerts, stats = collect_review_samples(paths, args.protocol_samples_per_file)
+        with open(args.protocol_candidates, "x", encoding="utf-8") as stream:
+            json.dump([alert.model_dump(mode="json") for alert in alerts], stream, allow_nan=False)
+        with open(args.protocol_out, "x", encoding="utf-8", newline="") as stream:
+            write_review_csv(stream, alerts)
+        print(f"Offline review set: {len(alerts)} candidate events from {len(paths)} files; "
+              f"missing/invalid timestamps: {sum(s['missing_timestamps'] + s['invalid_timestamps'] for s in stats)}.")
+        return
+    if args.protocol_mode == "review-import":
+        if not args.protocol_candidates or not args.protocol_review:
+            raise ValueError("Review import requires candidate and completed review paths")
+        with open(args.protocol_candidates, encoding="utf-8") as stream:
+            alerts = [NormalizedAlert.model_validate(item) for item in json.load(stream)]
+        with open(args.protocol_review, encoding="utf-8-sig", newline="") as stream:
+            timelines, uncertain = import_review(alerts, stream)
+        if not timelines:
+            raise ValueError("No reviewed binary decisions are available")
+        with open(args.protocol_out, "x", encoding="utf-8") as stream:
+            json.dump([timeline.model_dump(mode="json") for timeline in timelines], stream, allow_nan=False)
+        print(f"Reviewed cohort: {len(timelines)} single-event cases; {uncertain} uncertain cases excluded.")
+        return
+    if args.protocol_mode == "intake":
+        if not args.protocol_sources or args.protocol_max_events is None:
+            raise ValueError("Intake requires reviewed source configuration and an event cap")
+        with open(args.protocol_sources, encoding="utf-8") as stream:
+            sources = json.load(stream)
+        timelines, counters = protocol_intake(sources, args.protocol_max_events)
+        with open(args.protocol_out, "x", encoding="utf-8") as stream:
+            json.dump([timeline.model_dump(mode="json") for timeline in timelines], stream, allow_nan=False)
+        print("Offline intake counts:", json.dumps(counters))
+        return
+    if not args.protocol_cohort:
+        raise ValueError("Protocol cohort path is required")
+    with open(args.protocol_cohort, encoding="utf-8") as stream:
+        timelines = [ThreatTimeline.model_validate(item) for item in json.load(stream)]
+    if args.protocol_mode == "prepare":
+        result = make_manifest(timelines, args.protocol_seed, args.protocol_test_percent)
+    else:
+        if not args.protocol_manifest:
+            raise ValueError("Protocol manifest path is required")
+        with open(args.protocol_manifest, encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        selected = select_split(timelines, manifest, args.protocol_split)
+        if args.protocol_repetitions < 1:
+            raise ValueError("Repetitions must be positive")
+        # Constructing an engine performs no network request. The placeholder is
+        # used for offline settings capture only and is never stored in output.
+        key = get_groq_api_key() if args.protocol_mode == "run" else "offline-placeholder"
+        if not key:
+            raise ValueError("GROQ_API_KEY is required for a live protocol run")
+        engine = GroqTriageEngine(api_key=key, enable_cache=False)
+        settings = protocol_settings(engine)
+        requests = len(selected) * args.protocol_repetitions * (1 + len(engine.fallback_models))
+        estimate = {"split": args.protocol_split, "timelines": len(selected),
+                    "repetitions": args.protocol_repetitions, "max_provider_attempts": requests,
+                    "estimated_tokens": requests * engine._token_estimate,
+                    "token_estimate_is_not_a_cap": True, "settings": settings}
+        if args.protocol_mode == "freeze":
+            result = frozen_configuration(manifest, settings)
+        elif args.protocol_mode == "estimate":
+            result = estimate
+        else:
+            if not args.protocol_confirm_live or args.protocol_max_requests is None:
+                raise ValueError("Live run requires explicit confirmation and maximum requests")
+            if requests > args.protocol_max_requests:
+                raise ValueError("Estimated provider attempts exceed the approved maximum")
+            frozen = None
+            if args.protocol_split == "test":
+                if not args.protocol_freeze:
+                    raise ValueError("Test split requires a frozen configuration")
+                with open(args.protocol_freeze, encoding="utf-8") as stream:
+                    frozen = json.load(stream)
+                verify_freeze(manifest, settings, frozen)
+            if not args.db_path:
+                raise ValueError("A dedicated protocol database path is required")
+            # Reserve the output before any send, preventing accidental overwrite.
+            with open(args.protocol_out, "x", encoding="utf-8") as stream:
+                result = {"estimate": estimate, "reports": run_protocol(
+                    timelines, manifest, args.protocol_split, settings, frozen, engine,
+                    args.db_path, args.protocol_repetitions)}
+                json.dump(result, stream, indent=2, allow_nan=False)
+            print("Protocol run saved; analyst review of every FP/FN remains required.")
+            return
+    with open(args.protocol_out, "x", encoding="utf-8") as stream:
+        json.dump(result, stream, indent=2, allow_nan=False)
+    print("Protocol artifact saved locally.")
 
 
 def load_benchmark_timelines(benchmark_path: str = "data/eval_benchmark_70.json") -> List[ThreatTimeline]:
@@ -351,7 +584,13 @@ def run_evaluation(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TriageLens Benchmark Evaluation Runner")
+    parser = argparse.ArgumentParser(
+        description="TriageLens Benchmark Evaluation Runner",
+        epilog=("Protocol: intake -> prepare -> development estimate/run -> freeze -> test estimate/run. "
+                "The sources JSON is an array of objects with root, file (relative to root), source "
+                "(local, public, attack), label (benign, malicious), and reviewed (true). "
+                "Review applies to every event in each file. Store cohort, manifest, freeze, "
+                "report and dedicated database outside Git; obtain approval before live runs."))
     parser.add_argument(
         "--benchmark-path",
         default="data/eval_benchmark_70.json",
@@ -379,12 +618,31 @@ if __name__ == "__main__":
         default=2.0,
         help="Pacing delay in seconds between live triage calls (default: 2.0s)",
     )
+    parser.add_argument("--protocol-mode", choices=("review-prepare", "review-import", "intake", "prepare", "freeze", "estimate", "run"))
+    parser.add_argument("--protocol-sources", help="Local JSON list of independently reviewed EVTX files")
+    parser.add_argument("--protocol-candidates", help="Local unlabeled candidate-event JSON")
+    parser.add_argument("--protocol-review", help="Completed independent review CSV")
+    parser.add_argument("--protocol-samples-per-file", type=int, default=2)
+    parser.add_argument("--protocol-max-events", type=int, help="Maximum events retained in memory")
+    parser.add_argument("--protocol-cohort", help="Local JSON array of reviewed correlated timelines")
+    parser.add_argument("--protocol-manifest", help="Local fixed split manifest")
+    parser.add_argument("--protocol-freeze", help="Local frozen settings for test evaluation")
+    parser.add_argument("--protocol-out", help="New local output file; never overwritten")
+    parser.add_argument("--protocol-seed", default="triagelens-s1-v1")
+    parser.add_argument("--protocol-test-percent", type=int, default=20)
+    parser.add_argument("--protocol-split", choices=("development", "test"), default="development")
+    parser.add_argument("--protocol-repetitions", type=int, default=1)
+    parser.add_argument("--protocol-max-requests", type=int)
+    parser.add_argument("--protocol-confirm-live", action="store_true")
 
     args = parser.parse_args()
-    run_evaluation(
-        benchmark_path=args.benchmark_path,
-        cache_db_path=args.db_path,
-        pacing_seconds=args.pacing,
-        end_to_end=args.end_to_end,
-        max_lookups=args.max_lookups,
-    )
+    if args.protocol_mode:
+        protocol_command(args)
+    else:
+        run_evaluation(
+            benchmark_path=args.benchmark_path,
+            cache_db_path=args.db_path,
+            pacing_seconds=args.pacing,
+            end_to_end=args.end_to_end,
+            max_lookups=args.max_lookups,
+        )
