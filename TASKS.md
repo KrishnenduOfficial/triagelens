@@ -268,6 +268,28 @@ v2 live acceptance and untouched-case evaluation remain pending.
   database I/O cannot be preempted, scan admission spans one Windows logon session,
   and interrupted jobs need a new ID; broader adversarial checks remain T3.5.
 
+- [x] T3.5 harmless/adversarial acceptance (2026-11-10): 62 new
+  cases cover the standard EICAR snapshot and benign control, native slow-rule
+  timeout/cleanup, API traversal/root admission, pinned-handle replacement denial,
+  junctions/hardlinks, oversized reads, archives without extraction, and directory,
+  file, depth, byte and job-time bounds. A nested-directory test exposed a shared
+  entry-budget defect; enumeration now reserves entries against the global 1,000
+  limit, including queued siblings. Exact-budget completion is also checked.
+  Focused offline verification: 155 passed; full backend suite: 1,301 passed,
+  each with one existing Starlette/HTTPX warning. EICAR stays in memory and uses a
+  test-only signature; this does not measure production-pack EICAR coverage.
+  Limits: Windows-specific native checks; total-byte/job-time boundary probes use
+  injected snapshots/clocks. No real-data detection-quality measurement or provider
+  calls; blocking I/O, periodic CPU checks and interrupted-job limits remain.
+
+T3.5 verification commands (offline, harmless fixtures):
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_yara.py tests/test_yara_windows.py tests/test_yara_pack.py tests/test_yara_integration.py tests/test_yara_adversarial.py
+# 155 passed, 1 warning in 75.26s (0:01:15)
+.\.venv\Scripts\python.exe -m pytest -q -x --tb=short
+# 1301 passed, 1 warning in 153.10s (0:02:33)
+```
+
 T3.2 verification (offline; harmless fixtures, no external test hosts):
 ```text
 .\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_yara.py tests/test_yara_windows.py tests/test_attack.py tests/test_detections.py

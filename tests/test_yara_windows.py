@@ -195,6 +195,35 @@ def test_native_deadlines_reap_worker(runtime, compiled, category):
     assert sandbox.writer is None or not sandbox.writer.is_alive()
 
 
+def test_native_slow_rule_engine_timeout_and_cleanup(runtime, monkeypatch):
+    if not _ready(runtime):
+        return
+    # Dynamic byte reads keep this bounded test from being constant-folded.
+    # No matching byte exists; the engine must interrupt the long loop.
+    source = SOURCE[:SOURCE.index('strings:')] + '''condition:
+        for any i in (1..1000000000) : (uint8(i % filesize) == 255)
+    }'''
+    sandboxes = []
+    original = win._Sandbox
+
+    def observe(*args, **kwargs):
+        sandbox = original(*args, **kwargs)
+        sandboxes.append(sandbox)
+        return sandbox
+
+    monkeypatch.setattr(win, '_Sandbox', observe)
+    result = yara.scan_snapshot(b'\x00' * 65536, (yara.RuleSource('slow_test_only', source),),
+                                limits=yara.Limits(scan_seconds=1))
+    assert result.status == 'timeout', result
+    assert [d.category for d in result.diagnostics] == ['scan_timeout']
+    assert not result.matches
+    assert len(sandboxes) == 1
+    assert sandboxes[0].handles == []
+    assert sandboxes[0].writer is None or not sandboxes[0].writer.is_alive()
+    # A fresh native worker remains usable after the timed-out scan.
+    assert yara.scan_snapshot(b'plain', PACK).status == 'no_match'
+
+
 @pytest.mark.parametrize('body,category', [
     ('print("x" * 10000, flush=True)', 'oversized_response'),
     ('print("invalid", flush=True)', 'malformed_response'),

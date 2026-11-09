@@ -25,6 +25,26 @@ condition:
 PACK = (yara.RuleSource('harmless', SOURCE),)
 
 
+def test_standard_eicar_snapshot_and_benign_control():
+    # The standard 68-byte antivirus test string is data only, never executed
+    # or written as a sample file. A test-only hex rule avoids source escaping.
+    data = (b'X5O!P%@AP[4\\PZX54(P^)7CC)7}$' +
+            b'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')
+    assert len(data) == 68
+    assert hashlib.sha256(data).hexdigest() == '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f'
+    source = SOURCE.replace('"harmless marker"', '{ ' + data.hex(' ') + ' }')
+    pack = (yara.RuleSource('eicar_test_only', source),)
+    result = yara.scan_snapshot(data, pack)
+    if yara._engine_version() is None or sys.platform != 'win32':
+        assert result.status in ('missing_engine', 'unavailable')
+        return
+    assert result.status == 'match', result
+    assert result.matches[0].occurrences[0].offset == 0
+    assert result.matches[0].occurrences[0].length == len(data)
+    assert result.sha256 == hashlib.sha256(data).hexdigest()
+    assert yara.scan_snapshot(b'ordinary benign text', pack).status == 'no_match'
+
+
 def test_real_isolated_harmless_scan():
     """With the optional wheel, actually compile/scan inside Windows isolation."""
     result = yara.scan_snapshot(b'prefix harmless marker suffix', PACK)

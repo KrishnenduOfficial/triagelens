@@ -90,9 +90,10 @@ class YaraService:
                                 if time.monotonic() >= deadline:
                                     stop('job_deadline')
                                     break
-                                if job['entries'] + len(names) >= 1000:
+                                if job['entries'] >= 1000:
                                     stop('entry_limit')
                                     break
+                                job['entries'] += 1
                                 names.append((entry.name, entry.is_dir(follow_symlinks=False)))
                         for name, directory in sorted(names, key=lambda item: item[0].casefold()):
                             if job['truncated']:
@@ -100,7 +101,6 @@ class YaraService:
                             if time.monotonic() >= deadline:
                                 stop('job_deadline')
                                 break
-                            job['entries'] += 1
                             try:
                                 single = yara_files.relative_parts(name)
                                 if len(single) != 1:
