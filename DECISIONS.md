@@ -2580,7 +2580,7 @@ AI predictions and incomplete positive technique annotations are excluded, not m
 Unsupported rules are reported; Wilson intervals do not correct for related timelines.
 
 ### ADR-065: Bounded optional YARA scanning design
-**Status:** T3.2 snapshot scanner implemented offline, 2026-11-10; T3.3–T3.5 pending.
+**Status:** T3.2 scanner and T3.3 rule pack implemented; T3.4–T3.5 pending.
 G7: optional `yara-x==1.22.1` (BSD-3-Clause); pinned Windows wheel installed/tested.
 Base install has no YARA import; absent engine or isolation fails explicitly, without fallback.
 T3.2 scans immutable bytes only; bounded SHA-256 snapshots and attributed results stay local.

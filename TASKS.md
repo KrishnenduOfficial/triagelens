@@ -247,6 +247,15 @@ v2 live acceptance and untouched-case evaluation remain pending.
   file acquisition, extension checks and persistence/API/hash linking remain T3.4;
   licensed rule packs and broader file adversarial tests remain T3.3/T3.5.
 
+- [x] T3.3 rule pack: two original MIT rules and two metadata-adapted MIT rules
+  from Marcin Ulikowski's yara-rulz; upstream copyright/license retained. Upstream
+  URL follows a moving branch; source dates are not immutable commits. Four harmless
+  match/no-match checks and one combined-pack compilation check passed; 63 focused
+  and 1,223 full offline backend tests passed (one existing Starlette warning).
+  Harmless full-pack demo: `match ['powershell_encoded_command_text']`.
+  These text matches and ATT&CK mappings do not prove execution, maliciousness or
+  real-world detection quality. No provider calls; source/license lookup was approved.
+
 T3.2 verification (offline; harmless fixtures, no external test hosts):
 ```text
 .\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_yara.py tests/test_yara_windows.py tests/test_attack.py tests/test_detections.py

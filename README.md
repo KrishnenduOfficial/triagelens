@@ -315,6 +315,29 @@ exhaustion, worker failure and truncation remain separate incomplete outcomes.
 Matches contain attributed rule metadata and bounded offsets/lengths, never bytes.
 Missing or invalid ATT&CK annotations retain the hit with explicit diagnostics.
 
+The optional pack in `rules/yara` has two original text-pattern rules and two
+adapted rules from [Marcin Ulikowski's yara-rulz](https://github.com/elceef/yara-rulz/blob/main/rules/Suspicious_BAT.yara).
+The upstream MIT notice is in `rules/yara/LICENSE-elceef.txt`. The adaptations
+retain the detection strings and conditions, replace metadata to meet the scanner
+contract, and add TriageLens technique mappings. The upstream source URL tracks a
+moving branch; the recorded upstream dates are not immutable commit identifiers.
+The local files and scanner pack digest identify the actual scanned rules.
+To scan a harmless snapshot with all four reviewed sources:
+
+```python
+from pathlib import Path
+from src.engine.yara import RuleSource, scan_snapshot
+
+paths = sorted(Path('rules/yara').glob('*.yar'))
+pack = tuple(RuleSource(p.stem, p.read_text(encoding='utf-8')) for p in paths)
+result = scan_snapshot(b'powershell -encodedcommand example', pack)
+print(result.status, [match.rule for match in result.matches])
+```
+
+These patterns can match benign text, need not indicate execution, and have no
+measured real-world detection quality. ATT&CK IDs describe rule mappings, not
+verified observations; a human must investigate matches.
+
 Limits: 16 MiB/snapshot, 30 sources (one rule per unique namespace), 1 MiB total
 source and 10,000 patterns. Includes and imports are rejected conservatively even
 inside comments/strings; native includes are also disabled. Every rule requires
