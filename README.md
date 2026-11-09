@@ -9,6 +9,11 @@ The later `triage-v1` check returned six valid assessments, including one absten
 but still exposed a false negative and unsupported assertions; see
 [new-policy evidence](docs/results/triage_v1_live_check_20261108.md).
 
+Real EVTX intake and source comparisons have been checked on small public samples,
+but independently reviewed labels and a scored real-data evaluation are still
+pending. Public-source categories do not verify event labels, and small classes and
+source shortcuts limit conclusions. See the [real-data status report](docs/results/real_data_evaluation_20261109.md).
+
 > **An alert triage pipeline that measures how often its AI is wrong.**
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)

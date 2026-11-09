@@ -148,6 +148,11 @@ v2 live acceptance and untouched-case evaluation remain pending.
   Event-level review/import is available; a 14-event local prefix sample is pending
   independent review. Source category alone is not a binary label.
 
+- [ ] T1.5 results report (partial): [real-data status](docs/results/real_data_evaluation_20261109.md)
+  summarizes recorded intake and source-comparison evidence and explicitly leaves
+  real-data performance unmeasured. Reviewed cohorts, real inference, intervals and
+  analyst error review remain outstanding; the README links to these limits.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.
