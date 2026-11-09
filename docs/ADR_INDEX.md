@@ -63,3 +63,4 @@ Statuses below are recorded in each ADR; later decisions may supersede historica
 - [ADR-058](../DECISIONS.md#adr-058-bounded-groq-request-pacing) — Bounded Groq request pacing — Accepted; T0.6 adds usage/header accounting after live diagnostics.
 - [ADR-059](../DECISIONS.md#adr-059-streaming-evtx-intake-with-explicit-error-accounting) — Streaming EVTX intake with explicit error accounting — Accepted for T1.1; owner approved evtx 0.15.0 (MIT), 2026-11-09.
 - [ADR-060](../DECISIONS.md#adr-060-explicit-evtx-dataset-truth-isolated-from-telemetry) — Explicit EVTX dataset truth isolated from telemetry — Accepted for T1.2; owner approved the plan, 2026-11-09.
+- [ADR-061](../DECISIONS.md#adr-061-reviewed-mixed-benign-evtx-and-offline-shortcut-audit) — Reviewed mixed benign EVTX and offline shortcut audit — Accepted for T1.3; owner approved mixed sources, 2026-11-09.

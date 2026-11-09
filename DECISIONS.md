@@ -2502,6 +2502,16 @@ Keep original events intact and source paths local; intake/CLI logs omit source/
 Offline tests intercept prompts, lookups, logs and both inference caches with realistic names.
 Limits: no real dataset contents inspected, no automatic metadata reader, no new dependencies.
 
+### ADR-061: Reviewed mixed benign EVTX and offline shortcut audit
+**Status:** Accepted for T1.3; owner approved mixed sources and the plan, 2026-11-09.
+Use the existing EVTX parser and truth mapper for local logs and public baselines.
+Require explicit whole-file benign review; no file or source implies benignness.
+Compare mapped classes on channels, field presence, filenames, extensions and time.
+Allow a separate source-group comparison without assigning ground-truth labels.
+Report aggregate differences, perfect sample separation and missing data without artifact values.
+Exclude unknown/conflicting labels; never send truth or provenance to inference.
+Limits: descriptive sample checks cannot prove absence of shortcuts or label accuracy.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

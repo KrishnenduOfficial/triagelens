@@ -126,6 +126,20 @@ v2 live acceptance and untouched-case evaluation remain pending.
   `.\.venv\Scripts\python.exe scratch/validate_clone_offline.py` while the local,
   ignored harness is available; no sample records or validation database are saved.
 
+- [ ] T1.3 benign data: the owner chose a mix of reviewed local Windows logs and
+  a public baseline. An opt-in EVTX adapter requires a whole-file benign review;
+  the offline shortcut check compares mapped classes without exposing artifact
+  values. A synthetic two-event check detected complete separation by channel,
+  filename, filename token, field presence and time, but not extension. This is
+  a demonstration. An offline, source-group comparison of 200 baseline events
+  from two files and 92 attack-associated events from three files found complete
+  separation by filename and time range, overlapping channels (variation 0.2935),
+  and no perfect single field-presence or filename-token separator. No parser,
+  normalization, or timestamp errors occurred. Samples were capped at 100 events
+  per file; these groups are not independently verified event labels. The public
+  baseline and attack samples are not representative of all data. Own Windows logs
+  and reviewed labels remain needed for the chosen mixed cohort; see ADR-061.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.
