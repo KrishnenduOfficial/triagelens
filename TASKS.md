@@ -108,8 +108,23 @@ v2 live acceptance and untouched-case evaluation remain pending.
   passed (834 tests; one existing Starlette/HTTPX deprecation warning).
   Explicit folder/file rules and supplied annotations remain separate from event
   telemetry; unknown/conflicting truth is not inferred from ATT&CK IDs. See ADR-060.
-  Dataset inspection was limited to folder structure and README; reviewed binary
-  labels and metadata-file ingestion are not provided by this task.
+  Initial validation used synthetic fixtures; reviewed binary labels and automatic
+  metadata-file ingestion are not provided by this task.
+  Bounded clone validation (2026-11-09): three smallest EVTX files from three tactic
+  folders (68 KiB each), capped at 200 events/file, completed with 1/8/1 events;
+  no parser/normalization errors, missing/invalid timestamps, or failed files.
+  All 10 timestamps were UTC and all binary labels remained unknown; one event
+  gained a filename-derived technique annotation. Ten intercepted prompts and
+  captured logs had no introduced dataset metadata; a folder-word overlap was
+  confined to fixed prompt instructions. Twenty memory/SQLite cache comparisons
+  and 20 SQLite roundtrips passed. Network attempts: zero; source hashes unchanged.
+  Limits: metadata README only; larger notebook/CSV unopened. No indicators were
+  emitted, so real-data enrichment dispatch and binary label correctness remain
+  unverified. Counterfactual labels tested isolation only, not dataset truth.
+  Follow-up regressions: 74 EVTX/mapping tests and the full 834-test offline backend
+  suite passed (one existing Starlette/HTTPX warning). Re-run the bounded check with
+  `.\.venv\Scripts\python.exe scratch/validate_clone_offline.py` while the local,
+  ignored harness is available; no sample records or validation database are saved.
 
 ## Implemented
 
