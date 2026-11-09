@@ -2554,6 +2554,9 @@ Approved transitive pins are in requirements.txt; Windows CPython 3.14 wheel res
 Support only the subset, logsource gates and limits documented in src/engine/sigma.py; report rejected rules.
 Pin three unmodified SigmaHQ rules by revision/hash; retain DRL-1.1 source/author attribution in matches.
 Return detections separately from labels, predictions and analyst decisions; do not expand prompts or storage.
+T2.4 supersedes the storage restriction: rule hits have a separate SQLite store, linked
+to timelines through their alert references; rule hits remain excluded from all prompts.
+Detection time is caller-supplied UTC-normalized time, not necessarily event time.
 Limits: two supported bundled rules, one unsupported field report; synthetic/offline behavior only, no real-data accuracy claim.
 
 ## 4. Deferred Decisions

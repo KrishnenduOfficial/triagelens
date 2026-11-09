@@ -187,6 +187,15 @@ v2 live acceptance and untouched-case evaluation remain pending.
   detection-quality claim, detection persistence, CLI/API wiring or prompt expansion.
   G5 and dependency pins were owner-approved; no live provider calls were made.
 
+- [x] T2.4 detections store: separate SQLite rule hits and foreign-keyed alert
+  references, with timeline membership derived from current alert links. Sources
+  are restricted to Sigma, hunt and YARA; caller-supplied detection time is UTC.
+  G6 policy keeps hits out of all LLM prompts. A synthetic Sigma match was stored
+  and retrieved by timeline; mocked provider requests stayed identical. Nine new
+  cases and 181 targeted tests passed; full offline backend suite: 1,124 passed,
+  one existing Starlette/HTTPX warning. See ADR-063's T2.4 note.
+  Limits: explicit caller persistence only; no CLI/API/dashboard wiring or live calls.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

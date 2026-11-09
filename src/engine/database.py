@@ -285,6 +285,20 @@ class DatabaseManager:
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             );""")
 
+            # Rule results are independent of labels and AI verdicts. Timeline
+            # membership is derived from the referenced alerts, not copied.
+            cursor.execute("""CREATE TABLE IF NOT EXISTS detections (
+                id TEXT PRIMARY KEY, rule_id TEXT NOT NULL CHECK(length(trim(rule_id)) > 0),
+                source TEXT NOT NULL CHECK(source IN ('sigma', 'hunt', 'yara')),
+                detected_at TEXT NOT NULL
+            );""")
+            cursor.execute("""CREATE TABLE IF NOT EXISTS detection_events (
+                detection_id TEXT NOT NULL REFERENCES detections(id) ON DELETE CASCADE,
+                alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE RESTRICT,
+                PRIMARY KEY (detection_id, alert_id)
+            );""")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_detection_events_alert ON detection_events(alert_id);")
+
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_enrichments_indicator ON enrichments(indicator);")
@@ -780,6 +794,46 @@ class DatabaseManager:
     # =====================================================================
     # Timeline Persistence
     # =====================================================================
+
+    def insert_detection(self, rule_id: str, source: str, event_ids: List[Union[UUID, str]],
+                         detected_at: datetime) -> str:
+        """Store one rule hit and its existing alert references atomically.
+
+        The caller supplies the detection time, which must include a timezone.
+        A hit can span timelines; membership follows the alerts' current links.
+        """
+        if not isinstance(rule_id, str) or not rule_id.strip():
+            raise ValueError("rule_id must be nonempty")
+        if source not in {"sigma", "hunt", "yara"}:
+            raise ValueError("invalid detection source")
+        if not event_ids or len({str(event_id) for event_id in event_ids}) != len(event_ids):
+            raise ValueError("event_ids must be nonempty and unique")
+        if not isinstance(detected_at, datetime) or detected_at.utcoffset() is None:
+            raise ValueError("detected_at must be timezone-aware")
+        detection_id = str(uuid4())
+        with self._atomic_write() as conn:
+            conn.execute("INSERT INTO detections (id, rule_id, source, detected_at) VALUES (?, ?, ?, ?)",
+                         (detection_id, rule_id, source, detected_at.astimezone(timezone.utc).isoformat()))
+            conn.executemany("INSERT INTO detection_events (detection_id, alert_id) VALUES (?, ?)",
+                             [(detection_id, str(event_id)) for event_id in event_ids])
+        return detection_id
+
+    def get_detections_for_timeline(self, timeline_id: Union[UUID, str]) -> List[Dict[str, Any]]:
+        """Return distinct hits and all their event references for a timeline."""
+        with self._lock:
+            conn = self.connect()
+            rows = conn.execute("""SELECT DISTINCT d.* FROM detections d
+                JOIN detection_events de ON de.detection_id = d.id
+                JOIN alerts a ON a.id = de.alert_id WHERE a.timeline_id = ?
+                ORDER BY d.detected_at, d.id""", (str(timeline_id),)).fetchall()
+            results = []
+            for row in rows:
+                detection = dict(row)
+                detection["event_ids"] = [r[0] for r in conn.execute(
+                    "SELECT alert_id FROM detection_events WHERE detection_id = ? ORDER BY alert_id",
+                    (detection["id"],))]
+                results.append(detection)
+            return results
 
     def insert_timeline(self, timeline: ThreatTimeline) -> str:
         """Inserts a ThreatTimeline record and links its constituent alerts.
