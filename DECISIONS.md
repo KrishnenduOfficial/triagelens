@@ -2580,7 +2580,7 @@ AI predictions and incomplete positive technique annotations are excluded, not m
 Unsupported rules are reported; Wilson intervals do not correct for related timelines.
 
 ### ADR-065: Bounded optional YARA scanning design
-**Status:** T3.2 scanner and T3.3 rule pack implemented; T3.4–T3.5 pending.
+**Status:** T3.2–T3.4 implemented offline; T3.5 pending.
 G7: optional `yara-x==1.22.1` (BSD-3-Clause); pinned Windows wheel installed/tested.
 Base install has no YARA import; absent engine or isolation fails explicitly, without fallback.
 T3.2 scans immutable bytes only; bounded SHA-256 snapshots and attributed results stay local.
@@ -2588,9 +2588,9 @@ Fresh capability-free AppContainer, private read-only runtime copy, minimal envi
 Atomic Job Object assignment limits memory/CPU/processes; deadlines and IPC are bounded.
 Failures and truncation never become clean no-match; includes/imports/native rule blobs rejected.
 ATT&CK mappings remain separate from AI/truth/analyst data; no prompt or cache wiring.
-T3.4 must add registered roots, safe opened-handle acquisition, exact hash links and storage.
+Registered roots use pinned handles; exact SHA-256 links and scan provenance are stored atomically.
 Full workflow, proposed numeric limits, evidence and future tests: [T3.1 report](TASKS.md#t31-design-report--proposed-contract-for-s3).
-Limits: Windows only; periodic CPU enforcement; abrupt parent exit can leave profile/runtime debris.
+Limits: Windows only; blocking I/O, periodic CPU checks and interrupted jobs; T3.5 remains pending.
 
 ## 4. Deferred Decisions
 

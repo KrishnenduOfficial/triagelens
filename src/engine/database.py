@@ -300,6 +300,17 @@ class DatabaseManager:
             if 'technique_ids' not in {row['name'] for row in conn.execute('PRAGMA table_info(detections)')}:
                 conn.execute('ALTER TABLE detections ADD COLUMN technique_ids TEXT')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_detection_events_alert ON detection_events(alert_id);")
+            cursor.execute("""CREATE TABLE IF NOT EXISTS yara_scans (
+                id TEXT PRIMARY KEY, result_json TEXT NOT NULL
+            )""")
+            cursor.execute("""CREATE TABLE IF NOT EXISTS yara_scan_detections (
+                scan_id TEXT NOT NULL REFERENCES yara_scans(id) ON DELETE CASCADE,
+                rule_key TEXT NOT NULL, detection_id TEXT NOT NULL REFERENCES detections(id),
+                PRIMARY KEY(scan_id, rule_key)
+            )""")
+            cursor.execute("""CREATE TABLE IF NOT EXISTS yara_jobs (
+                id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, result_json TEXT NOT NULL
+            )""")
 
             # Create Indexes for Query Performance
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_timeline ON alerts(timeline_id);")
@@ -796,6 +807,71 @@ class DatabaseManager:
     # =====================================================================
     # Timeline Persistence
     # =====================================================================
+
+    def create_yara_job(self, job_id: str, request_hash: str, result: Dict[str, Any]) -> bool:
+        with self._atomic_write() as conn:
+            row = conn.execute('SELECT request_hash FROM yara_jobs WHERE id=?', (job_id,)).fetchone()
+            if row:
+                if row[0] != request_hash:
+                    raise ValueError('Job ID already used for a different request')
+                return False
+            conn.execute('INSERT INTO yara_jobs VALUES (?, ?, ?)',
+                         (job_id, request_hash, json.dumps(result, sort_keys=True)))
+            return True
+
+    def update_yara_job(self, job_id: str, result: Dict[str, Any]) -> None:
+        with self._atomic_write() as conn:
+            if conn.execute('UPDATE yara_jobs SET result_json=? WHERE id=?',
+                            (json.dumps(result, sort_keys=True), job_id)).rowcount != 1:
+                raise ValueError('Unknown job')
+
+    def get_yara_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            row = self.connect().execute('SELECT result_json FROM yara_jobs WHERE id=?', (job_id,)).fetchone()
+            return json.loads(row[0]) if row else None
+
+    def save_yara_scan(self, result: Any) -> None:
+        """Persist one validated snapshot result and link exact observable SHA-256s atomically."""
+        from dataclasses import asdict
+        payload = asdict(result)
+        payload['matches'] = [match.model_dump(mode='json') for match in result.matches]
+        payload['diagnostics'] = [diagnostic.model_dump(mode='json') for diagnostic in result.diagnostics]
+        encoded = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+        with self._atomic_write() as conn:
+            previous = conn.execute('SELECT result_json FROM yara_scans WHERE id=?', (result.scan_id,)).fetchone()
+            if previous:
+                if previous[0] != encoded:
+                    raise ValueError('Scan ID already exists with different content')
+                return
+            conn.execute('INSERT INTO yara_scans VALUES (?, ?)', (result.scan_id, encoded))
+            digest = result.sha256
+            if result.status != 'match' or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+                return
+            event_ids = []
+            for row in conn.execute('SELECT id, extracted_indicators FROM alerts'):
+                values = json.loads(row['extracted_indicators'])
+                if isinstance(values, list) and any(isinstance(v, str) and v == digest for v in values):
+                    event_ids.append(row['id'])
+            if not event_ids:
+                return
+            for match in result.matches:
+                key = f'{result.pack_digest}:{match.namespace}:{match.rule}'
+                detection_id = self.insert_detection(key, 'yara', event_ids,
+                    datetime.fromisoformat(result.ended_at), match.technique_ids)
+                conn.execute('INSERT INTO yara_scan_detections VALUES (?, ?, ?)',
+                             (result.scan_id, key, detection_id))
+
+    def get_yara_scan(self, scan_id: str) -> Optional[Dict[str, Any]]:
+        """Return local scan provenance and its independent detection references."""
+        with self._lock:
+            conn = self.connect()
+            row = conn.execute('SELECT result_json FROM yara_scans WHERE id=?', (scan_id,)).fetchone()
+            if row is None:
+                return None
+            result = json.loads(row[0])
+            result['detection_ids'] = [r[0] for r in conn.execute(
+                'SELECT detection_id FROM yara_scan_detections WHERE scan_id=? ORDER BY rule_key', (scan_id,))]
+            return result
 
     def insert_detection(self, rule_id: str, source: str, event_ids: List[Union[UUID, str]],
                          detected_at: datetime, technique_ids: Optional[List[str]] = None) -> str:

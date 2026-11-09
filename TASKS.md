@@ -256,6 +256,18 @@ v2 live acceptance and untouched-case evaluation remain pending.
   These text matches and ATT&CK mappings do not prove execution, maliciousness or
   real-world detection quality. No provider calls; source/license lookup was approved.
 
+- [x] T3.4 integration: opt-in registered Windows roots, pinned handle snapshots,
+  bounded offline directory scans, persisted scan results and atomic exact-SHA-256
+  links to existing alert indicators. Explicit hash-only enrichment uses the existing
+  provider cache and quotas; scans do not initiate it. API job IDs support retry
+  deduplication; detections remain separate from labels and AI prompts. A harmless
+  native scan linked a matching alert; mocked enrichment made no provider calls.
+  Verification: 16 new integration cases; 21 focused integration/documentation
+  checks passed; full offline backend suite passed (1,239 tests, one existing
+  Starlette/HTTPX warning). See README and ADR-065. Limits: Windows only, file and
+  database I/O cannot be preempted, scan admission spans one Windows logon session,
+  and interrupted jobs need a new ID; broader adversarial checks remain T3.5.
+
 T3.2 verification (offline; harmless fixtures, no external test hosts):
 ```text
 .\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_yara.py tests/test_yara_windows.py tests/test_attack.py tests/test_detections.py

@@ -7,6 +7,7 @@ with CORS middleware, strict input validation, and thread-safe persistence.
 import logging
 import os
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -38,6 +39,13 @@ class HuntRequest(BaseModel):
         le=1000,
         description="Maximum number of matching telemetry alerts to return (1-1000)",
     )
+
+
+class YaraScanRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    job_id: UUID
+    root_id: str = Field(min_length=1, max_length=40, pattern=r'^[A-Za-z0-9_-]+$')
+    relative_path: str = Field(default='', max_length=1024)
 
 
 def get_db(request: Request) -> DatabaseManager:
@@ -88,6 +96,48 @@ def create_app(
 
     app.state.db = db
     app.state.tracker = tracker or AccuracyTracker()
+    from src.engine.yara_service import YaraService
+    from src.engine.enrichment import EnrichmentEngine
+    app.state.yara_service = YaraService(db, config.get_yara_scan_roots())
+    app.state.yara_enrichment = EnrichmentEngine(db=db)
+
+    @app.post('/api/yara/scans', tags=['YARA'])
+    def yara_scan(payload: YaraScanRequest, request: Request) -> Dict[str, Any]:
+        from src.engine.yara_files import FileRejected
+        try:
+            return request.app.state.yara_service.scan(str(payload.job_id), payload.root_id, payload.relative_path)
+        except FileRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except ValueError:
+            raise HTTPException(status_code=409, detail='Job ID already used for a different request') from None
+        except RuntimeError:
+            raise HTTPException(status_code=409, detail='Scan service busy') from None
+
+    @app.get('/api/yara/jobs/{job_id}', tags=['YARA'])
+    def yara_job(job_id: UUID, db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        result = db.get_yara_job(str(job_id))
+        if result is None:
+            raise HTTPException(status_code=404, detail='Job not found')
+        return result
+
+    @app.get('/api/yara/scans/{scan_id}', tags=['YARA'])
+    def yara_result(scan_id: UUID, db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        result = db.get_yara_scan(str(scan_id))
+        if result is None:
+            raise HTTPException(status_code=404, detail='Scan not found')
+        return result
+
+    @app.post('/api/yara/scans/{scan_id}/enrichment', tags=['YARA'])
+    def yara_enrichment(scan_id: UUID, request: Request, db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        result = db.get_yara_scan(str(scan_id))
+        if result is None:
+            raise HTTPException(status_code=404, detail='Scan not found')
+        digest = result.get('sha256')
+        if digest is None:
+            raise HTTPException(status_code=409, detail='Snapshot hash unavailable')
+        lookup = request.app.state.yara_enrichment.lookup(digest, 'hash')
+        return {'status': lookup.lookup_status if lookup else 'unavailable',
+                'result': lookup.model_dump(mode='json') if lookup else None}
 
     # 3. Global Exception Handler (sanitizes 500 errors, prevents stack/SQL/path leaks)
     @app.exception_handler(Exception)

@@ -363,11 +363,46 @@ grants sample-directory/database access. Normal exit removes the profile/runtime
 an abrupt parent exit kills the worker but may leave the empty profile and copied
 runtime for later operator cleanup. Runtime staging has a 60-second overall budget
 checked before IPC; blocking filesystem/OS setup calls are not preemptible.
-Registered-directory admission, safe handle-based file acquisition, extension-based
-archive checks, scan persistence, hash linking, enrichment and API/CLI integration
-remain T3.4. The scanner accepts immutable bytes only; do not replace those future
-file-admission checks with an arbitrary `Path.read_bytes()` endpoint. Rule packs
-and broader adversarial file tests remain T3.3/T3.5. No detection-quality claim.
+The API can scan an explicitly registered local Windows directory. Set the roots
+before starting the API; an empty setting disables directory scanning. Roots must
+be fixed local directories outside the project, system, program and known credential
+directories. For example, replace the path below with an existing local directory:
+
+```powershell
+$env:YARA_SCAN_ROOTS = '{"samples":"C:\\triagelens-samples"}'
+uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+```
+
+In another PowerShell window, submit a registered root ID, optional relative
+directory, and caller-generated job ID. Use harmless files for local testing:
+
+```powershell
+$job = [guid]::NewGuid().ToString()
+$body = @{ job_id = $job; root_id = 'samples'; relative_path = '' } | ConvertTo-Json
+$run = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/yara/scans' -ContentType 'application/json' -Body $body
+$run
+Invoke-RestMethod "http://127.0.0.1:8000/api/yara/jobs/$job"
+Invoke-RestMethod "http://127.0.0.1:8000/api/yara/scans/$($run.scan_ids[0])"
+```
+
+The job reports rejected files and incomplete scope. A retry with the same job ID
+and request returns its recorded state; reuse with different inputs is rejected.
+If the process stops during a job, its recorded `running` state requires a new job
+ID for another attempt. File reads use pinned Windows handles and reject reparse
+points, hard links, alternate streams and recognized archives. Limits are 1,000
+entries, four directory levels, 100 files, 16 MiB/file, 128 MiB/job, and a 60-second
+job deadline. Blocking filesystem calls and database operations are not preemptible.
+API scan admission is serialized within the Windows logon session; direct calls to
+`scan_snapshot` retain their separate per-process admission. No file or path is sent
+to a provider. Scan results and qualified YARA hits are stored separately from AI
+output and labels; a hit links to existing alerts only on an exact lowercase SHA-256
+indicator. An unmatched hit remains in the scan record. Linking does not imply execution.
+
+To explicitly look up a stored snapshot hash with the configured VirusTotal
+provider, use `POST /api/yara/scans/{scan_id}/enrichment`. This sends only the hash
+to the provider under the existing quota and cache rules; it is never automatic.
+`unavailable`, an incomplete job, and `no_match` do not establish that a file is safe.
+Broader adversarial file testing remains T3.5. No detection-quality claim is made.
 
 ### 5.3 Run Automated Test Suite
 
@@ -579,6 +614,10 @@ No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
 | `GET` | `/api/alerts/{alert_id}` | Retrieve normalized security alert by ID |
 | `GET` | `/api/enrichments/{indicator}` | Retrieve cached threat intelligence lookups for an indicator |
 | `POST` | `/api/hunt` | Execute a parameterized KQL-style hunting filter across telemetry |
+| `POST` | `/api/yara/scans` | Scan a registered directory offline with bounded inputs |
+| `GET` | `/api/yara/jobs/{job_id}` | Retrieve a YARA job and its recorded state |
+| `GET` | `/api/yara/scans/{scan_id}` | Retrieve a YARA snapshot result and linked detections |
+| `POST` | `/api/yara/scans/{scan_id}/enrichment` | Explicitly look up a stored snapshot hash |
 
 ---
 

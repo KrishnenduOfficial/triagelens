@@ -7,6 +7,8 @@ that strictly guards against leaking credentials or secret values.
 
 import logging
 import os
+import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
@@ -41,6 +43,7 @@ CANONICAL_CONFIG_VARS = [
     "VIRUSTOTAL_DAILY_QUOTA",
     "VIRUSTOTAL_REQUESTS_PER_MINUTE",
     "ENRICHMENT_MAX_LOOKUPS_PER_RUN",
+    "YARA_SCAN_ROOTS",
 ]
 
 # Supported backward-compatible aliases
@@ -48,6 +51,22 @@ SUPPORTED_CONFIG_ALIASES = {
     "VT_API_KEY": "VIRUSTOTAL_API_KEY",
     "TRIAGELENS_DB_PATH": "DATABASE_PATH",
 }
+
+
+def get_yara_scan_roots() -> Dict[str, str]:
+    """Read explicit local root registrations; an empty setting disables scans."""
+    raw = os.getenv('YARA_SCAN_ROOTS', '').strip()
+    if not raw:
+        return {}
+    try:
+        roots = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ValueError('Invalid YARA_SCAN_ROOTS configuration') from None
+    if (not isinstance(roots, dict) or len(roots) > 20 or
+            any(not isinstance(k, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', k)
+                or not isinstance(v, str) or len(v) > 1024 for k, v in roots.items())):
+        raise ValueError('Invalid YARA_SCAN_ROOTS configuration')
+    return roots
 
 
 def get_database_path(override: Optional[str] = None) -> str:
