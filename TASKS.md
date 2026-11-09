@@ -103,6 +103,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
   G4 approved `evtx==0.15.0` (MIT);
   see ADR-059. CLI correlation still collects alerts; real-data evaluation is pending.
 
+- [x] T1.2 ground truth mapping: 36 new offline mapping/leakage cases passed;
+  targeted regressions passed (212 tests), and the full offline backend suite
+  passed (834 tests; one existing Starlette/HTTPX deprecation warning).
+  Explicit folder/file rules and supplied annotations remain separate from event
+  telemetry; unknown/conflicting truth is not inferred from ATT&CK IDs. See ADR-060.
+  Dataset inspection was limited to folder structure and README; reviewed binary
+  labels and metadata-file ingestion are not provided by this task.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

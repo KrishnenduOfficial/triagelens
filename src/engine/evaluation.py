@@ -295,6 +295,13 @@ class AccuracyTracker:
         """
         cfg = self._get_config(alert.source_dataset)
 
+        # Mapped EVTX truth is authoritative, including unknown/conflict. Dataset
+        # technique annotations must never turn an unlabeled event into malicious.
+        if alert.ground_truth_metadata is not None:
+            if alert.ground_truth_metadata.status != "mapped":
+                return None
+            return {"malicious": True, "benign": False}.get(alert.ground_truth_label)
+
         # 1. Check explicit ground_truth_label field
         if alert.ground_truth_label is not None:
             raw_label = str(alert.ground_truth_label).strip().lower()
@@ -340,6 +347,13 @@ class AccuracyTracker:
         highest_sev: Optional[str] = None
 
         for alert in timeline.alerts:
+            if alert.ground_truth_metadata is not None:
+                severity = alert.ground_truth_metadata.severity
+                if severity is not None:
+                    rank = self.SEVERITY_ORDER.index(severity)
+                    if rank < highest_rank:
+                        highest_rank, highest_sev = rank, severity
+                continue
             cfg = self._get_config(alert.source_dataset)
             rec = alert.original_record if isinstance(alert.original_record, dict) else {}
 

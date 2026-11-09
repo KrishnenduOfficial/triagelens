@@ -12,6 +12,7 @@ from typing import Any, Dict, Generator, List, Optional, Union
 
 from src.models.alert import NormalizedAlert
 from src.engine.evtx import EvtxIntakeEngine
+from src.engine.ground_truth import DatasetGroundTruthMapper
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 class AlertIntakeEngine:
     """Engine responsible for ingesting, validating, and normalizing alerts."""
 
-    def __init__(self) -> None:
-        self.evtx = EvtxIntakeEngine()
+    def __init__(self, *, ground_truth_mapper: DatasetGroundTruthMapper | None = None) -> None:
+        self.evtx = EvtxIntakeEngine(ground_truth_mapper=ground_truth_mapper)
 
     @staticmethod
     def _read_file_text(file_path: Path) -> str:
@@ -285,20 +286,20 @@ class AlertIntakeEngine:
         """
         path = Path(file_path)
         if not path.is_file():
-            logger.error("Alert file not found: %s", file_path)
-            raise FileNotFoundError(f"Alert file not found: {file_path}")
+            logger.error("Alert file not found")
+            raise FileNotFoundError("Alert file not found")
 
-        logger.info("Ingesting alerts from JSON file: %s", file_path)
+        logger.info("Ingesting alerts from JSON file")
         text = self._read_file_text(path)
         if not text.strip():
-            logger.error("Empty JSON file: %s", file_path)
-            raise ValueError(f"Empty JSON file: {file_path}")
+            logger.error("Empty JSON file")
+            raise ValueError("Empty JSON file")
 
         try:
             data = json.loads(text)
-        except json.JSONDecodeError as exc:
-            logger.error("Malformed JSON in file %s: %s", file_path, exc)
-            raise ValueError(f"Malformed JSON in file {file_path}: {exc}") from exc
+        except json.JSONDecodeError:
+            logger.error("Malformed JSON in input file")
+            raise ValueError("Malformed JSON in input file") from None
 
         if isinstance(data, dict):
             records = [data]
@@ -306,21 +307,19 @@ class AlertIntakeEngine:
             records = data
         else:
             logger.error(
-                "Invalid JSON content in %s: expected dict or list, got %s",
-                file_path,
+                "Invalid JSON content: expected dict or list, got %s",
                 type(data).__name__,
             )
             raise ValueError(
-                f"Invalid JSON content in {file_path}: expected dict or list, got {type(data).__name__}"
+                f"Invalid JSON content: expected dict or list, got {type(data).__name__}"
             )
 
         normalized_alerts: List[NormalizedAlert] = []
         for index, raw_record in enumerate(records):
             if not isinstance(raw_record, dict):
                 logger.error(
-                    "Record at index %d in %s is not a JSON object: %s",
+                    "Record at index %d is not a JSON object: %s",
                     index,
-                    file_path,
                     type(raw_record).__name__,
                 )
                 raise ValueError(
@@ -341,9 +340,8 @@ class AlertIntakeEngine:
             normalized_alerts.append(alert)
 
         logger.info(
-            "Successfully ingested %d records from %s",
+            "Successfully ingested %d records",
             len(normalized_alerts),
-            file_path,
         )
         return normalized_alerts
 
@@ -362,20 +360,20 @@ class AlertIntakeEngine:
         """
         path = Path(file_path)
         if not path.is_file():
-            logger.error("Alert file not found: %s", file_path)
-            raise FileNotFoundError(f"Alert file not found: {file_path}")
+            logger.error("Alert file not found")
+            raise FileNotFoundError("Alert file not found")
 
-        logger.info("Ingesting alerts from CSV file: %s", file_path)
+        logger.info("Ingesting alerts from CSV file")
         text = self._read_file_text(path)
         if not text.strip():
-            logger.error("Empty CSV file: %s", file_path)
-            raise ValueError(f"Empty or headerless CSV file: {file_path}")
+            logger.error("Empty CSV file")
+            raise ValueError("Empty or headerless CSV file")
 
         rows: List[Dict[str, Any]] = []
         try:
             reader = csv.DictReader(io.StringIO(text))
             if reader.fieldnames is None:
-                raise ValueError(f"Empty or headerless CSV file: {file_path}")
+                raise ValueError("Empty or headerless CSV file")
             rows = list(reader)
         except (csv.Error, ValueError):
             try:
@@ -383,11 +381,11 @@ class AlertIntakeEngine:
                     io.StringIO(text), quoting=csv.QUOTE_NONE, escapechar="\\"
                 )
                 if reader.fieldnames is None:
-                    raise ValueError(f"Empty or headerless CSV file: {file_path}")
+                    raise ValueError("Empty or headerless CSV file")
                 rows = list(reader)
-            except Exception as exc:
-                logger.error("Malformed CSV in file %s: %s", file_path, exc)
-                raise ValueError(f"Malformed CSV in file {file_path}: {exc}") from exc
+            except Exception:
+                logger.error("Malformed CSV in input file")
+                raise ValueError("Malformed CSV in input file") from None
 
         normalized_alerts: List[NormalizedAlert] = []
         for row in rows:
@@ -406,9 +404,8 @@ class AlertIntakeEngine:
             normalized_alerts.append(alert)
 
         logger.info(
-            "Successfully ingested %d records from %s",
+            "Successfully ingested %d records",
             len(normalized_alerts),
-            file_path,
         )
         return normalized_alerts
 
@@ -438,23 +435,23 @@ class AlertIntakeEngine:
         """
         path = Path(dir_path)
         if not path.exists():
-            logger.error("Directory not found: %s", dir_path)
-            raise FileNotFoundError(f"Directory not found: {dir_path}")
+            logger.error("Directory not found")
+            raise FileNotFoundError("Directory not found")
         if not path.is_dir():
-            logger.error("Path is not a directory: %s", dir_path)
-            raise NotADirectoryError(f"Path is not a directory: {dir_path}")
+            logger.error("Path is not a directory")
+            raise NotADirectoryError("Path is not a directory")
         if batch_size <= 0:
             raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
 
         logger.info(
-            "Scanning directory for alert files: %s (batch_size=%d)", dir_path, batch_size
+            "Scanning directory for alert files (batch_size=%d)", batch_size
         )
         current_batch: List[NormalizedAlert] = []
 
         try:
             entries = sorted(path.iterdir())
-        except (PermissionError, OSError) as exc:
-            logger.error("Cannot access directory %s: %s", dir_path, exc)
+        except (PermissionError, OSError):
+            logger.error("Cannot access input directory")
             return
 
         for file_path in entries:
@@ -486,11 +483,9 @@ class AlertIntakeEngine:
                         yield current_batch
                         current_batch = []
 
-            except (PermissionError, OSError, ValueError) as exc:
+            except (PermissionError, OSError, ValueError):
                 logger.warning(
-                    "Skipping unreadable, empty, or corrupt file in batching %s: %s",
-                    file_path.name,
-                    exc,
+                    "Skipping unreadable, empty, or corrupt input file",
                 )
                 continue
 

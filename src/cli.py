@@ -90,8 +90,7 @@ def run_pipeline(
     db_file = config.get_database_path(db_path)
     logger.info("=" * 65)
     logger.info("Initializing TriageLens Pipeline")
-    logger.info("Target Data Directory : %s", data_dir)
-    logger.info("Target SQLite Database: %s", db_file)
+    logger.info("Input directory and database configured")
     logger.info("=" * 65)
 
     # 1. Initialize SQLite Database
@@ -139,7 +138,7 @@ def _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups):
         unique_indicators = set()
 
         if not os.path.exists(data_dir):
-            logger.error("Data directory '%s' does not exist.", data_dir)
+            logger.error("Data directory does not exist.")
             raise FileNotFoundError('Pipeline input directory does not exist')
 
         for batch in intake_engine.ingest_directory(data_dir, batch_size=100):
@@ -205,10 +204,9 @@ def _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups):
         for idx, tl in enumerate(timelines, start=1):
             observation_id = run.observe(tl, idx)
             logger.info(
-                "Processing Timeline [%d/%d]: '%s' (%d events)",
+                "Processing Timeline [%d/%d] (%d events)",
                 idx,
                 len(timelines),
-                tl.grouping_key,
                 tl.total_events,
             )
 

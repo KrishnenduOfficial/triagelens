@@ -13,6 +13,7 @@ from typing import BinaryIO, Callable, Iterator, Protocol
 import xml.etree.ElementTree as ET
 
 from src.models.alert import NormalizedAlert
+from src.engine.ground_truth import DatasetGroundTruthMapper
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +96,11 @@ class EvtxIntakeEngine:
     MAX_RECORD_CHARACTERS = 1_048_576
     MAX_CONSECUTIVE_PARSER_ERRORS = 100
 
-    def __init__(self, parser_factory: Callable[[BinaryIO], RecordParser] = _native_parser):
+    def __init__(self, parser_factory: Callable[[BinaryIO], RecordParser] = _native_parser,
+                 *, ground_truth_mapper: DatasetGroundTruthMapper | None = None):
         self.stats = EvtxIntakeStats()
         self._parser_factory = parser_factory
+        self.ground_truth_mapper = ground_truth_mapper
 
     def _normalize(self, record: dict, path: Path) -> NormalizedAlert:
         xml = record["data"]
@@ -139,7 +142,7 @@ class EvtxIntakeEngine:
         ) if details.get(key)), None)
         if not user and security is not None:
             user = security.get("UserID")
-        return NormalizedAlert(
+        alert = NormalizedAlert(
             timestamp=timestamp, source_dataset="Windows EVTX", source_file=str(path),
             event_type=event_id, ground_truth_label=None,
             original_record={
@@ -148,6 +151,7 @@ class EvtxIntakeEngine:
                 "Details": details, "raw_xml": xml,
             },
         )
+        return self.ground_truth_mapper.map_alert(alert) if self.ground_truth_mapper else alert
 
     def ingest_evtx(self, file_path: str | Path, batch_size: int = 100) -> Iterator[list[NormalizedAlert]]:
         """Yield batches and continue after recoverable parser/record errors.

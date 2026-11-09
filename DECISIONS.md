@@ -2489,6 +2489,19 @@ Source paths are provenance only; no ground-truth or indicator inference is adde
 Existing prompt isolation excludes provenance and raw XML; ADR-008 remains absolute.
 Limits: synthetic offline coverage; CLI still collects alerts; no real-data quality claim.
 
+### ADR-060: Explicit EVTX dataset truth isolated from telemetry
+**Status:** Accepted for T1.2; owner approved the plan, 2026-11-09.
+Opt in via DatasetGroundTruthMapper and AlertIntakeEngine(ground_truth_mapper=mapper).
+Use exact root-relative folder/file label rules and supplied GroundTruthAnnotation metadata.
+All binary sources must agree; unmapped/conflicting labels stay unknown without legacy fallback.
+Technique IDs annotate truth only; attack-associated folders do not imply malicious events.
+File/folder rules label every event in scope; operators must independently verify those labels.
+Store mapping provenance, technique IDs and optional severity in ground_truth_metadata only.
+SQLite adds a nullable JSON column; legacy linking cannot overwrite mapped labels.
+Keep original events intact and source paths local; intake/CLI logs omit source/group paths.
+Offline tests intercept prompts, lookups, logs and both inference caches with realistic names.
+Limits: no real dataset contents inspected, no automatic metadata reader, no new dependencies.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

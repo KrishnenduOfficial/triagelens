@@ -149,10 +149,15 @@ class DatabaseManager:
                     original_record TEXT NOT NULL,
                     extracted_indicators TEXT NOT NULL,
                     ground_truth_label TEXT,
+                    ground_truth_metadata TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE SET NULL
                 );
             """)
+
+            cursor.execute("PRAGMA table_info(alerts);")
+            if "ground_truth_metadata" not in {row["name"] for row in cursor.fetchall()}:
+                cursor.execute("ALTER TABLE alerts ADD COLUMN ground_truth_metadata TEXT;")
 
             # 3. Enrichments Table
             cursor.execute("""
@@ -717,11 +722,15 @@ class DatabaseManager:
                 INSERT INTO alerts (
                     id, timeline_id, timestamp, source_dataset, source_file,
                     event_type, original_record, extracted_indicators,
-                    ground_truth_label, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ground_truth_label, ground_truth_metadata, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     timeline_id = COALESCE(excluded.timeline_id, alerts.timeline_id),
-                    ground_truth_label = COALESCE(excluded.ground_truth_label, alerts.ground_truth_label);
+                    ground_truth_label = CASE WHEN excluded.ground_truth_metadata IS NOT NULL
+                        THEN excluded.ground_truth_label
+                        WHEN alerts.ground_truth_metadata IS NOT NULL THEN alerts.ground_truth_label
+                        ELSE COALESCE(excluded.ground_truth_label, alerts.ground_truth_label) END,
+                    ground_truth_metadata = COALESCE(excluded.ground_truth_metadata, alerts.ground_truth_metadata);
                 """,
                 (
                     alert_id_str,
@@ -733,6 +742,7 @@ class DatabaseManager:
                     orig_json,
                     indicators_json,
                     alert.ground_truth_label,
+                    alert.ground_truth_metadata.model_dump_json() if alert.ground_truth_metadata else None,
                     now_str,
                 ),
             )
@@ -750,6 +760,7 @@ class DatabaseManager:
             data = dict(row)
             data["original_record"] = json.loads(data["original_record"])
             data["extracted_indicators"] = json.loads(data["extracted_indicators"])
+            data["ground_truth_metadata"] = json.loads(data["ground_truth_metadata"]) if data["ground_truth_metadata"] else None
             return data
 
     def count_alerts(self) -> int:
@@ -867,6 +878,7 @@ class DatabaseManager:
                 data = dict(row)
                 data["original_record"] = json.loads(data["original_record"])
                 data["extracted_indicators"] = json.loads(data["extracted_indicators"])
+                data["ground_truth_metadata"] = json.loads(data["ground_truth_metadata"]) if data["ground_truth_metadata"] else None
                 results.append(data)
             return results
 
