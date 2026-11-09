@@ -224,6 +224,128 @@ v2 live acceptance and untouched-case evaluation remain pending.
   tests and 1,146 full backend tests passed (one existing Starlette/HTTPX warning).
   See README and ADR-063.
 
+- [x] T3.1 YARA design report only (2026-11-10): workflow and proposed limits below;
+  G7 owner-approved `yara-x==1.22.1` (BSD-3-Clause), optional in T3.2. See ADR-065.
+  No scanner, package installation, rules, migrations or scan endpoint added.
+
+### T3.1 design report — proposed contract for S3
+
+Workflow: operator registers a narrow local input root outside the repository;
+request names its registration ID and a relative path, never an arbitrary root.
+There are no default roots or background scans. Enumerate deterministically within
+the limits below, validate/open a regular file, read one bounded immutable byte
+snapshot, calculate SHA-256, scan those same bytes in a worker, validate its bounded
+result, then offer explicit hash-to-alert linking in T3.4. Samples are never
+executed, imported, unpacked, modified, quarantined or deleted. No process-memory
+scans, automatic downloads, file uploads or external enrichment occur in a scan.
+Real malware remains outside the repository in an isolated VM; local development
+uses harmless fixtures only. Human analysts retain response authority.
+
+Allowed paths: explicit absolute local roots only; reject drive roots, system,
+application, credential and repository directories. Reject traversal, absolute or
+drive-relative request paths, UNC/device paths, mapped network drives, alternate
+data streams, symlinks, junctions, other reparse points and multiply linked files.
+Validate root identity and ancestors, then verify the opened handle's final path,
+volume/file identity and containment before reading; string-prefix checks alone
+are insufficient. Open without write/delete sharing, cap the read, and reject
+identity/size/time changes instead of scanning a replacement. Never reopen by
+path for hashing or scanning. Paths stay local provenance and out of prompts/logs.
+Reject recognized archives by extension/signature; other bytes remain opaque,
+with no extraction even for unrecognized or disguised containers.
+
+| Proposed initial bound | Value / behavior |
+| --- | --- |
+| Admission | One scan job and one worker at a time; reject busy requests |
+| Enumeration | 1,000 entries, depth 4, 100 files; report unvisited/truncated scope |
+| Input | 16 MiB/file, 128 MiB/job; enforce while reading, not only from stat |
+| Rule pack | 30 reviewed rules, 1 MiB total source, 10,000 total patterns |
+| Worker time | Compile 10 s; engine scan 5 s/file; parent wall deadline 20 s/worker |
+| Job time | 60 s wall time including enumeration, reads, startup and IPC |
+| Worker resources | 512 MiB committed memory; 10 s CPU time; one active process |
+| Results | 100 occurrences/pattern, 1,000/file; 256 KiB response/file |
+
+Start a fresh worker per file with a minimal environment (no inherited secrets),
+bounded byte/JSON IPC, no shell, and no database or input-root access. Disable rule
+includes and initially reject all module imports; accept reviewed text sources,
+never supplied native code or serialized compiled rules. Compiler diagnostics
+identify rule/line/category without source snippets, sample bytes or private paths.
+Set Windows Job Object memory/CPU/process limits before releasing the worker;
+kill the job on deadline, parent exit or malformed/oversized IPC, then reap it.
+Use an AppContainer with no network capabilities or loopback exemption; grant only
+required runtime reads and IPC. A Job Object is resource control, not an egress
+barrier. If containment or limits cannot be established, return unavailable and
+do not run an unrestricted fallback. AppContainer/Python/JIT compatibility and all
+numeric defaults require implementation checks; none are measured guarantees.
+
+Result contract: scan ID, SHA-256/size (nullable before a complete snapshot), UTC
+start/end, engine/version, rule-pack digest, applied limits, completion status,
+diagnostics and matches. Each match carries namespace/rule ID, source digest,
+author/license/source reference, validated technique IDs, and bounded pattern
+IDs/offsets/lengths, never matched bytes. Distinguish completed match/no-match,
+rejected/skipped, missing engine, compile error, timeout, resource exhaustion,
+file change, worker failure and result truncation. An incomplete run is never a
+clean result; completed no-match means only no hit from that exact pack/snapshot.
+
+T3.4 linking: match exact lowercase 64-hex SHA-256 against validated observable
+alert hash indicators; do not join on MD5/SHA-1, names, paths, labels or technique
+annotations. Link every matching existing alert explicitly, with no implied
+execution/causality claim. Keep unmatched scan results separate; do not fabricate
+alerts to satisfy the detection store's required references. Persist successful
+linked hits through `insert_detection(source="yara", event_ids=..., ...)`, using
+scan UTC time and a rule identity qualified by pack digest/namespace. The current
+detections table cannot store full scan provenance or no-match/failure history;
+T3.4 needs a separate scan/result record and scan-to-detection association, with
+atomic linking and retry deduplication. This task makes no schema changes.
+
+Rule metadata: require stable ID, author, source URL/revision and license; optional
+`mitre_attack` is a comma-separated list of technique IDs, parsed into a collection
+for `rule_techniques("yara", ...)` against the pinned Enterprise 17.1 catalog.
+Report absent/unknown/inactive IDs; retain an unmapped hit without silently
+discarding metadata errors or inventing techniques. Rule mappings remain separate
+from dataset truth, AI predictions and analyst dispositions. Hits and metadata
+never enter prompts or verdict caches; file bytes and paths never leave the scan.
+Any future hash-only enrichment is a separate explicit T3.4 action under existing
+masking, quotas and unavailable-result behavior, with no file upload.
+
+G7 evidence: [YARA-X 1.22.1 files](https://pypi.org/project/yara-x/1.22.1/#files)
+include `yara_x-1.22.1-cp39-abi3-win_amd64.whl`; the local interpreter reports
+CPython 3.14.7, win-amd64, non-free-threaded. Tags support compatibility in principle;
+no installation/import/scan was tested. Justification: optional `yara-x==1.22.1`,
+[BSD-3-Clause](https://github.com/VirusTotal/yara-x/blob/v1.22.1/LICENSE), supplies
+the scanner without a local Rust build. The considered alternative,
+[yara-python 4.5.4](https://pypi.org/project/yara-python/4.5.4/#files) (Apache-2.0),
+lists Windows wheels through CPython 3.13, with no CPython 3.14 wheel listed.
+[YARA-X Python API](https://virustotal.github.io/yara-x/docs/api/python/) documents
+timeouts and include controls; [language differences](https://virustotal.github.io/yara-x/docs/writing_rules/differences-with-yara/)
+require explicit compatibility diagnostics, with no engine fallback. Windows design
+references: [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[committed-memory limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information),
+and [AppContainer isolation](https://learn.microsoft.com/en-us/windows/win32/secauthz/appcontainer-isolation).
+
+Future offline acceptance (T3.2–T3.5): base install without YARA; wheel import and
+harmless match/no-match; invalid rules/metadata/includes/modules; traversal,
+reparse/hardlink/ADS/network paths and replacement races; archive/size/enumeration
+limits; compile/scan/IPC deadlines, memory exhaustion and parent-exit cleanup;
+actual OS network denial; bounded/redacted results; exact hash links, unmatched
+files, retry deduplication, and prompt/cache/label isolation. Use harmless fixtures
+and the EICAR test string only; no fixture is executed. Performance and security
+enforcement remain unverified until those tests run. G7 authorizes the library
+choice; each later task still needs its own roadmap plan approval.
+
+T3.1 verification (2026-11-10, existing interpreter; tests offline):
+```text
+.\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_detections.py tests/test_attack.py tests/test_wire7_docs_and_health.py
+22 passed, 1 warning in 3.57s
+.\.venv\Scripts\python.exe -m pytest -q -x --tb=short
+1146 passed, 1 warning in 38.80s
+node scripts/check_markdown_encoding.js
+Checked 28 Markdown files; 0 file(s) with encoding errors.
+```
+Both pytest runs reported the existing Starlette/HTTPX deprecation warning.
+An inline local-link/anchor check passed all 76 links and verified ADR-065 is
+unique and 12 lines. `git diff --check` passed. No new tests were added for this
+documentation-only task; these results do not validate a YARA scanner.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

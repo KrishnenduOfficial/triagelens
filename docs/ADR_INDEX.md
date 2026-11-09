@@ -67,3 +67,4 @@ Statuses below are recorded in each ADR; later decisions may supersede historica
 - [ADR-062](../DECISIONS.md#adr-062-fixed-offline-first-evaluation-protocol) — Fixed offline-first evaluation protocol — Partial for T1.4; real-data evaluation remains pending.
 - [ADR-063](../DECISIONS.md#adr-063-bounded-local-sigma-subset-with-attributed-rules) — Bounded local Sigma subset with attributed rules — Accepted for T2.3; owner approved G5 and dependency pins, 2026-11-09.
 - [ADR-064](../DECISIONS.md#adr-064-offline-attck-technique-attribution-and-evaluation) — Offline ATT&CK technique attribution and evaluation — Accepted for T2.5.
+- [ADR-065](../DECISIONS.md#adr-065-bounded-optional-yara-scanning-design) — Bounded optional YARA scanning design — Design accepted for T3.1; G7 owner-approved yara-x 1.22.1, implementation pending.

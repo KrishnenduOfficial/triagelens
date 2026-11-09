@@ -2579,6 +2579,19 @@ prediction, with independent benign labels for false positives. Missing rule out
 AI predictions and incomplete positive technique annotations are excluded, not misses.
 Unsupported rules are reported; Wilson intervals do not correct for related timelines.
 
+### ADR-065: Bounded optional YARA scanning design
+**Status:** Design accepted for T3.1, 2026-11-10; implementation remains T3.2–T3.5.
+G7: owner chose optional `yara-x==1.22.1` (BSD-3-Clause); no package installed.
+Published Windows x64 abi3 wheel fits local CPython 3.14 tags; runtime untested.
+Use registered local roots and one bounded immutable snapshot for SHA-256 and scan.
+No execution, extraction, uploads or network; reject path escapes and reparse links.
+Require a restricted worker with OS memory/CPU limits and parent-enforced deadlines.
+Keep explicit failures/incomplete results separate from completed no-match results.
+Link exact SHA-256 to existing alerts; preserve independent rule/AI/truth/analyst data.
+Validate rule ATT&CK metadata with the pinned catalog; never expose hits to prompts.
+Full workflow, proposed numeric limits, evidence and future tests: [T3.1 report](TASKS.md#t31-design-report--proposed-contract-for-s3).
+Limits: containment, resource defaults, provenance storage and integration are unimplemented.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.
