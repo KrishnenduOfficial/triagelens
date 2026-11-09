@@ -5,6 +5,7 @@ parameterized SQLite queries targeting relational columns and deep JSON telemetr
 """
 
 from datetime import datetime
+from functools import lru_cache
 import json
 import logging
 import math
@@ -14,6 +15,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from uuid import UUID
 
 from src.engine.database import DatabaseManager
+from src.engine.fields import resolve_field
 from src.models.alert import NormalizedAlert
 from src.engine.hunting_dsl import (
     DIRECT_COLUMNS, KQLParseError, SQLDialect, SQLiteDialect, compile_query, parse_query,
@@ -115,10 +117,19 @@ class ThreatHuntingEngine:
             busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
             cursor = None
 
+            @lru_cache(maxsize=1)
+            def record_view(raw: str) -> dict[str, Any]:
+                # At most one decoded record retained, regardless of scan size.
+                return json.loads(raw)
+
+            def canonical_value(raw: str, name: str) -> str | int | None:
+                return resolve_field(record_view(raw), name)
+
             def expired() -> bool:
                 return self._clock() >= deadline
 
             try:
+                conn.create_function("triagelens_field", 2, canonical_value, deterministic=True)
                 remaining = deadline - self._clock()
                 if remaining <= 0:
                     raise HuntTimeoutError("Hunting filter execution timed out.")
@@ -136,6 +147,8 @@ class ThreatHuntingEngine:
                 conn.set_progress_handler(None, 0)
                 if cursor is not None:
                     cursor.close()
+                conn.create_function("triagelens_field", 2, None)
+                record_view.cache_clear()
                 conn.execute(f"PRAGMA busy_timeout = {busy_timeout}")
         finally:
             self.db._lock.release()

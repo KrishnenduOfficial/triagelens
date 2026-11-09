@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.models.alert import NormalizedAlert
 from src.models.enrichment import EnrichmentResult
 from src.models.timeline import ThreatTimeline
+from src.engine.fields import FIELD_MAPPINGS, resolve_field
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +33,6 @@ class TimelineBuilder:
 
     DEFAULT_TIME_GAP_MINUTES: int = 30
     DEFAULT_MAX_EVENTS_PER_TIMELINE: int = 100
-
-    HOST_KEYS = (
-        "host",
-        "hostname",
-        "computer_name",
-        "computername",
-        "computer",
-        "workstation",
-        "device_name",
-    )
-
-    USER_KEYS = (
-        "user",
-        "username",
-        "target_user_name",
-        "subject_user_name",
-        "targetusername",
-        "subjectusername",
-        "account_name",
-    )
 
     @staticmethod
     def _alert_sort_key(alert: NormalizedAlert):
@@ -71,35 +52,10 @@ class TimelineBuilder:
 
     def _extract_auto_grouping(self, alert: NormalizedAlert) -> Tuple[str, str, str]:
         """Extracts documented entity correlation info: (grouping_key, correlation_type, correlation_reason)."""
-        host = None
-        user = None
-
-        if isinstance(alert.original_record, dict):
-            # Check host keys (exact match first)
-            for hk in self.HOST_KEYS:
-                if hk in alert.original_record and alert.original_record[hk]:
-                    host = str(alert.original_record[hk]).strip()
-                    break
-            if not host:
-                # Case-insensitive lookup
-                rec_lower = {str(k).lower(): v for k, v in alert.original_record.items() if v}
-                for hk in self.HOST_KEYS:
-                    if hk in rec_lower and rec_lower[hk]:
-                        host = str(rec_lower[hk]).strip()
-                        break
-
-            # Check user keys (exact match first)
-            for uk in self.USER_KEYS:
-                if uk in alert.original_record and alert.original_record[uk]:
-                    user = str(alert.original_record[uk]).strip()
-                    break
-            if not user:
-                # Case-insensitive lookup
-                rec_lower = {str(k).lower(): v for k, v in alert.original_record.items() if v}
-                for uk in self.USER_KEYS:
-                    if uk in rec_lower and rec_lower[uk]:
-                        user = str(rec_lower[uk]).strip()
-                        break
+        host_value = resolve_field(alert.original_record, "device.hostname")
+        user_value = resolve_field(alert.original_record, "user.name")
+        host = host_value.strip() if isinstance(host_value, str) else None
+        user = user_value.strip() if isinstance(user_value, str) else None
 
         if host and user:
             return (f"{host}:{user}", "confirmed", "shared_host_and_user")
@@ -115,6 +71,10 @@ class TimelineBuilder:
 
     def _get_alert_grouping_key(self, alert: NormalizedAlert, group_by: str) -> str:
         """Extracts the correlation grouping key from an alert attribute or original record."""
+        if group_by.lower() in FIELD_MAPPINGS:
+            value = resolve_field(alert.original_record, group_by)
+            return str(value).strip() if value is not None else "ungrouped"
+
         # 1. Direct attribute on NormalizedAlert
         if hasattr(alert, group_by):
             val = getattr(alert, group_by)

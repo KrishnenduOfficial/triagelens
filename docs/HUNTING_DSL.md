@@ -62,12 +62,87 @@ These names resolve to relational columns, case insensitively:
 | `source_file` | `source_file` |
 | `ground_truth_label` | `ground_truth_label` |
 
-All other names resolve relative to `original_record`, with case-sensitive JSON
+The canonical names below resolve through the shared mapping. All remaining
+names resolve relative to `original_record`, with case-sensitive JSON
 keys. `Network.DestinationIp` means that nested JSON path; do not prefix it with
 `original_record`. Only object paths with the segment syntax above are supported.
 Arrays, quoted keys, keys containing dots/hyphens/spaces, and wildcards are unsupported.
 The listed source/ground-truth columns remain local search fields; searches do
 not transmit them or their matches to the LLM or change independent labels.
+
+### Canonical Windows fields (T2.2)
+
+`src/engine/fields.py` provides a small, table-driven OCSF-inspired subset,
+not OCSF compliance. `resolve_field(record, name)` returns a scalar or `None`;
+`canonical_fields(record)` returns a fresh flat dictionary. Hunting and timeline
+correlation use this same resolver. Future Sigma code can reuse it; Sigma
+loading/evaluation is not implemented by this layer.
+
+| Canonical name | Source aliases, in priority order | Type |
+| --- | --- | --- |
+| `metadata.event_code` | EventID, EventId, EventCode, System.EventID | text code |
+| `metadata.log_name` | Channel, System.Channel | text |
+| `device.hostname` | host, hostname, computer_name, computername, computer, workstation, device_name, System.Computer | text |
+| `user.name` | user, username, target_user_name, subject_user_name, targetusername, subjectusername, account_name; then event-data User, TargetUserName, SubjectUserName | text |
+| `actor.user.name` | SubjectUserName | text |
+| `target.user.name` | TargetUserName | text |
+| `process.file.path` | Image, NewProcessName | text |
+| `process.cmd_line` | CommandLine | text |
+| `process.pid` | NewProcessId, ProcessId | integer PID |
+| `process.parent_process.file.path` | ParentImage, ParentProcessName | text |
+| `process.parent_process.pid` | ParentProcessId, CreatorProcessId | integer PID |
+| `src_endpoint.ip` | SourceIp, IpAddress | text |
+| `src_endpoint.port` | SourcePort, IpPort | integer port |
+| `dst_endpoint.ip` | DestinationIp | text |
+| `dst_endpoint.port` | DestinationPort | integer port |
+
+Event-data aliases are tried by name, each in these shapes: flat `Image`,
+adapter `Details["EventData.Image"]` (one literal dotted key), nested
+`EventData.Image`, then `Event.EventData.Image`. System aliases support both
+`System` and `Event.System` objects. Arbitrary XML-to-JSON encodings, raw XML,
+arrays, duplicate EVTX leaves with bracket suffixes, and undeclared paths are
+not decoded or searched. The code table in `FIELD_MAPPINGS` is authoritative.
+
+For Security process creation (event code `4688`), `process.file.path` uses only
+NewProcessName, `process.pid` only NewProcessId, and
+`process.parent_process.pid` only ProcessId: ProcessId identifies the creator
+in this event. Missing NewProcessId cannot fall back to the creator's ID.
+Other event-specific role variations are outside this subset.
+
+Canonical names are case insensitive and reserved ahead of arbitrary JSON paths.
+Explicit canonical nested input, then a literal canonical dotted key, precedes
+source aliases. Aliases are tried in declared order; the first valid value wins
+even if later aliases disagree. Each path segment prefers an exact key, otherwise
+a unique case-insensitive key; ambiguous case variants without an exact match
+are skipped. Invalid/null/container/blank values are skipped. No cross-field
+identity inference, account-domain joining, or hostname/IP normalization occurs.
+`user.name` is the primary observed account selected using the legacy alias
+order, not an assertion of actor identity; an adapter's User may be a SID fallback.
+Explicit subject/target roles remain separate. Correlation trims identity edges;
+text projection preserves nonblank source text, including command-line spacing.
+
+Event codes accept nonblank strings or nonnegative signed-64-bit integers
+converted to text. PIDs accept nonnegative signed-64-bit integers, ASCII decimal
+strings, or `0x` hexadecimal strings. Ports accept integers or ASCII decimal
+strings in 0–65535. Numeric strings may have surrounding whitespace and at most
+19 digits; booleans, floats, signs and malformed/overflow values are rejected.
+IP aliases preserve text and do not certify address validity. These conversions
+apply only to canonical fields; legacy JSON comparisons retain their types.
+
+Examples over existing stored EVTX records:
+
+```text
+metadata.log_name == "Security" AND process.pid == 42
+process.file.path contains "cmd.exe" AND actor.user.name == "creator"
+src_endpoint.port >= 49152 AND dst_endpoint.port == 443
+```
+
+The view is derived on demand: no schema migration, reingestion, raw-record
+changes, inference-payload changes, or backfilled detections. Dataset metadata,
+labels, rule hits, AI predictions, analyst dispositions and source paths are not
+mapping inputs. `TimelineBuilder` uses canonical host/user resolution in auto
+mode and accepts canonical names for explicit `group_by`. Existing windowing,
+event caps, indicator fallback and local provenance grouping remain in place.
 
 Comparisons use explicit operand types. Strings compare only to strings, with
 case-sensitive equality and lexical ordering. Numeric values compare only to
@@ -99,6 +174,14 @@ typed predicates, field expressions and SELECT syntax. Values and the row limit
 are bound parameters; validated field paths and allowlisted operators supply SQL
 structure. A future PostgreSQL dialect must implement the same semantics and
 pass differential checks. No PostgreSQL execution is implemented here.
+
+Canonical predicates call a hunt-scoped SQLite scalar function using the Python
+resolver. The connection lock protects its registration/removal; a one-record
+decode cache is cleared on success or failure. Translated canonical SQL requires
+this callback, which `execute_hunt` installs; it is not standalone SQLite SQL.
+Legacy predicates keep using JSON extraction. Canonical scans have Python
+callback overhead and are not indexed. They share the cooperative SQL deadline;
+one decode/resolution callback cannot be interrupted mid-call.
 
 | Limit | Behavior |
 | --- | --- |
@@ -141,6 +224,7 @@ From the project root in PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_hunting_dsl.py tests/test_hunting_adversarial.py
+.\.venv\Scripts\python.exe -m pytest -q -x --tb=short tests/test_fields.py
 ```
 
 The differential test uses four fixed seeds, 80 synthetic records per seed and

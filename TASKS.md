@@ -161,6 +161,18 @@ v2 live acceptance and untouched-case evaluation remain pending.
   one existing Starlette/HTTPX warning. No dependencies or live provider calls.
   PostgreSQL, saved-query UI/API and hard real-time cancellation are not provided.
 
+- [x] T2.2 canonical fields: 15 table-driven OCSF-inspired Windows telemetry
+  fields shared by hunting and correlation, with a reusable resolver for future
+  Sigma. Explicit alias precedence and scalar types, Security 4688 child/creator
+  PID separation, and distinct subject/target accounts preserve source records
+  and independent metadata. Existing databases need no migration or reingestion.
+  Verification: 64 new offline mapping/consumer cases passed; hunting, timeline
+  and EVTX regressions passed; full offline backend suite passed (985 tests,
+  one existing Starlette/HTTPX warning). See `docs/HUNTING_DSL.md` and ADR-015.
+  Limits: declared paths/events only; canonical scans use unindexed Python
+  callbacks and cooperative deadlines. Sigma evaluation and real-data quality
+  measurements remain separate work. No new dependencies or live calls.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

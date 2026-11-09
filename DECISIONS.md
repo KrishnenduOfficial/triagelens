@@ -404,6 +404,16 @@ Parsing/row limits and cooperative SQL deadlines bound work; API timeouts return
 Saved query definitions occupy their own table; saving does not run or persist hits.
 Seeded differential tests use an independent test-only Python evaluator; no new dependencies.
 
+**T2.2 extension (2026-11-09):** A table-driven OCSF-inspired Windows subset in
+`src/engine/fields.py` supplies scalar canonical fields for hunting/correlation and future Sigma.
+Use a derived view over declared telemetry paths; preserve original records and independent metadata.
+First valid alias wins, exact keys precede unique case-insensitive matches; PID/port typing is explicit.
+Security 4688 keeps the child NewProcessId separate from creator ProcessId and subject/target users apart.
+Canonical SQLite predicates call the shared resolver with a hunt-scoped one-record decode cache.
+No dependency, persistence migration, prompt expansion or Sigma evaluator is introduced.
+Limits: supported paths/events only, no OCSF compliance or performance/real-data quality claim.
+See [HUNTING_DSL.md](docs/HUNTING_DSL.md#canonical-windows-fields-t22) for mappings and precedence.
+
 ---
 
 ### ADR-016: Repository Hygiene and Credential Sanitization Standards

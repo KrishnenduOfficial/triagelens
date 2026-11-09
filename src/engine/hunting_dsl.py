@@ -5,6 +5,8 @@ import math
 import re
 from typing import Any, Protocol
 
+from src.engine.fields import FIELD_MAPPINGS
+
 
 class KQLParseError(ValueError):
     """Invalid or unsupported hunting filter syntax."""
@@ -183,6 +185,11 @@ class SQLiteDialect:
         direct = DIRECT_COLUMNS.get(node.field.lower())
         if direct:
             column = direct
+            type_expr = f"typeof({column})"
+            allowed_types = "('text')" if isinstance(node.value, str) else "('integer','real')"
+        elif node.field.lower() in FIELD_MAPPINGS:
+            # The field name comes from the fixed mapping, never arbitrary SQL.
+            column = f"triagelens_field(original_record, '{node.field.lower()}')"
             type_expr = f"typeof({column})"
             allowed_types = "('text')" if isinstance(node.value, str) else "('integer','real')"
         else:
