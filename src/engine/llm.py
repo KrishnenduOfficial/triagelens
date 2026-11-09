@@ -724,6 +724,13 @@ class TriageEngineBase:
 
     supports_persistent_cache = True
 
+    def _before_provider_request(self):
+        """Allow a provider to withhold an individual request."""
+        return True
+
+    def _after_provider_response(self, response):
+        """Observe provider response metadata before a possible fallback."""
+
     def acquire_timeline(self, timeline: ThreatTimeline, *, on_acquisition, persistent_cache=None):
         """Report real cache/send origin without changing analyze_timeline callers."""
         return traced_acquisition(self.analyze_timeline, timeline, on_acquisition,
@@ -859,6 +866,9 @@ class TriageEngineBase:
         for candidate in candidate_models:
             url, headers, candidate_payload = self._prepare_request(
                 candidate, user_prompt, generation_by_model[candidate], system_prompt)
+            if not self._before_provider_request():
+                logger.warning("%s request withheld: pacing wait budget exhausted.", self.PROVIDER_LABEL)
+                break
             try:
                 sender = self.request_sender if self.request_sender is not None else httpx.post
                 note_acquisition('fresh')
@@ -872,6 +882,8 @@ class TriageEngineBase:
                 safe_exc = self._safe_log_text(str(exc))
                 logger.warning("%s API network request error (%s): %s", self.PROVIDER_LABEL, candidate, safe_exc)
                 continue
+
+            self._after_provider_response(candidate_response)
 
             if candidate_response.status_code == 200:
                 response = candidate_response

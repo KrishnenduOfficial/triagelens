@@ -132,6 +132,101 @@ def test_explicit_fallback_records_actual_model_and_cache_origin():
     assert calls == [MODEL, "openai/gpt-oss-20b"]
 
 
+class FakePacingClock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, delay):
+        self.sleeps.append(delay)
+        self.now += delay
+
+
+def test_pacing_token_window_and_request_window_without_sleeping():
+    for limits in ((30, 8000, 1500, 60), (2, 8000, 1500, 60)):
+        fake = FakePacingClock()
+        sends = []
+        engine = GroqTriageEngine(api_key="offline", enable_cache=False,
+            pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=limits,
+            request_sender=lambda *a, **k: (sends.append(fake.now) or httpx.Response(200, json=completion())))
+        count = min(limits[0], limits[1] // limits[2]) + 1
+        for _ in range(count):
+            assert engine.analyze_timeline(timeline())
+        assert sends[-1] == 60 and fake.sleeps == [60]
+
+
+def test_pacing_retry_after_waits_before_fallback_and_honors_budget():
+    for budget, expected in ((10, [0, 7]), (6, [0])):
+        fake = FakePacingClock()
+        sends = []
+        def send(*args, **kwargs):
+            sends.append(fake.now)
+            if len(sends) == 1:
+                return httpx.Response(429, headers={"Retry-After": "7"})
+            return httpx.Response(200, json=completion(model=kwargs["json"]["model"]))
+        engine = GroqTriageEngine(api_key="offline", enable_cache=False,
+            fallback_models=["openai/gpt-oss-20b"], request_sender=send,
+            pacing_clock=fake.clock, pacing_sleep=fake.sleep,
+            pacing_config=(30, 8000, 1500, budget))
+        result = engine.analyze_timeline(timeline())
+        assert bool(result) == (budget == 10)
+        assert sends == expected
+        assert fake.sleeps == ([7] if budget == 10 else [])
+
+
+def test_pacing_retry_after_persists_for_later_analysis_and_accepts_http_date():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        if len(sends) == 1:
+            return httpx.Response(429, headers={"Retry-After": "Thu, 01 Jan 1970 00:00:12 GMT"})
+        return httpx.Response(200, json=completion())
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_wall_clock=lambda: 0,
+        pacing_config=(30, 8000, 1500, 60))
+    assert engine.analyze_timeline(timeline()) is None
+    assert engine.analyze_timeline(timeline())
+    assert sends == [0, 12] and fake.sleeps == [12]
+
+
+def test_pacing_bounds_cumulative_wait_across_fallbacks():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        return httpx.Response(429, headers={"Retry-After": "4"})
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        fallback_models=["openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 7))
+    assert engine.analyze_timeline(timeline()) is None
+    assert sends == [0, 4] and fake.sleeps == [4]
+
+
+def test_invalid_retry_after_is_ignored_without_retry():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        return httpx.Response(429, headers={"Retry-After": "invalid"})
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 60))
+    assert engine.analyze_timeline(timeline()) is None
+    assert sends == [0] and fake.sleeps == []
+
+
+@pytest.mark.parametrize("name,value", [("GROQ_REQUESTS_PER_MINUTE", "0"),
+    ("GROQ_TOKENS_PER_MINUTE", "abc"), ("GROQ_ESTIMATED_TOKENS_PER_REQUEST", "8001"),
+    ("GROQ_MAX_WAIT_SECONDS", "nan")])
+def test_invalid_pacing_configuration_is_rejected(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match="pacing"):
+        GroqTriageEngine(api_key="offline")
+
+
 def test_provider_identity_separates_caches_even_with_same_model_name():
     cache = LLMResponseCache()
     sample = timeline()

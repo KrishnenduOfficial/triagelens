@@ -22,6 +22,10 @@ CANONICAL_CONFIG_VARS = [
     "GROQ_API_KEY",
     "GROQ_MODEL",
     "GROQ_FALLBACK_MODELS",
+    "GROQ_REQUESTS_PER_MINUTE",
+    "GROQ_TOKENS_PER_MINUTE",
+    "GROQ_ESTIMATED_TOKENS_PER_REQUEST",
+    "GROQ_MAX_WAIT_SECONDS",
     "VIRUSTOTAL_API_KEY",
     "ABUSEIPDB_API_KEY",
     "URLHAUS_API_KEY",
@@ -95,6 +99,21 @@ def get_groq_fallback_models() -> List[str]:
         item.strip() for item in os.getenv("GROQ_FALLBACK_MODELS", "").split(",")
         if item.strip()
     ))
+
+
+def get_groq_pacing_config() -> tuple[int, int, int, float]:
+    """Return explicitly bounded per-engine pacing settings."""
+    import math
+    try:
+        rpm = int(os.getenv("GROQ_REQUESTS_PER_MINUTE", "30"))
+        tpm = int(os.getenv("GROQ_TOKENS_PER_MINUTE", "8000"))
+        estimate = int(os.getenv("GROQ_ESTIMATED_TOKENS_PER_REQUEST", "1500"))
+        wait = float(os.getenv("GROQ_MAX_WAIT_SECONDS", "60"))
+    except ValueError as exc:
+        raise ValueError("Invalid Groq pacing configuration") from exc
+    if rpm <= 0 or tpm <= 0 or not 0 < estimate <= tpm or not math.isfinite(wait) or wait < 0:
+        raise ValueError("Invalid Groq pacing configuration")
+    return rpm, tpm, estimate, wait
 
 
 def get_virustotal_api_key() -> Optional[str]:

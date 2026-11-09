@@ -2,7 +2,12 @@
 
 import json
 import math
+import threading
+import time
+from collections import deque
 from copy import deepcopy
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -50,7 +55,9 @@ class GroqTriageEngine(TriageEngineBase):
     # Deliberately limited to models documented to support strict structured output.
     SUPPORTED_MODELS = frozenset({"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"})
 
-    def __init__(self, api_key=None, model=None, fallback_models=None, timeout=30.0, **kwargs):
+    def __init__(self, api_key=None, model=None, fallback_models=None, timeout=30.0,
+                 pacing_clock=None, pacing_sleep=None, pacing_wall_clock=None,
+                 pacing_config=None, **kwargs):
         key = (api_key if api_key is not None else config.get_groq_api_key()) or ""
         if not key or any(ord(char) < 33 or ord(char) > 126 for char in key):
             raise ValueError("A nonblank, header-safe GROQ_API_KEY is required.")
@@ -60,10 +67,66 @@ class GroqTriageEngine(TriageEngineBase):
             raise ValueError("Unsupported Groq model; use a documented strict-schema model.")
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Groq timeout must be positive and finite.")
+        self._rpm, self._tpm, self._token_estimate, self._max_wait = (
+            pacing_config if pacing_config is not None else config.get_groq_pacing_config())
+        if (not all(isinstance(v, int) and not isinstance(v, bool) and v > 0
+                    for v in (self._rpm, self._tpm, self._token_estimate))
+                or self._token_estimate > self._tpm or not math.isfinite(self._max_wait)
+                or self._max_wait < 0):
+            raise ValueError("Invalid Groq pacing configuration")
+        self._pacing_clock = pacing_clock or time.monotonic
+        self._pacing_sleep = pacing_sleep or time.sleep
+        self._pacing_wall_clock = pacing_wall_clock or time.time
+        self._pacing_lock = threading.Lock()
+        self._requests = deque()
+        self._blocked_until = 0.0
+        self._waited = 0.0
         # Provider bodies and exception strings can contain sensitive telemetry.
         kwargs["include_error_details"] = False
         super().__init__(api_key=key, model=selected, fallback_models=fallbacks,
                          timeout=timeout, **kwargs)
+
+    def analyze_timeline(self, timeline):
+        # Serialize acquisition so reservations and the per-analysis wait budget
+        # cannot race with another request through this engine instance.
+        with self._pacing_lock:
+            self._waited = 0.0
+            return super().analyze_timeline(timeline)
+
+    def _before_provider_request(self):
+        while True:
+            now = self._pacing_clock()
+            while self._requests and self._requests[0] <= now - 60:
+                self._requests.popleft()
+            capacity = min(self._rpm, self._tpm // self._token_estimate)
+            due = self._blocked_until
+            if len(self._requests) >= capacity:
+                due = max(due, self._requests[0] + 60)
+            delay = max(0.0, due - now)
+            if not delay:
+                self._requests.append(now)
+                return True
+            if self._waited + delay > self._max_wait:
+                return False
+            self._pacing_sleep(delay)
+            self._waited += delay
+
+    def _after_provider_response(self, response):
+        if response.status_code != 429:
+            return
+        value = response.headers.get("Retry-After", "").strip()
+        try:
+            delay = float(value)
+        except ValueError:
+            try:
+                stamp = parsedate_to_datetime(value)
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                delay = stamp.timestamp() - self._pacing_wall_clock()
+            except (TypeError, ValueError, OverflowError):
+                return
+        if math.isfinite(delay) and delay >= 0:
+            self._blocked_until = max(self._blocked_until, self._pacing_clock() + delay)
 
     def _generation_settings(self, candidate):
         settings = {

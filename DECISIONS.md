@@ -2465,6 +2465,16 @@ must be separately bounded and predeclared; no performance or safety guarantee i
 made by agreeing the contract. The offline audit's existing results are historical
 evidence, not tests of an unimplemented `triage-v2`.
 
+### ADR-058: Bounded Groq request pacing
+
+**Status:** Accepted for T0.5; offline verification only.
+
+Each Groq engine paces attempted sends in a rolling minute using configurable
+request and estimated-token limits and honors valid 429 Retry-After values.
+The per-analysis pacing wait is bounded; no same-model retry is introduced.
+State is local to one engine, token usage is estimated, and daily quotas are not
+enforced. Independent processes and actual provider accounting can exceed limits.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.
