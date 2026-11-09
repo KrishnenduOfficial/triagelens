@@ -1,4 +1,5 @@
 # AGENTS.md ? TriageLens
+Roadmap: docs/ROADMAP.md. Read only sections 1 and 2 and the active step.
 
 ## Current provider and verified status ? 2026-11-08
 
