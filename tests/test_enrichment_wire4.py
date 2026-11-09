@@ -235,6 +235,18 @@ def test_indicator_classification_junk_rejection_and_ipv6():
     assert is_public_ipv6("2001:4860:4860::8888") is True  # Public Google DNS
 
 
+@pytest.mark.parametrize("detections, expected", [(1, False), (2, False), (3, True)])
+def test_virustotal_default_threshold_boundary(monkeypatch, detections, expected):
+    monkeypatch.delenv("VIRUSTOTAL_MIN_DETECTIONS", raising=False)
+    response = MagicMock(spec=httpx.Response, status_code=200)
+    response.json.return_value = {
+        "data": {"attributes": {"last_analysis_stats": {"malicious": detections}}}
+    }
+    with patch("httpx.get", return_value=response):
+        result = VirusTotalProvider(api_key="mock_key").lookup_with_status("198.51.100.1", "ip")
+    assert result.is_malicious is expected
+
+
 def test_configurable_malicious_thresholds(monkeypatch):
     """Verify that VirusTotal and AbuseIPDB honor configurable detection and confidence thresholds."""
     # Test AbuseIPDB with score=20 (below default threshold of 25)

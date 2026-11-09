@@ -171,7 +171,7 @@ def test_enrichment_engine_enrich_indicators(enrichment_engine):
     mock_payload = {
         "data": {
             "attributes": {
-                "last_analysis_stats": {"malicious": 1, "harmless": 10},
+                "last_analysis_stats": {"malicious": 3, "harmless": 10},
             },
         }
     }

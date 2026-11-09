@@ -114,19 +114,19 @@ def get_abuseipdb_api_key() -> Optional[str]:
 
 def get_urlhaus_api_key() -> Optional[str]:
     """Returns the URLhaus / abuse.ch API Auth-Key if configured."""
-    key = os.getenv("URLHAUS_API_KEY") or os.getenv("AUTH_KEY")
+    key = os.getenv("URLHAUS_API_KEY")
     return key.strip() if key else None
 
 
 def get_virustotal_min_detections() -> int:
-    """Returns the minimum number of malicious engine detections required for a malicious verdict (default: 1)."""
-    raw = os.getenv("VIRUSTOTAL_MIN_DETECTIONS", "1").strip()
+    """Return the malicious engine detection threshold (default: 3)."""
+    raw = os.getenv("VIRUSTOTAL_MIN_DETECTIONS", "3").strip()
     try:
         val = int(raw)
-        return val if val >= 1 else 1
+        return val if val >= 1 else 3
     except ValueError:
-        logger.warning("Invalid VIRUSTOTAL_MIN_DETECTIONS '%s', defaulting to 1", raw)
-        return 1
+        logger.warning("Invalid VIRUSTOTAL_MIN_DETECTIONS '%s', defaulting to 3", raw)
+        return 3
 
 
 def get_abuseipdb_min_score() -> int:
@@ -218,7 +218,7 @@ def get_virustotal_requests_per_minute() -> int:
 
 
 def get_enrichment_max_lookups() -> Optional[int]:
-    """Returns per-run max lookups limit across all providers if configured."""
+    """Parse the configured cap; currently no runtime caller uses this getter."""
     raw = os.getenv("ENRICHMENT_MAX_LOOKUPS_PER_RUN")
     if not raw or raw.strip().lower() in ("none", "null", "0", "unlimited"):
         return None

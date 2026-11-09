@@ -215,12 +215,22 @@ old models; use explicit run/cohort selections for a current-provider comparison
    DATABASE_PATH=data/triagelens.db
    VIRUSTOTAL_API_KEY=
    ABUSEIPDB_API_KEY=
+   URLHAUS_API_KEY=
    ```
    Groq needs a real key for live triage. Intelligence credentials are optional:
    enter real values for services you use and leave unused credentials blank,
    including `URLHAUS_API_KEY` in the template. Example placeholder strings are
    treated as configured credentials; they are not working API keys.
    *(Note: `TRIAGELENS_DB_PATH` is also recognized as an alias for `DATABASE_PATH`, and `VT_API_KEY` as an alias for `VIRUSTOTAL_API_KEY`).*
+
+   `VIRUSTOTAL_MIN_DETECTIONS` defaults to 3 malicious engine detections;
+   set it to a positive integer to adjust the enrichment flag. A result below
+   the threshold, including one or two detections, does not prove an indicator
+   is safe. `ENRICHMENT_WAIT_MODE` defaults to `false`; set it to `true` to
+   allow rate-limit waits bounded by `ENRICHMENT_MAX_WAIT_SECONDS`.
+   `ENRICHMENT_MAX_LOOKUPS_PER_RUN=0` is parsed as no cap, but the environment
+   variable is currently unused by the runtime, even when set to a positive
+   value. Use the CLI `--max-lookups` option to enforce a per-run lookup cap.
 
    CLI, API, and the evaluation runner share database resolution: explicit CLI
    override, nonblank `DATABASE_PATH`, nonblank `TRIAGELENS_DB_PATH`, then

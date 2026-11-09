@@ -15,7 +15,11 @@ from src.config import (
     get_groq_api_key,
     get_groq_fallback_models,
     get_groq_model,
+    get_enrichment_max_lookups,
+    get_enrichment_wait_mode,
+    get_urlhaus_api_key,
     get_virustotal_api_key,
+    get_virustotal_min_detections,
     validate_config,
 )
 from src.engine.enrichment import AbuseIPDBProvider, VirusTotalProvider
@@ -50,6 +54,41 @@ def test_abuseipdb_api_key(monkeypatch):
     assert get_abuseipdb_api_key() == "abuse-key-xyz"
     provider = AbuseIPDBProvider()
     assert provider.api_key == "abuse-key-xyz"
+
+
+def test_urlhaus_ignores_generic_auth_key(monkeypatch):
+    monkeypatch.delenv("URLHAUS_API_KEY", raising=False)
+    monkeypatch.setenv("AUTH_KEY", "unrelated-key")
+    assert get_urlhaus_api_key() is None
+    monkeypatch.setenv("URLHAUS_API_KEY", " urlhaus-key ")
+    assert get_urlhaus_api_key() == "urlhaus-key"
+
+
+@pytest.mark.parametrize("value, expected", [(None, 3), ("3", 3), ("1", 1), ("0", 3), ("invalid", 3)])
+def test_virustotal_threshold_config(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("VIRUSTOTAL_MIN_DETECTIONS", raising=False)
+    else:
+        monkeypatch.setenv("VIRUSTOTAL_MIN_DETECTIONS", value)
+    assert get_virustotal_min_detections() == expected
+
+
+def test_enrichment_wait_mode_defaults_off_and_can_be_enabled(monkeypatch):
+    monkeypatch.delenv("ENRICHMENT_WAIT_MODE", raising=False)
+    assert get_enrichment_wait_mode() is False
+    monkeypatch.setenv("ENRICHMENT_WAIT_MODE", "true")
+    assert get_enrichment_wait_mode() is True
+
+
+def test_enrichment_lookup_environment_setting_is_not_used(monkeypatch):
+    from src.engine.enrichment import EnrichmentEngine
+
+    monkeypatch.setenv("ENRICHMENT_MAX_LOOKUPS_PER_RUN", "0")
+    assert get_enrichment_max_lookups() is None
+    monkeypatch.setenv("ENRICHMENT_MAX_LOOKUPS_PER_RUN", "2")
+    assert get_enrichment_max_lookups() == 2
+    assert EnrichmentEngine(providers={}).max_lookups_per_run is None
+    assert EnrichmentEngine(providers={}, max_lookups_per_run=2).max_lookups_per_run == 2
 
 
 def test_database_path_canonical_and_alias(monkeypatch, tmp_path):
