@@ -22,6 +22,66 @@ Gemini WIRE-11 is **retired / superseded by provider replacement**. Its upstream
 cause was not established or repaired. It is not an active blocker or a task to
 resume. Prior benchmark reports and stored outcomes retain historical attribution.
 
+## Current provider and verified status — 2026-11-08
+
+Groq is the sole supported runtime AI provider (ADR-055). Use `GROQ_API_KEY`,
+`GROQ_MODEL` (default `openai/gpt-oss-120b`) and optional `GROQ_FALLBACK_MODELS`
+(blank by default). `.env` is private and must never be printed or committed.
+
+The operator ran `python scripts/diagnose_groq.py --timeout 30 --trace` and
+reported HTTP 200, the expected answering model, a schema-valid full triage,
+1248.8ms, one request, no cache and no fallback. This verifies that request,
+not benchmark accuracy or guaranteed future availability.
+
+Subsequent agent-executed live verification: six preselected synthetic cases,
+six valid verdicts, TP=3/TN=3/FP=0/FN=0, but severity agreement only 1/6. API persisted
+metrics and real-component static rendering matched. See
+`docs/results/groq_evaluation_report.md`. The offline rubric/preservation audit is
+complete: `docs/results/severity_safety_audit_20261108.md`. It reproduced M23's
+malicious/LOW scoring conflict and structural validation accepting unsafe or
+unsupported advice. The operator subsequently approved and implemented ADR-056:
+`triage-v1` separates disposition from severity, adds an evidence-qualified,
+preservation-first policy and structural content checks, and preserves legacy
+history with explicit prediction-basis metadata. The subsequent authorized
+`triage-v1` live development check made six requests: six valid outcomes, TP=3,
+TN=1/FN=1 on five labelled cases, one unlabelled abstention, and severity 3/5.
+Saved metrics matched all four API scopes and static dashboard rendering. Review
+still found unsupported TLS/success/legitimacy claims and incomplete containment
+qualification. See `docs/results/triage_v1_live_check_20261108.md`. The earlier six
+outcomes remain pre-policy evidence. No live calls were made by the offline audit
+or implementation themselves.
+
+Follow-up evidence/abstention audit is complete:
+`docs/results/evidence_abstention_audit_20261108.md`. Six saved completions replay
+with matching request-body hashes; 14 injected local probes made zero network
+attempts, and 228 targeted regressions passed. Structural checks do not enforce
+evidence sufficiency or prose support, and the audit found missing uncertainty/gap
+presentation. ADR-057 is now implemented offline: active `triage-v2` /
+`evidence-basis-v1`, structured basis/observation/hypothesis/gap checks, validated
+references to immutable sanitized snapshots, and legacy-safe uncertainty display.
+Labelled coverage is reported separately from abstentions and unknown truth.
+Live v2 acceptance/semantic quality remains unmeasured. Normalization is a separate
+follow-up. Preserve all previous
+labels, metrics and policy identities; do not claim the semantic gaps are fixed.
+This does not close interactive UI, full CLI or prompt-injection verification.
+
+Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
+as superseded by the provider replacement, not repaired upstream. Historical
+benchmark reports and stored records retain their true model attribution.
+Do not ask the operator to resume Gemini diagnostics as a current project task.
+See README.md, TASKS.md, DECISIONS.md and docs/results/groq_migration_20261108.md.
+
+Current offline verification: 728 backend tests passed (one existing warning),
+79 dashboard tests passed and production build succeeded; local Markdown links and
+diff whitespace checks passed. Removed-provider tests were retired; the new policy
+added 33 backend cases; ADR-057 adds 76 backend and 30 dashboard cases. References
+establish traceability, not semantic proof. The earlier bounded live check used v1;
+v2 live acceptance and untouched-case evaluation remain pending.
+
+## Roadmap progress
+
+- [x] T0.1 token hygiene: ADR index, concise agent rules, Markdown encoding check, and scratch ignore rule. The operator reported 728 backend tests passed (one warning); 79 dashboard tests passed.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

@@ -48,6 +48,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Code Dumps & Scratch Scripts
+scratch/
 *.dmp
 *.dump
 *codebase*.txt

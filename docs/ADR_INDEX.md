@@ -1,0 +1,62 @@
+# ADR index
+
+Statuses below are recorded in each ADR; later decisions may supersede historical entries. Consult ADR-055 for the active provider.
+
+
+- [ADR-001](../DECISIONS.md#adr-001-python-for-the-core-processing-pipeline) — Python for the Core Processing Pipeline — Accepted
+- [ADR-002](../DECISIONS.md#adr-002-modular-pipeline-architecture) — Modular Pipeline Architecture — Accepted
+- [ADR-003](../DECISIONS.md#adr-003-gemini-api-as-the-initial-ai-provider) — Gemini API as the Initial AI Provider — Accepted
+- [ADR-004](../DECISIONS.md#adr-004-sqlite-for-initial-database) — SQLite for Initial Database — Accepted
+- [ADR-005](../DECISIONS.md#adr-005-fastapi-for-the-backend-api) — FastAPI for the Backend API — Accepted
+- [ADR-006](../DECISIONS.md#adr-006-typescript-and-react-19-for-the-analyst-dashboard) — TypeScript and React 19 for the Analyst Dashboard — Accepted
+- [ADR-007](../DECISIONS.md#adr-007-cloud-based-ai-inference) — Cloud-Based AI Inference — Accepted
+- [ADR-008](../DECISIONS.md#adr-008-independent-ground-truth) — Independent Ground Truth — Accepted — Core Project Principle
+- [ADR-009](../DECISIONS.md#adr-009-deterministic-processing-before-ai-analysis) — Deterministic Processing Before AI Analysis — Accepted
+- [ADR-010](../DECISIONS.md#adr-010-initial-threat-intelligence-integrations) — Initial Threat Intelligence Integrations — Proposed initial scope
+- [ADR-011](../DECISIONS.md#adr-011-environment-based-secret-management) — Environment-Based Secret Management — Accepted
+- [ADR-012](../DECISIONS.md#adr-012-automated-testing-with-pytest) — Automated Testing with Pytest — Accepted
+- [ADR-013](../DECISIONS.md#adr-013-hardware-conscious-development) — Hardware-Conscious Development — Accepted
+- [ADR-014](../DECISIONS.md#adr-014-documentation-as-the-project-source-of-truth) — Documentation as the Project Source of Truth — Accepted
+- [ADR-015](../DECISIONS.md#adr-015-parameterized-kql-to-sqlite-threat-hunting-engine) — Parameterized KQL-to-SQLite Threat Hunting Engine — Accepted
+- [ADR-016](../DECISIONS.md#adr-016-repository-hygiene-and-credential-sanitization-standards) — Repository Hygiene and Credential Sanitization Standards — Accepted
+- [ADR-017](../DECISIONS.md#adr-017-ground-truth-prompt-isolation-and-strict-allow-list-serializer) — Ground-Truth Prompt Isolation and Strict Allow-List Serializer — Accepted
+- [ADR-018](../DECISIONS.md#adr-018-defense-in-depth-secret-masking-json-aware-kv-regex--luhn-check-validation) — Defense-in-Depth Secret Masking (JSON-Aware KV Regex & Luhn Check Validation) — Accepted
+- [ADR-019](../DECISIONS.md#adr-019-api-security-hardening-and-concurrency-optimization-cors-kql-limit-wal-mode) — API Security Hardening and Concurrency Optimization (CORS, KQL LIMIT, WAL Mode) — Accepted
+- [ADR-020](../DECISIONS.md#adr-020-api-request-boundary-enforcement-and-global-exception-sanitization) — API Request Boundary Enforcement and Global Exception Sanitization — Accepted
+- [ADR-021](../DECISIONS.md#adr-021-deterministic-multi-identifier-timeline-correlation-windowing-and-provenance-distinction) — Deterministic Multi-Identifier Timeline Correlation, Windowing, and Provenance Distinction — Accepted
+- [ADR-022](../DECISIONS.md#adr-022-explicit-dataset-ground-truth-mapping-severity-evaluation-and-reproducible-metrics) — Explicit Dataset Ground-Truth Mapping, Severity Evaluation, and Reproducible Metrics — Accepted
+- [ADR-023](../DECISIONS.md#adr-023-llm-prompt-injection-defense-untrusted-evidence-delimitation-and-verified-model-architecture) — LLM Prompt Injection Defense, Untrusted Evidence Delimitation, and Verified Model Architecture — Accepted (Verified with Google Generative Language API on 2026-11-06)
+- [ADR-024](../DECISIONS.md#adr-024-log-sanitization-boundaries-and-real-70-timeline-evaluation-benchmark-run) — Log Sanitization Boundaries and Real 70-Timeline Evaluation Benchmark Run — Accepted
+- [ADR-025](../DECISIONS.md#adr-025-in-memory-response-caching-provider-protocol-abstraction-uncertainty-fields-and-confidence-calibration) — In-Memory Response Caching, Provider Protocol Abstraction, Uncertainty Fields, and Confidence Calibration — Accepted
+- [ADR-026](../DECISIONS.md#adr-026-gemini-3-generation-model-transition--deprecation-lifecycle) — Gemini 3 Generation Model Transition & Deprecation Lifecycle — Accepted (Empirically verified on 2026-11-06)
+- [ADR-027](../DECISIONS.md#adr-027-centralized-configuration-management-canonical-environment-variables-and-startup-database-resolution) — Centralized Configuration Management, Canonical Environment Variables, and Startup Database Resolution — Accepted
+- [ADR-028](../DECISIONS.md#adr-028-threat-intelligence-indicator-routing-and-credential-gated-provider-registration) — Threat Intelligence Indicator Routing and Credential-Gated Provider Registration — Accepted
+- [ADR-029](../DECISIONS.md#adr-029-threat-intelligence-rate-limiting-persistent-sqlite-caching-and-unavailable-intelligence-defense) — Threat Intelligence Rate Limiting, Persistent SQLite Caching, and Unavailable Intelligence Defense — Accepted
+- [ADR-030](../DECISIONS.md#adr-030-normalized-threat-intelligence-summarization-indicator-quality-gates-and-configurable-thresholds) — Normalized Threat Intelligence Summarization, Indicator Quality Gates, and Configurable Thresholds — Accepted
+- [ADR-031](../DECISIONS.md#adr-031-live-connection-verification--zero-leak-secret-masking-standards) — Live Connection Verification & Zero-Leak Secret Masking Standards — Accepted
+- [ADR-032](../DECISIONS.md#adr-032-database-derived-api-metrics-and-end-to-end-pipeline-coherence) — Database-Derived API Metrics and End-to-End Pipeline Coherence — Accepted
+- [ADR-033](../DECISIONS.md#adr-033-api-health-check-active-verification-route-parity-automation-and-documentation-synchronization) — API Health Check Active Verification, Route Parity Automation, and Documentation Synchronization — Accepted
+- [ADR-034](../DECISIONS.md#adr-034-benchmark-scientific-rigor-wilson-score-intervals-and-statistical-humility) — Benchmark Scientific Rigor, Wilson Score Intervals, and Statistical Humility — Accepted
+- [ADR-035](../DECISIONS.md#adr-035-production-code-purity-and-elimination-of-testing-framework-dependencies) — Production Code Purity and Elimination of Testing Framework Dependencies — Accepted
+- [ADR-036](../DECISIONS.md#adr-036-enrichment-rate-limiter-wait-mode-persisted-quotas-and-label-free-prioritization) — Enrichment Rate Limiter Wait Mode, Persisted Quotas, and Label-Free Prioritization — Accepted
+- [ADR-037](../DECISIONS.md#adr-037-primary-only-gemini-diagnostics-and-safe-failure-reporting) — Primary-Only Gemini Diagnostics and Safe Failure Reporting — Accepted — diagnostic support, not a WIRE-11 transport fix
+- [ADR-038](../DECISIONS.md#adr-038-gemini-3-request-compatibility-and-honest-smoke-test-failures) — Gemini 3 Request Compatibility and Honest Smoke-Test Failures — Accepted — local request corrections; provider availability unresolved
+- [ADR-039](../DECISIONS.md#adr-039-offline-pytest-enforcement-and-end-to-end-provider-injection) — Offline Pytest Enforcement and End-to-End Provider Injection — Accepted
+- [ADR-040](../DECISIONS.md#adr-040-recursive-structured-telemetry-isolation-at-the-prompt-boundary) — Recursive Structured Telemetry Isolation at the Prompt Boundary — Accepted — enforcement of ADR-008 and ADR-017
+- [ADR-041](../DECISIONS.md#adr-041-authoritative-sqlite-cache-expiry-and-timed-memory-only-entries) — Authoritative SQLite Cache Expiry and Timed Memory-Only Entries — Accepted — enforcement of ADR-029 cache lifetimes
+- [ADR-042](../DECISIONS.md#adr-042-compact-intelligence-budget-at-the-final-prompt-boundary) — Compact Intelligence Budget at the Final Prompt Boundary — Accepted — enforcement and scope clarification of ADR-030
+- [ADR-043](../DECISIONS.md#adr-043-atomic-daily-quota-reservation-for-each-provider-attempt) — Atomic Daily Quota Reservation for Each Provider Attempt — Accepted and implemented with explicit user approval (2026-11-08).
+- [ADR-044](../DECISIONS.md#adr-044-shared-project-root-database-path-resolution) — Shared Project-Root Database Path Resolution — Accepted and implemented with explicit approval (2026-11-08).
+- [ADR-045](../DECISIONS.md#adr-045-persist-unavailable-triage-outcomes-and-reconstruct-availability) — Persist Unavailable Triage Outcomes and Reconstruct Availability — Accepted and implemented with explicit approval (2026-11-08).
+- [ADR-046](../DECISIONS.md#adr-046-persist-severity-evaluation-snapshots-with-nullable-legacy-fields) — Persist Severity Evaluation Snapshots with Nullable Legacy Fields — Accepted and implemented with explicit approval (2026-11-08).
+- [ADR-047](../DECISIONS.md#adr-047-replay-provenance-and-explicit-metric-scopes) — Replay Provenance and Explicit Metric Scopes — Accepted design (2026-11-08); stages 1-2 implemented under ADR-048/049, stages 3-4 pending.
+- [ADR-048](../DECISIONS.md#adr-048-runobservation-lifecycle-and-atomic-outcome-finalization) — Run/Observation Lifecycle and Atomic Outcome Finalization — Accepted and implemented with explicit stage-1 approval (2026-11-08).
+- [ADR-049](../DECISIONS.md#adr-049-shared-verdict-cache-contract-and-verified-acquisition) — Shared Verdict Cache Contract and Verified Acquisition — Accepted and implemented with explicit stage-2 approval (2026-11-08).
+- [ADR-050](../DECISIONS.md#adr-050---explicit-metric-scopes-and-validated-cohort-selection) — Explicit metric scopes and validated cohort selection — Accepted and implemented - 2026-11-08 (ADR-047 stage 3)
+- [ADR-051](../DECISIONS.md#adr-051---dashboard-metric-scopes-with-an-explicit-history-default) — Dashboard metric scopes with an explicit History default — Accepted and implemented - 2026-11-08 (ADR-047 stage-4 dashboard portion)
+- [ADR-052](../DECISIONS.md#adr-052---opt-in-wire-11-variants-and-safe-transport-phase-diagnostics) — Opt-in WIRE-11 variants and safe transport-phase diagnostics — Accepted and implemented - 2026-11-08 (diagnostic support; subsequent operator primary-only acceptance verified as recorded below)
+- [ADR-053](../DECISIONS.md#adr-053---opt-in-matched-httpxcurl-comparison-diagnostics) — Opt-in matched HTTPX/curl comparison diagnostics — Accepted and implemented - 2026-11-08; WIRE-11 OPEN / INTERMITTENT
+- [ADR-054](../DECISIONS.md#adr-054-replace-active-gemini-inference-with-groq) — Replace active Gemini inference with Groq — Accepted and implemented offline, 2026-11-08. Supersedes ADR-023/026 for the active provider/model selection only; their historical evidence remains.
+- [ADR-055](../DECISIONS.md#adr-055-sole-groq-provider-verified-live-request-and-retirement-cleanup) — Sole Groq provider, verified live request and retirement cleanup — Accepted and implemented, 2026-11-08. Supersedes ADR-054's temporary legacy-provider retention and retires ADR-037/038/052/053 provider tooling.
+- [ADR-056](../DECISIONS.md#adr-056-independent-disposition-and-versioned-evidencepreservation-policy) — Independent disposition and versioned evidence/preservation policy — Accepted and implemented offline, 2026-11-08. Explicitly authorized by the operator. Supersedes the severity-derived binary prediction rule for new versioned assessments only; original ADR-022 results and labels are preserved.
+- [ADR-057](../DECISIONS.md#adr-057-versioned-evidence-basis-contract-and-visible-uncertainty) — Versioned evidence-basis contract and visible uncertainty — Accepted and implemented offline, 2026-11-08. The operator first requested contract agreement, then explicitly authorized offline implementation. The active runtime policy is `triage-v2`; live provider acceptance and semantic quality under the new contract have not yet been measured.

@@ -1,61 +1,5 @@
-# AGENTS.md ? TriageLens
-Roadmap: docs/ROADMAP.md. Read only sections 1 and 2 and the active step.
-
-## Current provider and verified status ? 2026-11-08
-
-Groq is the sole supported runtime AI provider (ADR-055). Use `GROQ_API_KEY`,
-`GROQ_MODEL` (default `openai/gpt-oss-120b`) and optional `GROQ_FALLBACK_MODELS`
-(blank by default). `.env` is private and must never be printed or committed.
-
-The operator ran `python scripts/diagnose_groq.py --timeout 30 --trace` and
-reported HTTP 200, the expected answering model, a schema-valid full triage,
-1248.8ms, one request, no cache and no fallback. This verifies that request,
-not benchmark accuracy or guaranteed future availability.
-
-Subsequent agent-executed live verification: six preselected synthetic cases,
-six valid verdicts, TP=3/TN=3/FP=0/FN=0, but severity agreement only 1/6. API persisted
-metrics and real-component static rendering matched. See
-`docs/results/groq_evaluation_report.md`. The offline rubric/preservation audit is
-complete: `docs/results/severity_safety_audit_20261108.md`. It reproduced M23's
-malicious/LOW scoring conflict and structural validation accepting unsafe or
-unsupported advice. The operator subsequently approved and implemented ADR-056:
-`triage-v1` separates disposition from severity, adds an evidence-qualified,
-preservation-first policy and structural content checks, and preserves legacy
-history with explicit prediction-basis metadata. The subsequent authorized
-`triage-v1` live development check made six requests: six valid outcomes, TP=3,
-TN=1/FN=1 on five labelled cases, one unlabelled abstention, and severity 3/5.
-Saved metrics matched all four API scopes and static dashboard rendering. Review
-still found unsupported TLS/success/legitimacy claims and incomplete containment
-qualification. See `docs/results/triage_v1_live_check_20261108.md`. The earlier six
-outcomes remain pre-policy evidence. No live calls were made by the offline audit
-or implementation themselves.
-
-Follow-up evidence/abstention audit is complete:
-`docs/results/evidence_abstention_audit_20261108.md`. Six saved completions replay
-with matching request-body hashes; 14 injected local probes made zero network
-attempts, and 228 targeted regressions passed. Structural checks do not enforce
-evidence sufficiency or prose support, and the audit found missing uncertainty/gap
-presentation. ADR-057 is now implemented offline: active `triage-v2` /
-`evidence-basis-v1`, structured basis/observation/hypothesis/gap checks, validated
-references to immutable sanitized snapshots, and legacy-safe uncertainty display.
-Labelled coverage is reported separately from abstentions and unknown truth.
-Live v2 acceptance/semantic quality remains unmeasured. Normalization is a separate
-follow-up. Preserve all previous
-labels, metrics and policy identities; do not claim the semantic gaps are fixed.
-This does not close interactive UI, full CLI or prompt-injection verification.
-
-Gemini runtime code, settings and diagnostics are removed. WIRE-11 is retired
-as superseded by the provider replacement, not repaired upstream. Historical
-benchmark reports and stored records retain their true model attribution.
-Do not ask the operator to resume Gemini diagnostics as a current project task.
-See README.md, TASKS.md, DECISIONS.md and docs/results/groq_migration_20261108.md.
-
-Current offline verification: 728 backend tests passed (one existing warning),
-79 dashboard tests passed and production build succeeded; local Markdown links and
-diff whitespace checks passed. Removed-provider tests were retired; the new policy
-added 33 backend cases; ADR-057 adds 76 backend and 30 dashboard cases. References
-establish traceability, not semantic proof. The earlier bounded live check used v1;
-v2 live acceptance and untouched-case evaluation remain pending.
+# AGENTS.md — TriageLens
+Read the rules here, `docs/ROADMAP.md` sections 1 and 2 and the active step, and `TASKS.md`. Use `docs/ADR_INDEX.md` and targeted searches for relevant decisions.
 
 ## 1. Project Identity
 
@@ -93,286 +37,40 @@ The AI must never be treated as the final authority on whether an incident is ma
 
 ---
 
-## 3. System Architecture
+## 3. Architecture and technology
 
-TriageLens consists of six major stages.
+The pipeline comprises alert intake, threat intelligence enrichment, timeline
+correlation, LLM-assisted triage, accuracy evaluation, and an analyst dashboard.
+Keep stage responsibilities and input/output contracts explicit; preserve source
+provenance, independent labels, uncertainty, and human analyst authority.
+Use Python, FastAPI, SQLite, Groq, HTTPX, Pydantic, pytest, and TypeScript as
+appropriate. Add technology only with a clear justification. Use environment
+variables for secrets; never print or commit .env or expose secrets in logs.
+Mask sensitive information before external transmission, validate responses,
+and handle missing data, failures, quotas, and timeouts explicitly.
 
-### Stage 1: Alert Intake
+## 4. Hardware and development principles
 
-* Ingest alerts from JSON and CSV files.
-* Support publicly available security datasets.
-* Normalize incoming records into a consistent internal schema.
-* Validate incoming data.
-* Preserve original source information and ground-truth labels separately.
+Target Windows and modest hardware (10th-generation Core i5, 8 GB RAM). Do not
+run local LLMs; prefer cloud inference, SQLite, manageable batches, and avoid
+unnecessary resource-heavy services or containers. Keep large datasets outside
+the repository where practical. Use modular, readable, typed, testable code.
+Ordinary tests must mock external API calls and cover important failure cases.
 
-### Stage 2: Threat Intelligence Enrichment
+## 5. Agent workflow
 
-Enrich relevant indicators using external services:
-
-* VirusTotal
-* AbuseIPDB
-* URLhaus
-
-Requirements:
-
-* Support IP addresses, file hashes, and domains.
-* Handle API failures and rate limits.
-* Implement caching to avoid unnecessary requests.
-* Preserve enrichment source and retrieval timestamps.
-* Handle missing or unavailable intelligence gracefully.
-
-### Stage 3: Timeline Builder
-
-Correlate related events into an understandable sequence.
-
-Example:
-
-* 10:02 â€” Unusual login detected.
-* 10:05 â€” Suspicious process execution.
-* 10:09 â€” Possible lateral movement.
-
-Requirements:
-
-* Correlate events using available identifiers and timestamps.
-* Preserve event provenance.
-* Avoid claiming relationships that cannot be supported by the available evidence.
-
-### Stage 4: LLM-Assisted Triage
-
-Use Groq chat completions with `openai/gpt-oss-120b` as the active AI provider.
-
-Expected outputs:
-
-* Alert summary.
-* Suggested severity.
-* Classification or assessment.
-* Supporting evidence.
-* Recommended investigation steps.
-* Uncertainty and missing information.
-
-Requirements:
-
-* Use structured outputs.
-* Validate AI responses.
-* Mask sensitive information before external transmission.
-* Handle API errors and rate limits.
-* Cache suitable responses.
-* Keep the AI provider replaceable through a defined interface.
-
-Groq API credentials and quotas are independent of consumer chat subscriptions. Never assume unlimited free API access.
-
-### Stage 5: Accuracy and Validation Engine
-
-This is the project's distinguishing component.
-
-Compare AI-generated assessments against independently established ground-truth labels.
-
-Track appropriate metrics, including:
-
-* Accuracy.
-* Precision.
-* Recall.
-* F1-score.
-* False-positive rate.
-* False-negative rate.
-* Severity classification performance.
-
-Requirements:
-
-* Never use the AI's own answer as ground truth.
-* Preserve original labels.
-* Record incorrect predictions.
-* Make evaluation results reproducible.
-* Distinguish missing ground truth from an incorrect AI prediction.
-
-### Stage 6: Analyst Dashboard
-
-Provide an interface for analysts to review:
-
-* Incoming alerts.
-* Enriched indicators.
-* Correlated timelines.
-* AI-generated triage results.
-* Ground-truth comparisons.
-* AI performance metrics.
-* Investigation recommendations.
-
-The dashboard must communicate that AI recommendations require human review.
+1. Read the instructions and current task context before making changes.
+2. Inspect existing implementation before modifying it; do not recreate modules.
+3. Work on one task at a time, explain significant changes, and follow the
+   roadmap approval protocol. Do not change unrelated files or architecture.
+4. Avoid unnecessary dependencies and ask when important requirements are unclear.
+5. Verify work; never claim a command, test, or integration succeeded without evidence.
+6. Update TASKS.md when progress changes and DECISIONS.md for technical decisions.
+7. Report changed files, verification, limitations, and how to run and test changes.
 
 ---
 
-## 4. Technology Stack
-
-Use the following technologies as the initial architectural direction.
-
-| Technology | Purpose                           |
-| ---------- | --------------------------------- |
-| Python     | Core processing and orchestration |
-| FastAPI    | Backend API                       |
-| SQLite     | Lightweight database              |
-| Groq API | AI-assisted triage                |
-| HTTPX      | External API communication        |
-| Pydantic   | Data validation                   |
-| pytest     | Automated testing                 |
-| TypeScript | Frontend development              |
-| SQL / KQL  | Security data querying            |
-| YARA       | Later-stage file matching         |
-| Git        | Version control                   |
-
-Do not introduce additional technologies without a clear technical justification.
-
-The frontend and optional advanced capabilities should be introduced when the backend foundation is stable.
-
----
-
-## 5. Hardware Constraints
-
-Development environment:
-
-* Processor: Intel Core i5 10th Generation.
-* RAM: 8 GB.
-* Internal storage: 512 GB SSD.
-* External storage: 256 GB SSD.
-* Operating system: Windows.
-* IDE: Visual Studio Code.
-* AI coding environment: Antigravity.
-
-Development must account for limited memory and processing resources.
-
-Rules:
-
-* Do not run locally hosted LLMs.
-* Prefer cloud-based AI inference.
-* Use SQLite instead of unnecessarily complex database infrastructure.
-* Avoid resource-heavy services and unnecessary containers.
-* Keep datasets and large log collections on the external SSD where practical.
-* Keep source code and Git repositories on the internal SSD.
-* Process datasets in manageable batches.
-
-Docker is optional, not a mandatory dependency.
-
----
-
-## 6. Development Principles
-
-Follow these principles throughout development.
-
-### Modular Architecture
-
-Each major stage must have a clearly defined responsibility.
-
-Avoid tightly coupled modules.
-
-Use explicit input and output contracts between stages.
-
-### Security First
-
-* Never hardcode API keys or credentials.
-* Store secrets in environment variables.
-* Keep `.env` out of Git.
-* Mask sensitive information before sending data to external AI services.
-* Validate external API responses.
-* Apply reasonable timeouts and error handling.
-* Never expose secrets in application logs.
-
-### Reliability
-
-* Handle missing fields and malformed records.
-* Implement appropriate exception handling.
-* Avoid silently ignoring processing failures.
-* Use structured logging.
-* Preserve data provenance.
-
-### Testing
-
-* Write tests for important functions.
-* Test normal, edge, and failure conditions.
-* Mock external API calls during unit testing.
-* Do not make real API requests in ordinary unit tests.
-* Do not claim a feature is complete without verifying it.
-
-### Code Quality
-
-* Follow Python conventions and PEP 8.
-* Use meaningful variable and function names.
-* Add type hints where appropriate.
-* Write useful docstrings.
-* Avoid unnecessary abstraction.
-* Prefer readable, maintainable code over clever shortcuts.
-
----
-
-## 7. AI Agent Working Instructions
-
-You are acting as a senior software engineering assistant and cybersecurity engineering mentor.
-
-Follow these rules:
-
-1. Read AGENTS.md before beginning project work.
-2. Read ARCHITECTURE.md to understand the system.
-3. Read TASKS.md to identify the current development status.
-4. Read DECISIONS.md before proposing changes that could conflict with earlier decisions.
-5. Inspect the existing source code before modifying it.
-6. Never assume that a feature or file exists without checking.
-7. Never recreate an existing module unnecessarily.
-8. Work on one clearly defined task at a time.
-9. Explain the implementation plan before making significant changes.
-10. Do not modify unrelated files.
-11. Do not install unnecessary dependencies.
-12. Do not silently change the architecture.
-13. Ask for clarification when an important requirement is ambiguous.
-14. Report all modified and newly created files.
-15. Explain how to run and test the implementation.
-
-Do not claim that commands, tests, installations, or API integrations succeeded unless they have actually been executed and verified.
-
----
-
-## 8. Development Workflow
-
-For every assigned task:
-
-**Step 1 â€” Understand**
-
-Read the relevant documentation and inspect the existing implementation.
-
-**Step 2 â€” Plan**
-
-Explain:
-
-* What needs to be built.
-* Why it is needed.
-* Which files will be affected.
-* What dependencies are required.
-* How it will be tested.
-
-**Step 3 â€” Implement**
-
-Implement only the approved task.
-
-**Step 4 â€” Verify**
-
-Run appropriate tests and inspect the resulting changes.
-
-**Step 5 â€” Document**
-
-Update TASKS.md and DECISIONS.md whenever the task changes project progress or establishes a technical decision.
-
-**Step 6 â€” Report**
-
-Summarize:
-
-* What was implemented.
-* Files created or modified.
-* Tests executed and their results.
-* Known limitations.
-* Recommended next task.
-
-Never mark an incomplete or untested feature as completed.
-
----
-
-## 9. Project Integrity
+## 6. Project Integrity
 
 The following principles are non-negotiable:
 
@@ -385,13 +83,3 @@ The following principles are non-negotiable:
 * No feature should be added merely for visual appeal.
 
 ---
-
-## 10. Current Project Status
-
-The six-stage pipeline, persistence, provenance-aware caches, metric scopes and
-scope-aware dashboard are implemented. Groq uses strict assessment JSON and local
-validation. Shared tests remain offline; human analysts retain decision authority.
-
-Pending work: independently evaluate Groq's quality and prompt-injection resistance,
-verify the real CLI/API/dashboard workflow, review operator report metric labels,
-and complete interactive visual QA. Do not relabel old model scores as Groq results.
