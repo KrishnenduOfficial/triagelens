@@ -205,6 +205,25 @@ v2 live acceptance and untouched-case evaluation remain pending.
   Limits: active Enterprise techniques only; rule mappings require explicit caller
   persistence, no dashboard or live validation, and no real-data accuracy claim.
 
+- [ ] T2.6 rule evaluation (partial): reviewed-cohort reports compare exact-tag
+  Sigma detections with recorded AI binary predictions on paired timelines, with
+  benign false positives, per-rule counts, Wilson intervals, unavailable outcomes
+  and unsupported-rule diagnostics. Three new offline tests passed; 160 targeted
+  and 1,137 full backend tests passed (one existing Starlette/HTTPX warning).
+  A four-timeline synthetic check showed one Sigma-only and one AI-only detection;
+  each flagged 1/2 benign cases (95% Wilson interval 0.0945-0.9055). This is not
+  real-data performance. Independently reviewed technique-labelled S1 cohorts and
+  AI outcomes remain outstanding; no live calls were made. The protocol produces
+  comparisons during a future separately approved run, not from saved past runs.
+
+- [x] T2.7 rule fragility: offline synthetic field rename, UTF-8 base64 and case
+  mutations report per-rule lost-match fractions, family counts, unavailable results
+  and unsupported-rule diagnostics. The selected demo yielded 2/3 lost matches for
+  each of two supported rules; these perturbations need not preserve semantics and
+  do not establish real-world evasion or detection rates. Nine new tests, 139 focused
+  tests and 1,146 full backend tests passed (one existing Starlette/HTTPX warning).
+  See README and ADR-063.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

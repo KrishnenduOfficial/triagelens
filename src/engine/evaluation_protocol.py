@@ -11,8 +11,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.engine.evaluation import AccuracyTracker
-from src.engine.attack import summarize_comparisons
+from src.engine.evaluation import AccuracyTracker, wilson_score_interval
+from src.engine.attack import summarize_comparisons, rule_techniques, validate_techniques
+from src.engine.sigma import SigmaEvaluationError
 from src.engine.evtx import EvtxIntakeEngine
 from src.models.alert import GroundTruthMetadata, NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -225,6 +226,82 @@ def _metrics(results) -> dict:
     if not results:
         metrics["availability_rate"] = None
     return metrics
+
+
+def evaluate_rules(timeline, rules):
+    """Evaluate each supported rule independently; errors are unavailable, not misses."""
+    outcomes = {}
+    for rule in rules:
+        try:
+            # Evaluate all events even after a match so errors cannot be hidden.
+            matches = [rule.matches(alert.original_record) for alert in timeline.alerts]
+            outcomes[rule.id] = any(matches) if matches else None
+        except SigmaEvaluationError:
+            outcomes[rule.id] = None
+    return outcomes
+
+
+def _rate(successes, total):
+    return {"count": successes, "total": total,
+            "rate": successes / total if total else None,
+            "ci95": wilson_score_interval(successes, total) if total else None}
+
+
+def summarize_rule_comparison(records, pack):
+    """Compare on paired labelled timelines; technique positives require annotations.
+
+    A technique detection is any hit by a rule tagged with that exact technique;
+    AI detection is its binary malicious disposition, not a technique prediction.
+    Benign false positives are measured across all paired benign timelines.
+    """
+    mappings = {}
+    invalid = {}
+    for rule in pack.rules:
+        ids, bad = rule_techniques("sigma", rule.tags)
+        mappings[rule.id] = ids
+        if bad:
+            invalid[rule.id] = bad
+    techniques = sorted({t for ids in mappings.values() for t in ids} |
+                        {t for r in records for t in r["techniques"]})
+    rows = {}
+    for technique in techniques:
+        rule_ids = [key for key, ids in mappings.items() if technique in ids and key not in invalid]
+        pairs = []
+        for record in records:
+            result = record["result"]
+            truth = result.ground_truth
+            ids, bad = validate_techniques(record["techniques"])
+            eligible = truth is False or (truth is True and record["technique_truth_complete"]
+                                           and not bad and technique in ids)
+            outcomes = record["rule_outcomes"]
+            if (eligible and result.llm_prediction is not None and rule_ids and
+                    all(outcomes.get(key) is not None for key in rule_ids)):
+                pairs.append((truth, any(outcomes[key] for key in rule_ids), result.llm_prediction))
+        positive = [(sigma, ai) for truth, sigma, ai in pairs if truth is True]
+        negative = [(sigma, ai) for truth, sigma, ai in pairs if truth is False]
+        rows[technique] = {"rule_ids": rule_ids, "paired_timelines": len(pairs),
+            "not_paired_timelines": len(records) - len(pairs),
+            "detection": {"sigma": _rate(sum(s for s, _ in positive), len(positive)),
+                          "ai": _rate(sum(a for _, a in positive), len(positive)),
+                          "sigma_only": sum(s and not a for s, a in positive),
+                          "ai_only": sum(a and not s for s, a in positive)},
+            "benign_false_positives": {"sigma": _rate(sum(s for s, _ in negative), len(negative)),
+                                       "ai": _rate(sum(a for _, a in negative), len(negative))}}
+    per_rule = {}
+    for rule in pack.rules:
+        benign = [r for r in records if r['result'].ground_truth is False and
+                  r['rule_outcomes'].get(rule.id) is not None]
+        per_rule[rule.id] = {"title": rule.title, "techniques": mappings[rule.id],
+                             "benign_false_positives": _rate(
+                                 sum(r['rule_outcomes'][rule.id] for r in benign), len(benign)),
+                             "unavailable": sum(r['rule_outcomes'].get(rule.id) is None for r in records)}
+    return {"input_timelines": len(records), "techniques": rows, "rules": per_rule,
+            "rule_issues": [{"source": issue.source, "status": issue.status, "reason": issue.reason}
+                            for issue in pack.issues], "invalid_rule_techniques": invalid,
+            "limits": ["Paired timelines only; AI uses the recorded binary prediction basis, Sigma uses exact rule tags.",
+                       "Benign false positives are not technique-specific ground truth; annotations may be incomplete.",
+                       "Intervals assume independent timelines; small or related samples limit interpretation.",
+                       "Unsupported rules are excluded; counts describe this pack and cohort, not general performance."]}
 
 
 def summarize(records: list[dict]) -> dict:

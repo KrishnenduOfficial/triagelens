@@ -14,6 +14,24 @@ but independently reviewed labels and a scored real-data evaluation are still
 pending. Public-source categories do not verify event labels, and small classes and
 source shortcuts limit conclusions. See the [real-data status report](docs/results/real_data_evaluation_20261109.md).
 
+The reviewed-cohort protocol also reports `sigma_vs_ai`: per-technique paired
+detection rates for exact Sigma tags versus the AI's recorded binary prediction,
+and false-positive rates on independently labelled benign timelines. Counts and
+Wilson intervals accompany each rate; unsupported rules and unavailable outcomes
+are reported. These are timeline-level comparisons, not proof that a rule or AI
+identified a technique correctly. Real reviewed cohorts and real AI outcomes are
+still needed; the existing protocol `run` mode requires separate live approval.
+
+Run `.\.venv\Scripts\python.exe scripts/run_rule_fragility.py` for an offline
+synthetic Sigma fragility demo. For each supported rule, the score is lost matches
+divided by successfully evaluated, changed mutations of a matching baseline.
+Field renames, UTF-8 base64 representations and case changes are counted separately;
+unmatched baselines, errors and unsupported rules are reported, and no-ops are excluded.
+These perturbations are not necessarily equivalent telemetry, and this small selected
+sample does not measure real-world detection quality or adversary behavior. To supply
+other synthetic cases, use `SyntheticCase` and `evaluate_fragility` in
+`src.engine.rule_fragility`; do not pass real logs.
+
 > **An alert triage pipeline that measures how often its AI is wrong.**
 
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)

@@ -2558,6 +2558,10 @@ T2.4 supersedes the storage restriction: rule hits have a separate SQLite store,
 to timelines through their alert references; rule hits remain excluded from all prompts.
 Detection time is caller-supplied UTC-normalized time, not necessarily event time.
 Limits: two supported bundled rules, one unsupported field report; synthetic/offline behavior only, no real-data accuracy claim.
+T2.7 measures lost matches over evaluated one-field synthetic mutations of matching
+baselines; field rename, base64 encoding and case counts stay separate. Errors and
+unsupported rules are explicit. Mutations need not preserve event semantics, so the
+score describes the selected inputs, not a real-world detection or evasion rate.
 
 ### ADR-064: Offline ATT&CK technique attribution and evaluation
 **Status:** Accepted for T2.5; owner approved the plan and official-source access.
@@ -2570,6 +2574,10 @@ Report exact, parent-family and shared-tactic micro counts separately from binar
 Provide source-labelled coverage and Navigator 4.5 export; rule mappings require explicit persistence.
 Limits: active Enterprise 17.1 only; annotation coverage is not detection effectiveness.
 No live v2 provider or real-data accuracy verification was performed for this change.
+T2.6 compares paired timelines using exact Sigma rule tags and the recorded AI binary
+prediction, with independent benign labels for false positives. Missing rule outcomes,
+AI predictions and incomplete positive technique annotations are excluded, not misses.
+Unsupported rules are reported; Wilson intervals do not correct for related timelines.
 
 ## 4. Deferred Decisions
 

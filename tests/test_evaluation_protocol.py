@@ -13,7 +13,9 @@ from src.engine.evtx import EvtxIntakeEngine
 from test_evtx import Parser, record
 from src.engine.evaluation_protocol import (frozen_configuration, make_manifest,
                                              select_split, summarize, timeline_identity,
-                                             import_review, write_review_csv, collect_review_samples)
+                                             import_review, write_review_csv, collect_review_samples,
+                                             evaluate_rules, summarize_rule_comparison)
+from src.engine.sigma import load_curated_rules
 from src.engine.provenance import AcquisitionOutcome
 from conftest import PipelineTestEngine
 from src.models.alert import GroundTruthMetadata, NormalizedAlert
@@ -97,6 +99,8 @@ def test_test_run_requires_freeze_and_fresh_repetitions(tmp_path):
     assert reports[0]["metrics"]["total"] == count
     assert reports[0]['technique_prediction']['scored_timelines'] == count
     assert reports[0]['technique_prediction']['exact']['recall'] == 1
+    assert reports[0]['sigma_vs_ai']['input_timelines'] == count
+    assert reports[0]['sigma_vs_ai']['rule_issues']
     assert len(reports[0]["errors"]) == reports[0]["metrics"]["fp"]
     assert all(r["review_status"] == "pending analyst review" for r in reports[0]["errors"])
 
@@ -222,3 +226,56 @@ def test_review_sampling_is_bounded_and_unlabelled(tmp_path, monkeypatch):
     alerts, stats = collect_review_samples([path], per_file=2)
     assert stats[0]["events"] == 2
     assert all(alert.ground_truth_label is None and alert.ground_truth_metadata is None for alert in alerts)
+
+
+def test_rule_comparison_paired_counts_and_unavailable():
+    pack = load_curated_rules()
+    hostname = next(rule for rule in pack.rules if 'attack.t1082' in rule.tags)
+    def item(truth, prediction, match, techniques, complete=True):
+        timeline = case(1, label='malicious' if truth else 'benign')
+        timeline.alerts[0].original_record = {
+            'Channel': 'Microsoft-Windows-Sysmon/Operational', 'EventID': 1,
+            'Image': r'C:\Windows\hostname.exe' if match else r'C:\Windows\other.exe'}
+        return {'result': SimpleNamespace(ground_truth=truth, llm_prediction=prediction),
+                'techniques': techniques, 'technique_truth_complete': complete,
+                'rule_outcomes': evaluate_rules(timeline, pack.rules)}
+    records = [item(True, False, True, ['T1082']), item(True, True, False, ['T1082']),
+               item(False, False, True, []), item(False, True, False, []),
+               item(True, None, True, ['T1082']), item(True, True, True, [], False)]
+    report = summarize_rule_comparison(records, pack)
+    row = report['techniques']['T1082']
+    assert row['detection']['sigma']['count'] == row['detection']['ai']['count'] == 1
+    assert row['detection']['sigma']['total'] == 2
+    assert row['detection']['sigma_only'] == row['detection']['ai_only'] == 1
+    assert row['benign_false_positives']['sigma']['count'] == 1
+    assert row['benign_false_positives']['ai']['count'] == 1
+    assert row['benign_false_positives']['sigma']['total'] == 2
+    assert report['rules'][hostname.id]['benign_false_positives']['count'] == 1
+    assert report['rule_issues']
+    records[0]['rule_outcomes'][hostname.id] = None
+    row = summarize_rule_comparison(records, pack)['techniques']['T1082']
+    assert row['detection']['sigma']['total'] == 1
+    assert row['detection']['ai']['total'] == 1
+
+
+def test_rule_comparison_missing_truth_mapping_and_empty_input():
+    pack = load_curated_rules()
+    result = summarize_rule_comparison([], pack)
+    row = result['techniques']['T1082']
+    assert row['detection']['sigma']['rate'] is None
+    assert row['detection']['sigma']['ci95'] is None
+    assert row['benign_false_positives']['ai']['total'] == 0
+    assert result['input_timelines'] == 0
+
+
+def test_rule_failure_is_unavailable_without_hiding_other_rules():
+    pack = load_curated_rules()
+    timeline = case(1)
+    timeline.alerts[0].original_record = {
+        'Channel': 'Microsoft-Windows-Sysmon/Operational', 'EventID': 1,
+        'Image': 'x' * 32769, 'CommandLine': '/system:none'}
+    outcomes = evaluate_rules(timeline, pack.rules)
+    hostname = next(rule for rule in pack.rules if 'attack.t1082' in rule.tags)
+    audit = next(rule for rule in pack.rules if 'attack.t1685.001' in rule.tags)
+    assert outcomes[hostname.id] is None
+    assert outcomes[audit.id] is True
