@@ -107,7 +107,7 @@ def get_groq_pacing_config() -> tuple[int, int, int, float]:
     try:
         rpm = int(os.getenv("GROQ_REQUESTS_PER_MINUTE", "30"))
         tpm = int(os.getenv("GROQ_TOKENS_PER_MINUTE", "8000"))
-        estimate = int(os.getenv("GROQ_ESTIMATED_TOKENS_PER_REQUEST", "1500"))
+        estimate = int(os.getenv("GROQ_ESTIMATED_TOKENS_PER_REQUEST", "4000"))
         wait = float(os.getenv("GROQ_MAX_WAIT_SECONDS", "60"))
     except ValueError as exc:
         raise ValueError("Invalid Groq pacing configuration") from exc

@@ -45,8 +45,10 @@ The human analyst retains final investigation and response authority.
 
 `src/engine/llm.py` owns shared privacy, prompt and cache processing;
 `src/engine/groq.py` owns the active provider's request/response contract.
-The pipeline's implementation is verified offline. Full manual UI/workflow
-verification remains pending; one Groq synthetic live request has succeeded.
+The pipeline's implementation is verified offline. An operator-checked three-case
+CLI/database/API/dashboard run matched stored counts (three unavailable outcomes,
+zero scored; 2026-11-09). Successful-verdict display and broader interactive UI
+verification remain pending; this workflow check does not establish AI quality.
 
 ---
 
@@ -385,13 +387,16 @@ include `openai/gpt-oss-20b` and `qwen/qwen3.8-27b`. No fallback is enabled by d
 An optional comma-separated `GROQ_FALLBACK_MODELS` explicitly enables same-provider
 fallback on transport failures or HTTP 429/503/404. This can spend additional quota.
 Each engine instance paces attempted requests using a rolling minute (defaults: 30
-requests, 8,000 estimated tokens, 1,500 tokens per request); configure
+requests, 8,000 tokens, 4,000 initially reserved tokens per request); configure
 `GROQ_REQUESTS_PER_MINUTE`, `GROQ_TOKENS_PER_MINUTE`,
 `GROQ_ESTIMATED_TOKENS_PER_REQUEST`, and `GROQ_MAX_WAIT_SECONDS` (default 60).
-It honors a 429 `Retry-After` before a later request or fallback; it does not retry
+Reported token usage increases reservations and the estimate for later requests,
+including when a response fails verdict validation. Valid remaining-token/reset
+headers also constrain sends; a 429 token-reset header supplies a cooldown even
+without `Retry-After`. It honors a 429 `Retry-After` before a later request or fallback; it does not retry
 the same model. If the cumulative wait would exceed the budget, it withholds the
-request. Reservations include failed attempts. The estimate is not actual token
-usage, and separate engines or processes do not share limits. The reported account
+request. Reservations include failed attempts. Future usage can exceed the estimate,
+and separate engines or processes do not share limits. The reported account
 limits of 1,000 requests/day and 200,000 tokens/day are not enforced; monitor
 account usage and configure limits for your model and account. Provider rate limits
 can still be exceeded. Valid JSON does not prove

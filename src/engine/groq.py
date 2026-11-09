@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 import threading
 import time
 from collections import deque
@@ -79,6 +80,8 @@ class GroqTriageEngine(TriageEngineBase):
         self._pacing_wall_clock = pacing_wall_clock or time.time
         self._pacing_lock = threading.Lock()
         self._requests = deque()
+        self._token_balance = None
+        self._token_reset_at = 0.0
         self._blocked_until = 0.0
         self._waited = 0.0
         # Provider bodies and exception strings can contain sensitive telemetry.
@@ -96,15 +99,22 @@ class GroqTriageEngine(TriageEngineBase):
     def _before_provider_request(self):
         while True:
             now = self._pacing_clock()
-            while self._requests and self._requests[0] <= now - 60:
+            while self._requests and self._requests[0][0] <= now - 60:
                 self._requests.popleft()
-            capacity = min(self._rpm, self._tpm // self._token_estimate)
+            if self._token_estimate > self._tpm:
+                return False
             due = self._blocked_until
-            if len(self._requests) >= capacity:
-                due = max(due, self._requests[0] + 60)
+            if (len(self._requests) >= self._rpm or
+                    sum(tokens for _, tokens in self._requests) + self._token_estimate > self._tpm):
+                due = max(due, self._requests[0][0] + 60)
+            if (self._token_balance is not None and now < self._token_reset_at
+                    and self._token_balance < self._token_estimate):
+                due = max(due, self._token_reset_at)
             delay = max(0.0, due - now)
             if not delay:
-                self._requests.append(now)
+                self._requests.append((now, self._token_estimate))
+                if self._token_balance is not None and now < self._token_reset_at:
+                    self._token_balance -= self._token_estimate
                 return True
             if self._waited + delay > self._max_wait:
                 return False
@@ -112,8 +122,26 @@ class GroqTriageEngine(TriageEngineBase):
             self._waited += delay
 
     def _after_provider_response(self, response):
+        # Account for usage even when the completion later fails validation.
+        try:
+            usage = response.json().get("usage", {}).get("total_tokens")
+        except (ValueError, AttributeError, TypeError):
+            usage = None
+        if isinstance(usage, int) and not isinstance(usage, bool) and usage > 0:
+            if self._requests:
+                stamp, reserved = self._requests[-1]
+                self._requests[-1] = (stamp, max(reserved, usage))
+            self._token_estimate = max(self._token_estimate, usage)
+        # Groq's token headers describe TPM (request headers describe daily quota).
+        remaining = response.headers.get("x-ratelimit-remaining-tokens", "")
+        reset = self._reset_seconds(response.headers.get("x-ratelimit-reset-tokens", ""))
+        if re.fullmatch(r"[0-9]{1,12}", remaining) and reset is not None:
+            self._token_balance = int(remaining)
+            self._token_reset_at = self._pacing_clock() + reset
         if response.status_code != 429:
             return
+        if reset is not None:
+            self._blocked_until = max(self._blocked_until, self._pacing_clock() + reset)
         value = response.headers.get("Retry-After", "").strip()
         try:
             delay = float(value)
@@ -127,6 +155,17 @@ class GroqTriageEngine(TriageEngineBase):
                 return
         if math.isfinite(delay) and delay >= 0:
             self._blocked_until = max(self._blocked_until, self._pacing_clock() + delay)
+
+    @staticmethod
+    def _reset_seconds(value):
+        """Parse only finite nonnegative Groq duration metadata, never error bodies."""
+        if not isinstance(value, str) or len(value) > 80:
+            return None
+        match = re.fullmatch(r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?", value)
+        if match is None or not any(match.groups()):
+            return None
+        delay = sum(float(part or 0) * scale for part, scale in zip(match.groups(), (3600, 60, 1)))
+        return delay if math.isfinite(delay) else None
 
     def _generation_settings(self, candidate):
         settings = {

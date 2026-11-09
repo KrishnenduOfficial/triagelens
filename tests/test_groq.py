@@ -218,6 +218,87 @@ def test_invalid_retry_after_is_ignored_without_retry():
     assert sends == [0] and fake.sleeps == []
 
 
+def test_pacing_accounts_for_actual_usage_even_when_verdict_is_invalid():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        data = completion({**ASSESSMENT, "summary": ""})
+        data["usage"] = {"total_tokens": 3500}
+        return httpx.Response(200, json=data)
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 60))
+    for _ in range(3):
+        assert engine.analyze_timeline(timeline()) is None
+    assert sends == [0, 0, 60] and fake.sleeps == [60]
+
+
+@pytest.mark.parametrize("budget,expected", [(60, [0, 25.5]), (25, [0])])
+def test_pacing_honors_success_token_headers_and_wait_budget(budget, expected):
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        return httpx.Response(200, json=completion(), headers={
+            "x-ratelimit-remaining-tokens": "737", "x-ratelimit-reset-tokens": "25.5s"})
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, budget))
+    assert engine.analyze_timeline(timeline())
+    assert bool(engine.analyze_timeline(timeline())) == (budget == 60)
+    assert sends == expected
+    assert fake.sleeps == ([25.5] if budget == 60 else [])
+
+
+def test_pacing_uses_token_reset_when_429_has_no_retry_after():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        if len(sends) == 1:
+            return httpx.Response(429, headers={"x-ratelimit-reset-tokens": "1m2.5s"})
+        return httpx.Response(200, json=completion())
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 63))
+    assert engine.analyze_timeline(timeline()) is None
+    assert engine.analyze_timeline(timeline())
+    assert sends == [0, 62.5] and fake.sleeps == [62.5]
+
+
+@pytest.mark.parametrize("usage,remaining,reset", [(True, "-1", "nan"),
+    ("3500", "many", "1d"), (-1, "100", ""), (None, "100", "inf"),
+    (3500.5, "100", "-5s"), ([], "100", "private-canary")])
+def test_pacing_ignores_malformed_provider_metadata(usage, remaining, reset):
+    fake = FakePacingClock()
+    def send(*args, **kwargs):
+        return httpx.Response(200, json={**completion(), "usage": {"total_tokens": usage}},
+            headers={"x-ratelimit-remaining-tokens": remaining, "x-ratelimit-reset-tokens": reset})
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 60))
+    assert engine.analyze_timeline(timeline())
+    assert engine.analyze_timeline(timeline())
+    assert engine._token_estimate == 1500 and fake.sleeps == []
+
+
+def test_pacing_withholds_future_requests_after_usage_exceeds_window():
+    fake = FakePacingClock()
+    sends = []
+    def send(*args, **kwargs):
+        sends.append(fake.now)
+        return httpx.Response(200, json={**completion(), "usage": {"total_tokens": 9000}})
+    engine = GroqTriageEngine(api_key="offline", enable_cache=False, request_sender=send,
+        pacing_clock=fake.clock, pacing_sleep=fake.sleep, pacing_config=(30, 8000, 1500, 60))
+    assert engine.analyze_timeline(timeline())
+    assert engine.analyze_timeline(timeline()) is None
+    assert sends == [0] and fake.sleeps == []
+
+
+def test_default_pacing_reserves_4000_tokens(monkeypatch):
+    for name in ("GROQ_REQUESTS_PER_MINUTE", "GROQ_TOKENS_PER_MINUTE",
+                 "GROQ_ESTIMATED_TOKENS_PER_REQUEST", "GROQ_MAX_WAIT_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+    assert config.get_groq_pacing_config() == (30, 8000, 4000, 60.0)
+
+
 @pytest.mark.parametrize("name,value", [("GROQ_REQUESTS_PER_MINUTE", "0"),
     ("GROQ_TOKENS_PER_MINUTE", "abc"), ("GROQ_ESTIMATED_TOKENS_PER_REQUEST", "8001"),
     ("GROQ_MAX_WAIT_SECONDS", "nan")])

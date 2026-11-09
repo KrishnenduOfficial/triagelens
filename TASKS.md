@@ -84,9 +84,16 @@ v2 live acceptance and untouched-case evaluation remain pending.
 - [x] T0.2 config leftovers: removed the generic URLhaus key alias, set the VirusTotal threshold to 3, retained wait mode off, and documented that the per-run lookup environment variable is currently unused.
 - [ ] T0.3 terminology: describe the hunting feature as a KQL-style hunting filter across docs, API, engine documentation, and dashboard; confirm unchanged behavior with the targeted tests (pending: Python cannot launch in this environment).
 - [x] T0.5 Groq pacing: per-engine rolling-minute request and estimated-token limits, bounded waits and 429 Retry-After handling; 748 offline backend tests passed (one existing warning). Daily quotas and cross-process coordination are not enforced; see ADR-058.
-- [ ] T0.6 workflow check: README documents the CLI, database, API and dashboard sequence and same-run comparison; awaiting operator execution, screenshots and confirmation on a populated database.
+- [x] T0.6 workflow check: README documents the CLI, database, API and dashboard sequence and same-run comparison; operator screenshots confirmed stored counts on a populated database on 2026-11-09.
   An authorized synthetic CLI run was interrupted after repeated Groq 429s; it
   produced no final CLI summary, so it cannot establish dashboard parity.
+  A later bounded three-timeline run completed without 429s; all three verdicts
+  were withheld by validation. Operator screenshots 229-231 confirm dashboard/API/
+  CLI parity for that run: three unavailable, zero scored, zero confusion counts,
+  and 0% availability. This checks unavailable-outcome display, not AI quality or
+  successful-verdict display; broader interactive dashboard QA remains pending.
+  Pacing follow-up and the full offline backend suite passed (760 tests; one
+  existing warning); dashboard tests passed (79) and the production build passed.
 
 ## Implemented
 
@@ -150,7 +157,8 @@ v2 live acceptance and untouched-case evaluation remain pending.
 - [ ] Evaluate untouched cases after addressing the development findings. Preserve
   labels, earlier scores and policy attribution; do not tune to hidden intent.
 - [ ] Measure Groq prompt-injection resistance and availability; report sample size and scope.
-- [ ] Verify the normal CLI -> shared SQLite -> API -> dashboard workflow manually.
+- [x] Verify the normal CLI -> shared SQLite -> API -> dashboard workflow manually
+  for the T0.6 unavailable-outcome run (operator screenshots confirmed counts).
   Preserve default History behavior and select explicit run/cohort IDs for provider comparisons.
 - [ ] Complete interactive dashboard visual QA; previous browser access was unavailable.
 - [ ] Audit operator-report metric-scope wording; do not infer real-time provider status from history.

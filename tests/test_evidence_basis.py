@@ -186,7 +186,10 @@ def test_unrelated_gaps_and_abstention_without_observations(disposition):
 def test_reference_validation_on_cache_return_rejects_forged_valid_hashes():
     timeline=sample()
     calls=[]
-    engine=provider(calls=calls)
+    now=[0.0]
+    def advance(seconds):
+        now[0] += seconds
+    engine=provider(calls=calls, pacing_clock=lambda: now[0], pacing_sleep=advance)
     first=acquire_triage(engine,timeline,lambda origin:None)
     changed=first.verdict.model_copy(deep=True)
     changed.evidence_context['E1']['details']['Protocol']='udp'
