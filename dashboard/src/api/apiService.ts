@@ -286,9 +286,9 @@ export async function fetchTimelineDetail(
 }
 
 /**
- * Executes a threat hunt query against the alerts telemetry database using KQL syntax.
+ * Executes a KQL-style hunting filter against the alerts telemetry database.
  *
- * @param query KQL-style query string (e.g., 'CommandLine contains "powershell"')
+ * @param query KQL-style hunting filter (e.g., 'CommandLine contains "powershell"')
  * @returns Array of matching NormalizedAlert objects
  */
 export const huntAlerts = async (query: string): Promise<NormalizedAlert[]> => {

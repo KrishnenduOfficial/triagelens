@@ -806,11 +806,11 @@ The processing modules should also be usable independently of the dashboard wher
 | HTTPX      | External API requests     |
 | Pydantic   | Data validation           |
 | TypeScript | Dashboard                 |
-| SQL / KQL  | Security hunting queries  |
+| SQL / KQL-style filter | Security hunting queries  |
 | YARA       | Later-stage file matching |
 | pytest     | Automated testing         |
 
-KQL/SQL hunting capabilities and YARA file matching are additional capabilities to be introduced after the core pipeline is established.
+KQL-style hunting filters and YARA file matching are additional capabilities to be introduced after the core pipeline is established.
 
 They are not prerequisites for the first working version.
 
@@ -897,7 +897,7 @@ The initial target is approximately eight weeks. Actual duration will depend on 
 | Timeline  | Development Objective                           |
 | --------- | ----------------------------------------------- |
 | Weeks 1–2 | Alert intake and threat intelligence enrichment |
-| Weeks 3–4 | Timeline builder and SQL/KQL hunting queries    |
+| Weeks 3–4 | Timeline builder and SQL-backed KQL-style hunting filters |
 | Weeks 5–6 | LLM triage and accuracy scoring                 |
 | Week 7    | Dashboard implementation & YARA matching (planned) |
 | Week 8    | README, architecture diagram and demo video     |
@@ -973,7 +973,7 @@ triagelens/
 │   │   ├── database.py        # SQLite persistence, foreign keys & WAL manager
 │   │   ├── enrichment.py      # Multi-provider threat intel (VT, AbuseIPDB, URLhaus)
 │   │   ├── evaluation.py      # AccuracyTracker, calibration, metrics (ADR-008)
-│   │   ├── hunting.py         # Parameterized KQL-to-SQLite translation engine
+│   │   ├── hunting.py         # Parameterized KQL-style hunting filter to SQLite translator
 │   │   ├── intake.py          # Alert normalization and intake engine
 │   │   ├── llm.py             # Shared triage, privacy, cache and provider protocol
 │   │   └── timeline.py        # Identity-based event correlation & time windows

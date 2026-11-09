@@ -380,7 +380,7 @@ Never mark a task complete merely because an AI agent claims it is complete. Ver
 
 **Decision:**
 
-A dedicated `ThreatHuntingEngine` translates a simplified KQL syntax into SQLite queries leveraging `json_extract(original_record, '$.path')`.
+A dedicated `ThreatHuntingEngine` translates a limited KQL-style hunting filter into SQLite queries leveraging `json_extract(original_record, '$.path')`.
 
 **Rationale:**
 
@@ -391,6 +391,8 @@ Security analysts expect KQL-style syntax (e.g., `event_type == "ProcessCreate" 
 * Allows hunting across direct table columns and arbitrary nested JSON attributes.
 * Protects against SQL injection in values, operators, and field paths.
 * Raises `KQLParseError` on invalid syntax, translating to HTTP 400 at the API boundary.
+
+**Superseding terminology note (T0.3):** This implementation supports a limited KQL-style hunting filter translated to SQLite; it is not full KQL. Use “KQL-style hunting filter” in user-facing text. Parser behavior and internal compatibility names are unchanged.
 
 ---
 
@@ -466,12 +468,12 @@ Naive regex matching destroyed legitimate operational telemetry (16-digit event 
 
 The FastAPI backend and persistence engine implement the following security and concurrency controls:
 1. **Restricted CORS Policy:** `CORSMiddleware` explicitly restricts `allow_origins` to known local development origins (`http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:3000`, `http://127.0.0.1:3000`) and configurable environment origins. Wildcard `allow_origins=["*"]` is strictly barred.
-2. **KQL Query Row Limits:** All KQL-to-SQLite translated queries enforce a parameterized `LIMIT ?` clause (default 500, capped at 1000). The API `/api/hunt` endpoint caps queries exceeding the upper limit to prevent full-table-scan memory exhaustion.
+2. **Hunting Filter Row Limits:** All KQL-style filter expressions translated to SQLite enforce a parameterized `LIMIT ?` clause (default 500, capped at 1000). The API `/api/hunt` endpoint caps queries exceeding the upper limit to prevent full-table-scan memory exhaustion.
 3. **SQLite WAL Mode:** Non-in-memory SQLite connections automatically execute `PRAGMA journal_mode = WAL;` on initialization, enabling concurrent readers and writers without database locking.
 
 **Rationale:**
 
-Audit API-1 to API-10 revealed that wildcard CORS exposed endpoints to cross-origin exploitation, unbounded KQL queries allowed denial-of-service via memory exhaustion, and default rollback journals caused lock contention during concurrent pipeline writes.
+Audit API-1 to API-10 revealed that wildcard CORS exposed endpoints to cross-origin exploitation, unbounded hunting filters allowed denial-of-service via memory exhaustion, and default rollback journals caused lock contention during concurrent pipeline writes.
 
 **Consequences:**
 

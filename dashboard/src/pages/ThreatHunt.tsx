@@ -69,12 +69,12 @@ export const ThreatHunt: React.FC = () => {
         <div className="console-info">
           <h1 className="console-title">Telemetry Threat Hunting Console</h1>
           <p className="console-description">
-            Execute high-performance, parameterized KQL queries against ingested endpoint, network, and cloud telemetry.
+            Search ingested endpoint, network, and cloud telemetry with a parameterized KQL-style hunting filter.
           </p>
         </div>
         <div className="pipeline-status-badge">
           <span className="status-dot pulsing" />
-          <span>KQL/SQL Translator Active</span>
+          <span>KQL-style filter to SQL translator active</span>
         </div>
       </div>
 
@@ -89,7 +89,7 @@ export const ThreatHunt: React.FC = () => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            aria-label="KQL Threat Hunting Query"
+            aria-label="KQL-style hunting filter query"
           />
           <button
             type="button"
@@ -134,7 +134,7 @@ export const ThreatHunt: React.FC = () => {
         <div className="hunt-error-banner" role="alert">
           <div className="hunt-error-header">
             <span className="hunt-error-icon">⚠️</span>
-            <strong>KQL Query Execution Error</strong>
+            <strong>KQL-style hunting filter error</strong>
           </div>
           <div className="hunt-error-message mono">{error}</div>
           <p className="hunt-error-hint">

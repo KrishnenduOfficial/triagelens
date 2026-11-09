@@ -1,8 +1,8 @@
-"""Adversarial and security test suite for the KQL/SQL Threat Hunting Engine.
+"""Adversarial and security tests for the KQL-style hunting filter engine.
 
 Tests:
-- SQL Injection Defense via KQL (payloads in values, field names, and operators).
-- Malformed KQL Defense (unbalanced quotes, random keywords, invalid token chains).
+- SQL injection defense for filter expressions (payloads in values, fields, and operators).
+- Malformed filter defense (unbalanced quotes, random keywords, invalid token chains).
 - Deep JSON Query Translation (nested JSON paths like Network.DestinationIp).
 - End-to-end execution against SQLite database and FastAPI /api/hunt endpoint.
 """
@@ -145,7 +145,7 @@ def test_sql_injection_in_field_identifier(hunting_setup):
 
 
 # =====================================================================
-# 2. Malformed KQL Defense Tests
+# 2. Malformed Hunting Filter Tests
 # =====================================================================
 
 
@@ -274,7 +274,7 @@ def test_not_equals_operator(hunting_setup):
 
 
 def test_api_hunt_endpoint_success(hunting_setup):
-    """Verify POST /api/hunt returns matching alerts for valid KQL."""
+    """Verify POST /api/hunt returns matching alerts for a valid hunting filter."""
     client = hunting_setup["client"]
 
     response = client.post(
@@ -289,7 +289,7 @@ def test_api_hunt_endpoint_success(hunting_setup):
 
 
 def test_api_hunt_endpoint_malformed_returns_400(hunting_setup):
-    """Verify POST /api/hunt returns HTTP 400 with descriptive error for invalid KQL."""
+    """Verify POST /api/hunt returns HTTP 400 with a descriptive filter error."""
     client = hunting_setup["client"]
 
     response = client.post(
@@ -297,7 +297,7 @@ def test_api_hunt_endpoint_malformed_returns_400(hunting_setup):
         json={"query": 'event_type == "unclosed string'},
     )
     assert response.status_code == 400
-    assert "KQL Parse Error" in response.json()["detail"]
+    assert "KQL-style hunting filter error" in response.json()["detail"]
 
 
 def test_api_hunt_endpoint_injection_payload_handled_safely(hunting_setup):
@@ -313,7 +313,7 @@ def test_api_hunt_endpoint_injection_payload_handled_safely(hunting_setup):
 
 
 # =====================================================================
-# 5. KQL Row Limit & Query Hardening Tests
+# 5. Hunting Filter Row Limit & Query Hardening Tests
 # =====================================================================
 
 

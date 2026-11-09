@@ -57,7 +57,7 @@ verification remains pending; one Groq synthetic live request has succeeded.
 3. **Prompt Injection Boundary Isolation (ADR-023):** Adversarial log telemetry is encapsulated inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML delimiters, instructing the model to treat all evidence strictly as untrusted forensic data.
 4. **Wire-Level PII & Secret Scrubbing (ADR-018, ADR-019):** Cloud API keys, AWS/GCP tokens, private keys, passwords, bearer tokens, emails, and Luhn-validated credit cards are redacted before network egress.
 5. **Measurable Confidence Calibration (ADR-025):** Model confidence scores are evaluated using Brier scores and Expected Calibration Error (ECE) across 5 probability bins.
-6. **SQL Injection Defense (ADR-015, ADR-019):** Threat hunting KQL queries are dynamically compiled to parameterized SQLite queries utilizing SQLite's `json_extract()` function.
+6. **SQL Injection Defense (ADR-015, ADR-019):** KQL-style hunting filter expressions are compiled to parameterized SQLite queries using SQLite's `json_extract()` function.
 
 ---
 
@@ -162,7 +162,7 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | **Response Caching** | `LLMResponseCache` | In-memory thread-safe LRU/TTL cache with SHA-256 keys |
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
-| **Query Engine** | Custom KQL-to-SQLite Transpiler | Parameterized security hunting queries with JSON path extraction |
+| **Query Engine** | KQL-style hunting filter to SQLite translator | Parameterized security hunting queries with JSON path extraction |
 | **Testing** | Pytest 9.2 (728 passing backend tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
 
@@ -384,7 +384,7 @@ No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
 | `GET` | `/api/timelines/{timeline_id}` | Retrieve detailed threat timeline with alerts and LLM verdict |
 | `GET` | `/api/alerts/{alert_id}` | Retrieve normalized security alert by ID |
 | `GET` | `/api/enrichments/{indicator}` | Retrieve cached threat intelligence lookups for an indicator |
-| `POST` | `/api/hunt` | Execute parameterized KQL threat hunting query across telemetry |
+| `POST` | `/api/hunt` | Execute a parameterized KQL-style hunting filter across telemetry |
 
 ---
 

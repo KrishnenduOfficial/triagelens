@@ -30,7 +30,7 @@ class HuntRequest(BaseModel):
         ...,
         min_length=1,
         max_length=2000,
-        description="KQL-style search query expression (1-2000 chars)",
+        description="KQL-style hunting filter expression (1-2000 chars)",
     )
     limit: Optional[int] = Field(
         default=500,
@@ -256,13 +256,13 @@ def create_app(
     @app.post(
         "/api/hunt",
         tags=["Threat Hunting"],
-        summary="Execute KQL threat hunting query against security telemetry",
+        summary="Execute a KQL-style hunting filter against security telemetry",
     )
     def hunt_telemetry(
         hunt_req: HuntRequest,
         db: DatabaseManager = Depends(get_db),
     ) -> List[Dict[str, Any]]:
-        """Executes a KQL-style query translated into secure parameterized SQL.
+        """Executes a KQL-style hunting filter translated into parameterized SQL.
 
         Returns matching NormalizedAlert items.
         """
@@ -273,7 +273,7 @@ def create_app(
         except KQLParseError as parse_err:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"KQL Parse Error: {str(parse_err)}",
+                detail=f"KQL-style hunting filter error: {str(parse_err)}",
             )
 
     return app

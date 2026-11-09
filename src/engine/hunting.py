@@ -1,6 +1,6 @@
-"""Advanced KQL/SQL Threat Hunting Engine for TriageLens.
+"""Threat hunting filter engine for TriageLens.
 
-Translates simplified KQL-style security hunting expressions into secure,
+Translates the limited KQL-style hunting filter syntax into secure,
 parameterized SQLite queries targeting relational columns and deep JSON telemetry.
 """
 
@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 class KQLParseError(ValueError):
-    """Raised when a KQL hunting query contains invalid syntax or malicious tokens."""
+    """Raised when a KQL-style hunting filter has invalid or unsafe syntax."""
 
     pass
 
 
 class ThreatHuntingEngine:
-    """Orchestrates security telemetry hunting using KQL-style query translation.
+    """Orchestrates security telemetry hunting using a KQL-style filter.
 
     Translates expressions like:
         event_type == "Process Creation" AND CommandLine contains "powershell"
@@ -42,7 +42,7 @@ class ThreatHuntingEngine:
         "timeline_id": "timeline_id",
     }
 
-    # Strict token specifications for KQL lexical analysis
+    # Strict token specifications for the KQL-style filter syntax
     TOKEN_SPEC = [
         ("STRING", r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''),
         ("OPERATOR", r"==|!=|>=|<=|!contains|\bcontains\b|>|<"),
@@ -82,15 +82,15 @@ class ThreatHuntingEngine:
                 elif in_quote == char:
                     in_quote = None
         if in_quote is not None:
-            raise KQLParseError(f"Unterminated {in_quote} quote literal in KQL query.")
+            raise KQLParseError(f"Unterminated {in_quote} quote literal in hunting filter.")
 
     def translate_kql_to_sql(
         self, kql_query: str, limit: Optional[int] = None
     ) -> Tuple[str, List[Any]]:
-        """Parses a KQL query into a secure, parameterized SQLite query.
+        """Parses a KQL-style hunting filter into a parameterized SQLite query.
 
         Args:
-            kql_query: KQL-style search query string.
+            kql_query: KQL-style hunting filter expression.
 
         Returns:
             Tuple of (SQL query string with '?' placeholders, list of parameter values).
@@ -99,7 +99,7 @@ class ThreatHuntingEngine:
             KQLParseError: If syntax is invalid, unsupported, or contains injection attempts.
         """
         if not kql_query or not kql_query.strip():
-            raise KQLParseError("KQL query cannot be empty.")
+            raise KQLParseError("KQL-style hunting filter cannot be empty.")
 
         query = kql_query.strip()
         self._check_balanced_quotes(query)
@@ -221,10 +221,10 @@ class ThreatHuntingEngine:
     def execute_hunt(
         self, kql_query: str, limit: Optional[int] = None
     ) -> List[NormalizedAlert]:
-        """Translates and executes a KQL hunting query against the alerts table.
+        """Executes a KQL-style hunting filter against the alerts table.
 
         Args:
-            kql_query: KQL search string.
+            kql_query: KQL-style hunting filter expression.
             limit: Optional maximum number of matching alerts to return (default 500, max 1000).
 
         Returns:

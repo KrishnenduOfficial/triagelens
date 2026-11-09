@@ -82,6 +82,7 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 - [x] T0.1 token hygiene: ADR index, concise agent rules, Markdown encoding check, and scratch ignore rule. The operator reported 728 backend tests passed (one warning); 79 dashboard tests passed.
 - [x] T0.2 config leftovers: removed the generic URLhaus key alias, set the VirusTotal threshold to 3, retained wait mode off, and documented that the per-run lookup environment variable is currently unused.
+- [ ] T0.3 terminology: describe the hunting feature as a KQL-style hunting filter across docs, API, engine documentation, and dashboard; confirm unchanged behavior with the targeted tests (pending: Python cannot launch in this environment).
 
 ## Implemented
 
