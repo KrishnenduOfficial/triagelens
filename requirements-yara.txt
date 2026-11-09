@@ -1,0 +1,2 @@
+# Optional scanner: BSD-3-Clause; Windows wheel avoids a local Rust build.
+yara-x==1.22.1

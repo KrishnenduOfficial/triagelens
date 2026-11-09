@@ -275,6 +275,77 @@ old models; use explicit run/cohort selections for a current-provider comparison
 
 ---
 
+### Optional YARA snapshot scanner (Windows, offline)
+
+The base install works without YARA. To enable the T3.2 scanner, install the
+separate pinned extra (Windows x64 wheel, BSD-3-Clause):
+
+```powershell
+python -m pip install --only-binary=:all: -r requirements-yara.txt
+```
+
+Scan immutable bytes acquired by a trusted caller; the worker receives no sample
+path. This harmless example compiles one original demonstration rule:
+
+```python
+from src.engine.yara import RuleSource, scan_snapshot
+
+source = '''rule demo_marker {
+    meta:
+        id = "demo.marker"
+        author = "TriageLens example"
+        source = "https://example.invalid/triagelens-demo"
+        revision = "v1"
+        license = "MIT"
+    strings:
+        $marker = "TriageLens harmless marker"
+    condition:
+        $marker
+}'''
+result = scan_snapshot(b"TriageLens harmless marker", (RuleSource("demo", source),))
+print(result.status, result.size, result.engine, result.version)
+```
+
+`match` and `no_match` describe this exact SHA-256 snapshot and rule-pack digest,
+never a malicious/benign disposition. Missing optional package returns
+`missing_engine`; unsupported versions/platforms or failed isolation return
+`unavailable`. Compile errors identify the zero-based source index, category/code
+and line when available, without snippets or exception text. Timeout, resource
+exhaustion, worker failure and truncation remain separate incomplete outcomes.
+Matches contain attributed rule metadata and bounded offsets/lengths, never bytes.
+Missing or invalid ATT&CK annotations retain the hit with explicit diagnostics.
+
+Limits: 16 MiB/snapshot, 30 sources (one rule per unique namespace), 1 MiB total
+source and 10,000 patterns. Includes and imports are rejected conservatively even
+inside comments/strings; native includes are also disabled. Every rule requires
+string metadata `id`, `author`, `source` (HTTPS reference), `revision` and `license`;
+optional `mitre_attack` contains comma-separated technique IDs. Other metadata is
+rejected. Only reviewed text sources are accepted, never serialized native rules.
+Archive signatures are rejected; bytes are never executed or unpacked.
+
+A fresh [Windows AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
+with no network capabilities runs each scan in a Job Object: 512 MiB committed
+memory, 10 seconds user CPU, one process, kill on parent exit. Parent monitoring
+enforces a 10-second compile/startup deadline and 20-second worker wall deadline;
+the [YARA-X scanner](https://virustotal.github.io/yara-x/docs/api/python/) also has
+a 5-second scan timeout. Windows checks CPU limits periodically; these are not
+hard real-time guarantees. Results cap occurrences at 100/pattern, 1,000/file and
+256 KiB JSON; reaching a cap is reported as `truncated`. `Limits` can tighten bounds.
+One scan is admitted per Python process; concurrent calls return `busy`.
+
+The launcher stages trusted interpreter/stdlib/extension files in a disposable
+temporary directory, grants its fresh identity read/execute access only there,
+and supplies a minimal environment. It never changes installed-runtime ACLs or
+grants sample-directory/database access. Normal exit removes the profile/runtime;
+an abrupt parent exit kills the worker but may leave the empty profile and copied
+runtime for later operator cleanup. Runtime staging has a 60-second overall budget
+checked before IPC; blocking filesystem/OS setup calls are not preemptible.
+Registered-directory admission, safe handle-based file acquisition, extension-based
+archive checks, scan persistence, hash linking, enrichment and API/CLI integration
+remain T3.4. The scanner accepts immutable bytes only; do not replace those future
+file-admission checks with an arbitrary `Path.read_bytes()` endpoint. Rule packs
+and broader adversarial file tests remain T3.3/T3.5. No detection-quality claim.
+
 ### 5.3 Run Automated Test Suite
 
 ```powershell
@@ -287,6 +358,11 @@ cd ..
 ```
 
 Ordinary pytest blocks real network calls, including when credentials are present.
+YARA containment tests use harmless bytes and local TCP/UDP receivers only; they
+verify denial against a working local positive control without external hosts.
+Run focused checks with `python -m pytest -q -x --tb=short tests/test_yara.py tests/test_yara_windows.py`.
+With the optional wheel installed on Windows these include actual isolated scans
+and OS probes; without it they check graceful absence rather than native behavior.
 Groq wire/schema tests use injected senders or MockTransport. Shared privacy/cache/
 provenance tests use a neutral test-only transport; it is not a production provider.
 Live provider commands are manual and separate from tests. The latest verified
