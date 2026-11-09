@@ -173,6 +173,20 @@ v2 live acceptance and untouched-case evaluation remain pending.
   callbacks and cooperative deadlines. Sigma evaluation and real-data quality
   measurements remain separate work. No new dependencies or live calls.
 
+- [x] T2.3 Sigma: bounded validated pySigma loader and local AST evaluator using
+  the canonical fields, explicit Windows logsource gates and unsupported-rule
+  diagnostics. Subset, semantics, limits and usage: [module documentation](src/engine/sigma.py).
+  The pinned three-rule SigmaHQ pack has two supported rules and one explicitly
+  unsupported OriginalFileName rule; original authors, source links, hashes and
+  DRL-1.1 attribution are retained, including authors in match results. See ADR-063.
+  Verification: 130 offline Sigma cases and 175 related regressions passed;
+  full offline backend suite passed (1,115 tests, one existing Starlette/HTTPX
+  warning), and pip check found no broken requirements. A synthetic hostname
+  demo returned one attributed match with unchanged ground truth.
+  Limits: documented subset and bounded single-event evaluation only; no real-data
+  detection-quality claim, detection persistence, CLI/API wiring or prompt expansion.
+  G5 and dependency pins were owner-approved; no live provider calls were made.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

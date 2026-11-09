@@ -2544,6 +2544,18 @@ Limits: cohort is memory-capped; enrichment is precomputed or disabled, not end-
 Real labels, live approval and calls, and every-error analyst review remain outstanding.
 Event review binds decisions to saved telemetry; uncertainty is excluded, and cases contain one event.
 
+### ADR-063: Bounded local Sigma subset with attributed rules
+
+**Status:** Accepted for T2.3; owner approved G5, research and dependency pins, 2026-11-09.
+Use pySigma 2.0.3 (LGPL-2.1-only) for parsing; evaluate its AST locally through the T2.2 resolver.
+The available SQLite backend expects flattened tables; our evaluator preserves the existing field contract.
+Use PyYAML 6.0.3 (MIT) for strict bounded YAML and google-re2 1.1.20251105 (BSD) for regex without backtracking.
+Approved transitive pins are in requirements.txt; Windows CPython 3.14 wheel resolution was verified.
+Support only the subset, logsource gates and limits documented in src/engine/sigma.py; report rejected rules.
+Pin three unmodified SigmaHQ rules by revision/hash; retain DRL-1.1 source/author attribution in matches.
+Return detections separately from labels, predictions and analyst decisions; do not expand prompts or storage.
+Limits: two supported bundled rules, one unsupported field report; synthetic/offline behavior only, no real-data accuracy claim.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

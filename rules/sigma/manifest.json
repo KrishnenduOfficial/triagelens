@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/SigmaHQ/sigma",
+  "revision": "53b90df66c5b6d1b9be6ba9289c56fe49dd74a73",
+  "license": "DRL-1.1",
+  "license_url": "https://github.com/SigmaHQ/Detection-Rule-License/blob/main/LICENSE.Detection.Rules.md",
+  "notice": "Unmodified SigmaHQ rules. Retain authors and source links when reproducing rules, and authors in match output. Rule matches require analyst review; they are not ground truth or AI predictions.",
+  "rules": [
+    {
+      "file": "proc_creation_win_hostname_execution.yml",
+      "sha256": "68a20aca7def5223ee642b0c6ea89e35a116767271b682aeb9d631f6d4a07a4f",
+      "author": "frack113",
+      "source": "https://github.com/SigmaHQ/sigma/blob/53b90df66c5b6d1b9be6ba9289c56fe49dd74a73/rules/windows/process_creation/proc_creation_win_hostname_execution.yml"
+    },
+    {
+      "file": "proc_creation_win_auditpol_nt_resource_kit_usage.yml",
+      "sha256": "887f93bcf0c69ba6d02af492a0c3c5ccfd1e5855e71b92ee9308d4b740a00209",
+      "author": "Nasreddine Bencherchali (Nextron Systems)",
+      "source": "https://github.com/SigmaHQ/sigma/blob/53b90df66c5b6d1b9be6ba9289c56fe49dd74a73/rules/windows/process_creation/proc_creation_win_auditpol_nt_resource_kit_usage.yml"
+    },
+    {
+      "file": "proc_creation_win_hktl_sharpldapwhoami.yml",
+      "sha256": "bf0a9e66f402358eae2a0021cb57557c8154c8fc4d6ccb851813169cc7fbd692",
+      "author": "Florian Roth (Nextron Systems)",
+      "source": "https://github.com/SigmaHQ/sigma/blob/53b90df66c5b6d1b9be6ba9289c56fe49dd74a73/rules/windows/process_creation/proc_creation_win_hktl_sharpldapwhoami.yml"
+    }
+  ]
+}

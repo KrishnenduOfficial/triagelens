@@ -65,3 +65,4 @@ Statuses below are recorded in each ADR; later decisions may supersede historica
 - [ADR-060](../DECISIONS.md#adr-060-explicit-evtx-dataset-truth-isolated-from-telemetry) — Explicit EVTX dataset truth isolated from telemetry — Accepted for T1.2; owner approved the plan, 2026-11-09.
 - [ADR-061](../DECISIONS.md#adr-061-reviewed-mixed-benign-evtx-and-offline-shortcut-audit) — Reviewed mixed benign EVTX and offline shortcut audit — Accepted for T1.3; owner approved mixed sources, 2026-11-09.
 - [ADR-062](../DECISIONS.md#adr-062-fixed-offline-first-evaluation-protocol) — Fixed offline-first evaluation protocol — Partial for T1.4; real-data evaluation remains pending.
+- [ADR-063](../DECISIONS.md#adr-063-bounded-local-sigma-subset-with-attributed-rules) — Bounded local Sigma subset with attributed rules — Accepted for T2.3; owner approved G5 and dependency pins, 2026-11-09.
