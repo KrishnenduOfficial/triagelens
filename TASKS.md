@@ -95,6 +95,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
   Pacing follow-up and the full offline backend suite passed (760 tests; one
   existing warning); dashboard tests passed (79) and the production build passed.
 
+- [x] T1.1 EVTX adapter: 38 offline EVTX tests passed, including synthetic native
+  files, corruption recovery, prompt provenance exclusion and bounded batching.
+  A 128 MiB synthetic native-parser check emitted 2,048 events with zero errors;
+  observed working-set growth after warm-up was 0.50 MiB (batch 25, one thread).
+  Full offline backend suite passed: 798 tests, one existing Starlette/HTTPX warning.
+  G4 approved `evtx==0.15.0` (MIT);
+  see ADR-059. CLI correlation still collects alerts; real-data evaluation is pending.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

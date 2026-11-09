@@ -11,12 +11,16 @@ import re
 from typing import Any, Dict, Generator, List, Optional, Union
 
 from src.models.alert import NormalizedAlert
+from src.engine.evtx import EvtxIntakeEngine
 
 logger = logging.getLogger(__name__)
 
 
 class AlertIntakeEngine:
     """Engine responsible for ingesting, validating, and normalizing alerts."""
+
+    def __init__(self) -> None:
+        self.evtx = EvtxIntakeEngine()
 
     @staticmethod
     def _read_file_text(file_path: Path) -> str:
@@ -411,7 +415,11 @@ class AlertIntakeEngine:
     def ingest_directory(
         self, dir_path: Union[str, Path], batch_size: int = 100
     ) -> Generator[List[NormalizedAlert], None, None]:
-        """Iterates through a directory, processes JSON/CSV files, and yields batches of NormalizedAlerts.
+        """Process JSON/CSV/EVTX files and yield batches of NormalizedAlerts.
+
+        EVTX streams through a single-chunk native parser. Its cumulative error
+        counters are available as ``engine.evtx.stats``. JSON/CSV retain their
+        existing whole-file loading behavior.
 
         Adversarially resilient: skips empty, unreadable, corrupt, or unsupported files
         without halting batch iteration or throwing unhandled exceptions.
@@ -453,11 +461,19 @@ class AlertIntakeEngine:
             if not file_path.is_file():
                 continue
             suffix = file_path.suffix.lower()
-            if suffix not in (".json", ".csv"):
+            if suffix not in (".json", ".csv", ".evtx"):
                 continue
 
             try:
-                if suffix == ".json":
+                if suffix == ".evtx":
+                    for batch in self.evtx.ingest_evtx(file_path, batch_size):
+                        for alert in batch:
+                            current_batch.append(alert)
+                            if len(current_batch) >= batch_size:
+                                yield current_batch
+                                current_batch = []
+                    continue
+                elif suffix == ".json":
                     alerts = self.ingest_json(file_path)
                 elif suffix == ".csv":
                     alerts = self.ingest_csv(file_path)

@@ -30,7 +30,7 @@ Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing ca
 Six functional stages turn alert telemetry into analyst-reviewed results:
 
 ```text
-JSON / CSV alerts
+JSON / CSV / EVTX alerts
     -> Intake: normalize records and preserve source evidence/labels
     -> Enrichment: VirusTotal, AbuseIPDB and URLhaus lookups
     -> Timeline builder: correlate identities and split event sessions
@@ -268,6 +268,49 @@ Groq wire/schema tests use injected senders or MockTransport. Shared privacy/cac
 provenance tests use a neutral test-only transport; it is not a production provider.
 Live provider commands are manual and separate from tests. The latest verified
 suite and counts are recorded in the migration report and TASKS.md.
+
+### EVTX intake (offline)
+
+The EVTX adapter uses [`evtx==0.15.0`](https://pypi.org/project/evtx/0.15.0/)
+(MIT, Rust-backed; Windows x64 Python 3.10+ wheels). Keep large inputs outside
+the repository. This example parses a local file without enrichment or LLM calls:
+
+```python
+from dataclasses import asdict
+from src.engine.evtx import EvtxIntakeEngine
+
+intake = EvtxIntakeEngine()
+for batch in intake.ingest_evtx(r"C:\soc-data\events.evtx", batch_size=100):
+    # Persist/process each batch here; do not collect the entire iterator.
+    print("Alerts in batch:", len(batch))
+print(asdict(intake.stats))
+```
+
+`AlertIntakeEngine.ingest_directory()` also accepts `.evtx` (case insensitive);
+its EVTX counters are available as `engine.evtx.stats`. Normalized alerts carry
+EventID as `event_type`, UTC `timestamp`, and `original_record` fields `EventID`,
+`Channel`, `ComputerName`, `User`, `Details`, and local-only `raw_xml`.
+`Details` flattens EventData/UserData with dotted paths, bracket indices for
+repeated siblings, and backslash escaping of literal dots/brackets/backslashes.
+User selection prefers EventData User, TargetUserName, SubjectUserName, then
+the System Security SID. Missing values remain unknown; naive times assume UTC,
+invalid/missing times are counted and retained as `None`; precision is microseconds.
+Source paths stay in `source_file` provenance, excluded from LLM prompts along
+with raw XML. Dataset labels and indicators are not inferred by this adapter.
+
+Limits: unknown channels are retained. Parser errors count failed operations,
+which may represent whole chunks; they cannot measure the number of lost records.
+Normalization failures count rejected records. File errors and abandonment after
+100 consecutive parser errors increment `files_failed`; readable files containing
+recoverable errors can have `files_failed=0`. Counters accumulate per adapter.
+The adapter uses one native parser thread with checksums enabled and recovery
+disabled, buffers one native chunk plus bounded alert batches, and rejects XML
+over 1,048,576 characters or event-data nesting over 32 levels. Full CLI correlation
+still collects alerts in memory; use the adapter directly for large-file intake.
+Offline tests cover synthetic files and parser-output fixtures. A separate
+128 MiB synthetic native-parser check emitted 2,048 events with 0.50 MiB observed
+working-set growth after warm-up (batch 25, one parser thread). This does not
+establish real-data accuracy, throughput, or memory ceilings for unusual templates.
 
 ### 5.4 End-to-End Execution Sequence
 

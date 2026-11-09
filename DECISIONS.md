@@ -2477,6 +2477,18 @@ Default reservation is now 4,000; reported usage raises reservations and future 
 Valid token balance/reset headers constrain sends, including cooldown on 429.
 State remains per engine; future usage, daily quotas and other processes can exceed limits.
 
+### ADR-059: Streaming EVTX intake with explicit error accounting
+**Status:** Accepted for T1.1; G4 explicitly approved by the owner, 2026-11-09.
+Use `evtx==0.15.0` (MIT), Rust-backed with Windows x64 Python 3.10+ wheels.
+Parse XML on one native thread, with checksums on, skip_errors/recovery off.
+Keep one native chunk and bounded alert batches; close streams on generator close.
+Count parser operations, rejected records, file failures, and missing/invalid times.
+Abandon a file after 100 consecutive parser errors; do not infer lost-record counts.
+Preserve raw XML locally, flatten event data, retain unknown channels and UTC times.
+Source paths are provenance only; no ground-truth or indicator inference is added.
+Existing prompt isolation excludes provenance and raw XML; ADR-008 remains absolute.
+Limits: synthetic offline coverage; CLI still collects alerts; no real-data quality claim.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.
