@@ -60,7 +60,7 @@ class OfflineEngine:
         on_acquisition(self.origin)
         verdict = TriageVerdict(timeline_id=timeline.timeline_id, severity="HIGH",
                                 confidence_score=0.8, summary="fixture", reasoning=[],
-                                recommended_actions=[], raw_llm_response="{}")
+                                recommended_actions=[], raw_llm_response="{}", predicted_techniques=['T1059'])
         return AcquisitionOutcome(verdict, self.origin)
 
 
@@ -95,6 +95,8 @@ def test_test_run_requires_freeze_and_fresh_repetitions(tmp_path):
     assert reports[0]["run_id"] != reports[1]["run_id"]
     assert reports[0]["acquisition_origins"] == {"fresh": count}
     assert reports[0]["metrics"]["total"] == count
+    assert reports[0]['technique_prediction']['scored_timelines'] == count
+    assert reports[0]['technique_prediction']['exact']['recall'] == 1
     assert len(reports[0]["errors"]) == reports[0]["metrics"]["fp"]
     assert all(r["review_status"] == "pending analyst review" for r in reports[0]["errors"])
 

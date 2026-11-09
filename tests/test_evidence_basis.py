@@ -32,7 +32,7 @@ def assessment(disposition="MALICIOUS"):
     ref = {"evidence_id":"E1", "field_path":["details","Protocol"]}
     gaps = [{"category":"process_context", "description":"Intent is not established",
              "required_evidence":"Command line and process context", "blocks_disposition":True}] if disposition == "UNDETERMINED" else []
-    return {"disposition":disposition, "severity":"LOW", "confidence_score":.8,
+    return {"disposition":disposition, "severity":"LOW", "confidence_score":.8, "predicted_techniques": [],
         "summary":"Observed transport; model assessment remains advisory", "uncertainty_level":"HIGH",
         "reasoning":["Recorded transport is TCP; successful TLS is unverified."],
         "recommended_actions":["Authorized analyst should preserve and review process/network records."],

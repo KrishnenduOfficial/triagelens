@@ -56,12 +56,14 @@ CRITICAL REQUIREMENT: Output MUST be a single valid JSON object strictly matchin
         "<authorized, evidence-qualified investigation or preservation step>",
         "<scoped response only if justified; preserve evidence before cleanup>"
     ],
+    "predicted_techniques": ["<optional ATT&CK Enterprise technique ID supported by evidence>"],
     "evidence_basis": {
         "kind": "malicious_support" | "benign_support" | "insufficient_evidence",
         "decision_refs": [], "observations": [], "hypotheses": [], "gaps": []
     }
 }
 Do not include any introductory remarks, markdown prose outside the JSON block, or post-analysis commentary. Output ONLY the JSON object.
+Return only active ATT&CK Enterprise 17.1 technique IDs. Use an empty list if no technique is supported; null means technique assessment unavailable. These are unverified predictions.
 """ + POLICY_DIRECTIVES
 
 
@@ -360,6 +362,11 @@ class TriageEngineBase:
         "technique",
         "mitre",
         "attack_technique",
+        "technique_ids",
+        "predicted_techniques",
+        "rule_mapped_techniques",
+        "detections",
+        "analyst_disposition",
         "is_malicious",
         "malicious",
         "label",

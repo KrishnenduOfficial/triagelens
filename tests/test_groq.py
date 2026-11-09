@@ -19,6 +19,7 @@ from src.models.timeline import ThreatTimeline
 
 MODEL = "openai/gpt-oss-120b"
 ASSESSMENT = {"disposition": "BENIGN", "severity": "LOW", "confidence_score": 0.7, "summary": "Synthetic alert",
+              "predicted_techniques": [],
               "reasoning": ["Routine process"], "recommended_actions": ["Review telemetry"],
               "uncertainty_level": "HIGH", "missing_information": ["Parent process"],
               "evidence_basis": {
@@ -73,6 +74,15 @@ def test_groq_wire_contract_and_prompt_privacy():
     assert set(schema["schema"]["required"]) == set(ASSESSMENT)
 
 
+def test_predicted_techniques_are_validated_and_flagged():
+    data = {**ASSESSMENT, 'predicted_techniques': ['T1059.001']}
+    engine = GroqTriageEngine(api_key='offline', enable_cache=False,
+                              request_sender=lambda *a, **k: httpx.Response(200, json=completion(data)))
+    assert engine.analyze_timeline(timeline()).predicted_techniques == ['T1059.001']
+    data['predicted_techniques'] = ['T9999']
+    assert engine.analyze_timeline(timeline()) is None
+
+
 @pytest.mark.parametrize("field,value", [
     ("severity", "unknown"), ("confidence_score", 1.1), ("confidence_score", "0.7"),
     ("summary", ""), ("reasoning", "invented"), ("missing_information", None),
@@ -85,7 +95,7 @@ def test_invalid_assessments_are_unavailable(field, value):
 
 
 @pytest.mark.parametrize("mutation", ["truncated", "refusal", "tools", "wrong_model", "empty",
-                                      "no_choices", "bad_json", "markdown", "missing_field"])
+                                      "no_choices", "bad_json", "markdown", "missing_field", "missing_techniques"])
 def test_incomplete_or_mismatched_responses_are_unavailable(mutation):
     response = completion()
     message = response["choices"][0]["message"]
@@ -97,6 +107,10 @@ def test_incomplete_or_mismatched_responses_are_unavailable(mutation):
     elif mutation == "no_choices": response["choices"] = []
     elif mutation == "bad_json": message["content"] = "not json"
     elif mutation == "markdown": message["content"] = "```json\n" + message["content"] + "\n```"
+    elif mutation == 'missing_techniques':
+        data = deepcopy(ASSESSMENT)
+        del data['predicted_techniques']
+        message['content'] = json.dumps(data)
     else:
         data = deepcopy(ASSESSMENT)
         del data["missing_information"]

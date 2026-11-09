@@ -4,6 +4,7 @@ from typing import Any, List, Literal, Optional
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, field_validator, model_validator
 from src.models.evidence import EvidenceBasis, EVIDENCE_CONTRACT_VERSION
+from src.engine.attack import validate_techniques
 
 SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
 Disposition = Literal["MALICIOUS", "BENIGN", "UNDETERMINED"]
@@ -48,6 +49,19 @@ class TriageVerdict(BaseModel):
         default_factory=list,
         description="Key telemetry gaps or unobserved investigation leads (e.g. missing parent process or egress)",
     )
+    predicted_techniques: Optional[List[str]] = Field(
+        default=None, description="Unverified AI-predicted ATT&CK Enterprise 17.1 IDs; null means unrecorded."
+    )
+
+    @field_validator('predicted_techniques')
+    @classmethod
+    def validate_predicted_techniques(cls, value):
+        if value is None:
+            return None
+        valid, invalid = validate_techniques(value)
+        if invalid:
+            raise ValueError('Unknown or inactive ATT&CK technique ID')
+        return valid
 
 
     @model_validator(mode="after")

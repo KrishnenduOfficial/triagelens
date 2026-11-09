@@ -11,13 +11,14 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from src import config
 from src.engine.llm import TriageEngineBase
 from src.engine.triage_policy import POLICY_VERSION
 from src.models.triage import Disposition, SeverityLevel
 from src.models.evidence import EvidenceBasis, NonBlank, EVIDENCE_CONTRACT_VERSION
+from src.engine.attack import validate_techniques
 
 
 class GroqAssessment(BaseModel):
@@ -33,6 +34,17 @@ class GroqAssessment(BaseModel):
     missing_information: list[NonBlank]
     recommended_actions: list[NonBlank] = Field(min_length=1)
     evidence_basis: EvidenceBasis
+    predicted_techniques: list[str] | None
+
+    @field_validator('predicted_techniques')
+    @classmethod
+    def valid_predictions(cls, value):
+        if value is None:
+            return None
+        valid, invalid = validate_techniques(value)
+        if invalid:
+            raise ValueError('Unknown or inactive ATT&CK technique ID')
+        return valid
 
     @model_validator(mode="after")
     def require_abstention_explanation(self):
@@ -168,13 +180,14 @@ class GroqTriageEngine(TriageEngineBase):
         return delay if math.isfinite(delay) else None
 
     def _generation_settings(self, candidate):
+        schema = GroqAssessment.model_json_schema()
         settings = {
             "temperature": 0.1,
             "max_completion_tokens": 4096,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "triage_assessment", "strict": True,
-                                "schema": GroqAssessment.model_json_schema()},
+                                "schema": schema},
             },
         }
         if candidate.startswith("openai/gpt-oss-"):
@@ -193,6 +206,7 @@ class GroqTriageEngine(TriageEngineBase):
     def _verdict_metadata(self, assessment, evidence_context):
         return {"disposition": assessment["disposition"], "policy_version": self.POLICY_VERSION,
                 "evidence_basis": assessment["evidence_basis"], "evidence_context": evidence_context,
+                "predicted_techniques": assessment['predicted_techniques'],
                 "evidence_contract_version": self.EVIDENCE_CONTRACT_VERSION}
 
     def _cache_compatible(self, verdict, evidence_context):

@@ -2559,6 +2559,18 @@ to timelines through their alert references; rule hits remain excluded from all 
 Detection time is caller-supplied UTC-normalized time, not necessarily event time.
 Limits: two supported bundled rules, one unsupported field report; synthetic/offline behavior only, no real-data accuracy claim.
 
+### ADR-064: Offline ATT&CK technique attribution and evaluation
+**Status:** Accepted for T2.5; owner approved the plan and official-source access.
+Bundle active Enterprise v17.1 technique IDs, names, tactics and parents; no runtime download.
+The source SHA-256 is recorded in the JSON; MITRE's license and copyright accompany it.
+Dataset annotations, model predictions and Sigma/YARA mappings remain independent.
+Unknown IDs are diagnosed; legacy/missing predictions and unreviewed truth stay unavailable.
+Groq requests an explicit nullable prediction field; unknown IDs withhold the verdict.
+Report exact, parent-family and shared-tactic micro counts separately from binary metrics.
+Provide source-labelled coverage and Navigator 4.5 export; rule mappings require explicit persistence.
+Limits: active Enterprise 17.1 only; annotation coverage is not detection effectiveness.
+No live v2 provider or real-data accuracy verification was performed for this change.
+
 ## 4. Deferred Decisions
 
 The following decisions are intentionally not finalized yet or have been resolved as noted.

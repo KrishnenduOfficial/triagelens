@@ -9,6 +9,7 @@ import httpx
 
 from conftest import PipelineTestEngine
 from src.engine.database import DatabaseManager
+from src.engine.attack import rule_techniques
 from src.engine.sigma import load_curated_rules
 from src.models.alert import NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -47,13 +48,16 @@ def test_sigma_detection_roundtrip_and_prompt_isolation(db):
                                 fallback_models=[], enable_cache=False, request_sender=send)
     engine.analyze_timeline(timeline)
     before = requests[-1]
+    techniques, invalid = rule_techniques('sigma', match.tags)
+    assert techniques == ['T1082'] and not invalid
     detection_id = db.insert_detection(match.rule_id, "sigma", [match.event_id],
-                                       datetime(2026, 1, 1, tzinfo=timezone.utc))
+                                       datetime(2026, 1, 1, tzinfo=timezone.utc), techniques)
     db.close()
     db.init_db()
     hits = db.get_detections_for_timeline(timeline.timeline_id)
     assert hits == [{"id": detection_id, "rule_id": match.rule_id, "source": "sigma",
-                     "detected_at": "2026-01-01T00:00:00+00:00", "event_ids": [str(alert.internal_id)]}]
+                     "detected_at": "2026-01-01T00:00:00+00:00", "technique_ids": ['T1082'],
+                     "event_ids": [str(alert.internal_id)]}]
     assert db.get_alert(alert.internal_id)["ground_truth_label"] == "benign"
     assert db.get_verdict_for_timeline(timeline.timeline_id) is None
     engine.analyze_timeline(timeline)

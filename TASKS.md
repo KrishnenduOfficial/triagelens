@@ -196,6 +196,15 @@ v2 live acceptance and untouched-case evaluation remain pending.
   one existing Starlette/HTTPX warning. See ADR-063's T2.4 note.
   Limits: explicit caller persistence only; no CLI/API/dashboard wiring or live calls.
 
+- [x] T2.5 ATT&CK: pinned Enterprise 17.1 catalog, independent dataset/AI/rule
+  technique sets, exact/parent/tactic comparison, coverage and Navigator export.
+  The reviewed-cohort report keeps technique metrics separate from binary metrics;
+  missing truth or predictions are unavailable. See ADR-064 and `src/engine/attack.py`.
+  Verification: 206 targeted offline tests and 1,134 full backend tests passed;
+  the full run had one existing Starlette/HTTPX deprecation warning.
+  Limits: active Enterprise techniques only; rule mappings require explicit caller
+  persistence, no dashboard or live validation, and no real-data accuracy claim.
+
 ## Implemented
 
 - [x] JSON/CSV alert intake, normalization, indicator extraction and source preservation.

@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 from src.cli import detect_indicator_type
 from src.config import get_database_path, get_groq_api_key
 from src.engine.database import DatabaseManager
+from src.engine.attack import evaluate_timeline
 from src.engine.enrichment import EnrichmentEngine
 from src.engine.benign import BenignEvtxAdapter
 from src.engine.evtx import EvtxIntakeEngine
@@ -48,7 +49,7 @@ def protocol_settings(engine):
     source_files = ["scripts/run_evaluation.py", "src/engine/evaluation_protocol.py",
                     "src/engine/evaluation.py", "src/engine/llm.py", "src/engine/groq.py",
                     "src/engine/triage_policy.py", "src/models/evidence.py", "src/models/triage.py",
-                    "src/utils/masking.py"]
+                    "src/utils/masking.py", "src/engine/attack.py", "data/attack/enterprise-17.1.json"]
     return {"provider": engine.PROVIDER_ID, "model": engine.model,
             "fallback_models": engine.fallback_models, "timeout": engine.timeout,
             "pacing": [engine._rpm, engine._tpm, engine._token_estimate, engine._max_wait],
@@ -107,6 +108,7 @@ def run_protocol(timelines, manifest, split, settings, frozen, engine, db_path, 
                 techniques = sorted({technique for a in timeline.alerts
                                      for technique in a.ground_truth_metadata.technique_ids})
                 records.append({"result": result, "techniques": techniques,
+                                "technique_comparison": evaluate_timeline(timeline, acquisition.verdict),
                                 "elapsed_seconds": elapsed, "origin": acquisition.origin})
             report = summarize(records)
             report.update({"repetition": repetition, "run_id": run.run_id, "split": split})

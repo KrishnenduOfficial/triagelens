@@ -14,7 +14,7 @@ from scripts.run_evaluation import load_benchmark_timelines
 
 
 def assessment(**updates):
-    data = {"disposition": "MALICIOUS", "severity": "LOW", "confidence_score": 0.8,
+    data = {"disposition": "MALICIOUS", "severity": "LOW", "confidence_score": 0.8, "predicted_techniques": [],
             "summary": "Observed session discovery; intent assessed separately from urgency.",
             "reasoning": ["Observed command invocation; authorization is not verified."],
             "recommended_actions": ["Have an authorized analyst preserve relevant logs before cleanup."],

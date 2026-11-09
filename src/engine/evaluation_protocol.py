@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from src.engine.evaluation import AccuracyTracker
+from src.engine.attack import summarize_comparisons
 from src.engine.evtx import EvtxIntakeEngine
 from src.models.alert import GroundTruthMetadata, NormalizedAlert
 from src.models.timeline import ThreatTimeline
@@ -242,11 +243,13 @@ def summarize(records: list[dict]) -> dict:
               for r in records if r["result"].category in ("False Positive", "False Negative")]
     latency = [r["elapsed_seconds"] for r in records]
     return {"metrics": metrics, "input_class_balance": dict(counts),
-            "techniques": breakdown, "errors": errors,
+            "techniques": breakdown, "technique_prediction": summarize_comparisons(
+                [r.get('technique_comparison', {'status': 'unavailable'}) for r in records]), "errors": errors,
             "acquisition_origins": dict(Counter(r["origin"] for r in records)),
             "latency_seconds": {"count": len(latency), "mean": sum(latency) / len(latency) if latency else None,
                                 "max": max(latency) if latency else None},
             "limits": ["Wilson intervals assume independent observations; related events can violate this assumption.",
                        "Per-technique results use independent dataset annotations and may overlap.",
+                       "Technique comparison is annotation-based; shared tactics do not establish correct techniques.",
                        "Latency measures acquisition including pacing, not complete pipeline latency.",
                        "False positives and negatives require human review."]}

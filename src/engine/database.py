@@ -267,7 +267,7 @@ class DatabaseManager:
 
             # Nullable snapshots; never infer historical disposition or policy.
             for table, names in (
-                ('verdicts', ('disposition', 'policy_version', 'evidence_basis', 'evidence_context', 'evidence_contract_version')),
+                ('verdicts', ('disposition', 'policy_version', 'evidence_basis', 'evidence_context', 'evidence_contract_version', 'predicted_techniques')),
                 ('evaluations', ('disposition', 'prediction_basis', 'policy_version')),
             ):
                 existing = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})')}
@@ -297,6 +297,8 @@ class DatabaseManager:
                 alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE RESTRICT,
                 PRIMARY KEY (detection_id, alert_id)
             );""")
+            if 'technique_ids' not in {row['name'] for row in conn.execute('PRAGMA table_info(detections)')}:
+                conn.execute('ALTER TABLE detections ADD COLUMN technique_ids TEXT')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_detection_events_alert ON detection_events(alert_id);")
 
             # Create Indexes for Query Performance
@@ -796,7 +798,7 @@ class DatabaseManager:
     # =====================================================================
 
     def insert_detection(self, rule_id: str, source: str, event_ids: List[Union[UUID, str]],
-                         detected_at: datetime) -> str:
+                         detected_at: datetime, technique_ids: Optional[List[str]] = None) -> str:
         """Store one rule hit and its existing alert references atomically.
 
         The caller supplies the detection time, which must include a timezone.
@@ -806,14 +808,22 @@ class DatabaseManager:
             raise ValueError("rule_id must be nonempty")
         if source not in {"sigma", "hunt", "yara"}:
             raise ValueError("invalid detection source")
+        if technique_ids is not None:
+            from src.engine.attack import validate_techniques
+            if source not in {'sigma', 'yara'}:
+                raise ValueError('Technique mappings require sigma or yara')
+            technique_ids, invalid = validate_techniques(technique_ids)
+            if invalid:
+                raise ValueError('Unknown or inactive ATT&CK technique ID')
         if not event_ids or len({str(event_id) for event_id in event_ids}) != len(event_ids):
             raise ValueError("event_ids must be nonempty and unique")
         if not isinstance(detected_at, datetime) or detected_at.utcoffset() is None:
             raise ValueError("detected_at must be timezone-aware")
         detection_id = str(uuid4())
         with self._atomic_write() as conn:
-            conn.execute("INSERT INTO detections (id, rule_id, source, detected_at) VALUES (?, ?, ?, ?)",
-                         (detection_id, rule_id, source, detected_at.astimezone(timezone.utc).isoformat()))
+            conn.execute("INSERT INTO detections (id, rule_id, source, detected_at, technique_ids) VALUES (?, ?, ?, ?, ?)",
+                         (detection_id, rule_id, source, detected_at.astimezone(timezone.utc).isoformat(),
+                          json.dumps(technique_ids) if technique_ids is not None else None))
             conn.executemany("INSERT INTO detection_events (detection_id, alert_id) VALUES (?, ?)",
                              [(detection_id, str(event_id)) for event_id in event_ids])
         return detection_id
@@ -829,6 +839,8 @@ class DatabaseManager:
             results = []
             for row in rows:
                 detection = dict(row)
+                detection['technique_ids'] = (json.loads(detection['technique_ids'])
+                                              if detection['technique_ids'] is not None else None)
                 detection["event_ids"] = [r[0] for r in conn.execute(
                     "SELECT alert_id FROM detection_events WHERE detection_id = ? ORDER BY alert_id",
                     (detection["id"],))]
@@ -1173,8 +1185,8 @@ class DatabaseManager:
                     id, timeline_id, severity, confidence_score, summary,
                     reasoning, recommended_actions, raw_llm_response, created_at,
                     model_name, uncertainty_level, missing_information, disposition, policy_version,
-                    evidence_basis, evidence_context, evidence_contract_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    evidence_basis, evidence_context, evidence_contract_version, predicted_techniques
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     verdict_id_str,
@@ -1194,6 +1206,7 @@ class DatabaseManager:
                     json.dumps(verdict.evidence_basis.model_dump(mode='json')) if verdict.evidence_basis is not None else None,
                     json.dumps(verdict.evidence_context) if verdict.evidence_context is not None else None,
                     verdict.evidence_contract_version,
+                    json.dumps(verdict.predicted_techniques) if verdict.predicted_techniques is not None else None,
                 ),
             )
             if not self._atomic_depth:
@@ -1215,7 +1228,7 @@ class DatabaseManager:
     @staticmethod
     def _decode_verdict(row, presentation=False):
         data = dict(row)
-        for name in ('reasoning', 'recommended_actions', 'evidence_basis', 'evidence_context'):
+        for name in ('reasoning', 'recommended_actions', 'evidence_basis', 'evidence_context', 'predicted_techniques'):
             value = data.get(name)
             try:
                 data[name] = json.loads(value) if value is not None else None
