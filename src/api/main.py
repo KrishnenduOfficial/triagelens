@@ -20,6 +20,8 @@ from src.engine.database import DatabaseManager
 from src.engine.evaluation import AccuracyTracker
 from src.engine.metric_scopes import MetricSelectionError, scoped_metrics
 from src.engine.hunting import HuntTimeoutError, KQLParseError, ThreatHuntingEngine
+from src.engine.llm import summarize_enrichment
+from src.models.enrichment import EnrichmentResult
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +317,29 @@ def create_app(
         return alert
 
     # 8. Indicator Enrichment Endpoint
+    @app.get('/api/threat-intelligence', tags=['Enrichment'])
+    def get_threat_intelligence(
+        indicator: str = Query(..., min_length=1, max_length=2048),
+        db: DatabaseManager = Depends(get_db),
+    ) -> List[Dict[str, Any]]:
+        """Return recorded lookups; never contact intelligence providers."""
+        records = db.get_enrichments(indicator)
+        results = []
+        for row in records:
+            original = row['lookup_status']
+            status_value = original if original in ('ok', 'not_found', 'rate_limited') else 'unavailable'
+            summary = summarize_enrichment(EnrichmentResult(**row)) if status_value == 'ok' else {}
+            if row['provider'].strip().lower() == 'abuseipdb':
+                data = row['raw_response'].get('data', row['raw_response'])
+                if isinstance(data, dict):
+                    for field, names in (('abuse_confidence_score', ('abuseConfidenceScore', 'abuse_confidence_score')), ('total_reports', ('totalReports', 'total_reports'))):
+                        if not any(name in data for name in names):
+                            summary.pop(field, None)
+            results.append({'id': row['id'], 'provider': row['provider'], 'status': status_value,
+                            'recorded_status': original, 'lookup_timestamp': row['lookup_timestamp'],
+                            'summary': summary})
+        return results
+
     @app.get(
         "/api/enrichments/{indicator}",
         tags=["Enrichment"],

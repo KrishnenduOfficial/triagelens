@@ -308,6 +308,30 @@ def test_indicator_enrichment_endpoint(test_setup):
     assert items[0]["is_malicious"] is True
 
 
+def test_threat_intelligence_recorded_statuses_and_summary(test_setup):
+    from src.models.enrichment import EnrichmentResult
+
+    db, client = test_setup['db'], test_setup['client']
+    indicator = 'https://example.test/path'
+    for value in ('ok', 'not_found', 'rate_limited', 'error', 'quota_exceeded'):
+        db.insert_enrichment(EnrichmentResult(
+            indicator=indicator, indicator_type='url', provider='AbuseIPDB',
+            is_malicious=False, lookup_status=value, raw_response={'data': {'totalReports': 2}},
+        ))
+    response = client.get('/api/threat-intelligence', params={'indicator': indicator})
+    assert response.status_code == 200
+    rows = {row['recorded_status']: row for row in response.json()}
+    assert {key: row['status'] for key, row in rows.items()} == {
+        'ok': 'ok', 'not_found': 'not_found', 'rate_limited': 'rate_limited',
+        'error': 'unavailable', 'quota_exceeded': 'unavailable',
+    }
+    assert rows['ok']['summary'] == {'total_reports': 2}
+    assert rows['ok']['lookup_timestamp']
+    assert rows['error']['summary'] == {}
+    assert client.get('/api/threat-intelligence', params={'indicator': 'missing'}).json() == []
+    assert client.get('/api/threat-intelligence', params={'indicator': ''}).status_code == 422
+
+
 def test_health_check_endpoint(test_setup):
     """Verify system health check endpoint."""
     client = test_setup["client"]

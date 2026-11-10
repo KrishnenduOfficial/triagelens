@@ -4,6 +4,7 @@ import { DashboardHome } from "./pages/DashboardHome";
 import { TimelineView } from "./pages/TimelineView";
 import { ThreatHunt } from "./pages/ThreatHunt";
 import { Alerts } from "./pages/Alerts";
+import { ThreatIntelligence } from "./pages/ThreatIntelligence";
 
 export const App: React.FC = () => {
   return (
@@ -23,6 +24,7 @@ export const App: React.FC = () => {
             </div>
 
             <nav className="header-nav" aria-label="Main Navigation">
+              <NavLink to="/intelligence" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>Threat intelligence</NavLink>
               <NavLink to="/alerts" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
                 Alerts
               </NavLink>
@@ -65,6 +67,7 @@ export const App: React.FC = () => {
             <Route path="/timeline/:id" element={<TimelineView />} />
             <Route path="/hunt" element={<ThreatHunt />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/intelligence" element={<ThreatIntelligence />} />
           </Routes>
         </main>
 

@@ -188,6 +188,19 @@ export interface AlertQuery {
 }
 export interface AlertPage { items: NormalizedAlert[]; total: number; skip: number; limit: number }
 
+export interface IntelligenceLookup {
+  id: number; provider: string; status: 'ok' | 'not_found' | 'rate_limited' | 'unavailable';
+  recorded_status: string; lookup_timestamp: string | null; summary: Record<string, unknown>;
+}
+
+export async function fetchThreatIntelligence(indicator: string): Promise<IntelligenceLookup[]> {
+  try {
+    return (await apiClient.get<IntelligenceLookup[]>('/api/threat-intelligence', { params: { indicator } })).data;
+  } catch (error) {
+    throw normalizeError(error, 'Failed to retrieve recorded threat intelligence.');
+  }
+}
+
 export async function fetchAlerts(query: AlertQuery): Promise<AlertPage> {
   try {
     return (await apiClient.get<AlertPage>('/api/alerts', { params: query })).data;

@@ -80,6 +80,11 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.2 threat intelligence view: recorded provider statuses, compact summaries
+  and lookup times; unavailable outcomes are distinguished from clean findings.
+  Offline verification: 1,311 backend tests and 81 dashboard tests passed; dashboard
+  build succeeded. Interactive QA remains pending. No live calls.
+
 - [x] T4.1 alert management: paginated alert API and
   dashboard search, filters, sorting and plain-text detail. Host/user filters use
   canonical mappings; time bounds are inclusive and timezone-aware. Substring
