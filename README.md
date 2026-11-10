@@ -3,7 +3,6 @@
 > An alert triage pipeline that measures how often its AI is wrong.
 
 [![CI](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml/badge.svg)](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml)
-[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/krishnenduofficial/triagelens?utm_source=readme&utm_medium=badge)
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
@@ -16,8 +15,9 @@
 [![Dashboard tests](https://img.shields.io/badge/dashboard%20tests-88%20recorded-1F6FEB)](TASKS.md#roadmap-progress)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Test-count badges show previously recorded offline runs, not a live count or a
-claim about the current checkout. The CI badge reports GitHub's workflow status.
+Test-count badges refer to the recorded T5.4 backend and T5.3 dashboard checks
+in [TASKS.md](TASKS.md#roadmap-progress); they are not live counts or results for
+the current checkout. The CI badge reports GitHub's workflow status.
 
 TriageLens assists security analysts with alert intake, threat intelligence,
 event correlation, cloud-based AI triage, detection and evaluation. It compares
@@ -55,11 +55,13 @@ and [project progress](TASKS.md).
 ![Synthetic timeline and analyst review](docs/images/dashboard-timeline.png)
 *Timeline and analyst review using synthetic data.*
 
-[Set up the project](#5-quickstart-guide) · [Run the end-to-end example](#54-end-to-end-execution-sequence) · [Explore the repository](#8-repository-structure)
+[Set up the project](#5-quickstart-guide) · [Run the end-to-end example](#53-end-to-end-execution-sequence) · [Explore the repository](#8-repository-structure)
 
 ---
 
 ## 1. System Architecture
+
+[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/krishnenduofficial/triagelens?utm_source=readme&utm_medium=badge)
 
 ```mermaid
 flowchart LR
@@ -90,22 +92,6 @@ evaluator scores it. The dashboard presents the evidence, model output and any
 separate analyst review. Provider failures are recorded as unavailable outcomes.
 The correlation engine defaults to a 30-minute gap and a 100-event cap; shared
 identifiers support grouping but do not prove that events belong to one incident.
-
-Six functional stages turn alert telemetry into analyst-reviewed results:
-
-```text
-JSON / CSV / EVTX alerts
-    -> Intake: normalize records and preserve source evidence/labels
-    -> Enrichment: VirusTotal, AbuseIPDB and URLhaus lookups
-    -> Timeline builder: correlate identities and split event sessions
-    -> Groq triage: sanitize evidence, request strict JSON, validate verdict
-    -> Evaluation: compare predictions with independent ground truth
-    -> Dashboard: inspect timelines, verdicts and scoped reliability metrics
-
-SQLite stores alerts, intelligence, verdicts, outcomes and run provenance.
-FastAPI serves stored results and parameterized hunting queries to React.
-The human analyst retains final investigation and response authority.
-```
 
 `src/engine/llm.py` owns shared privacy, prompt and cache processing;
 `src/engine/groq.py` owns the active provider's request/response contract.
@@ -274,15 +260,13 @@ $$
 \end{aligned}
 $$
 
-| Metric | Formula | Interpretation |
+Precision is the fraction of positive predictions that are correct; recall is
+the fraction of labelled positives found. Specificity and the false-positive
+rate describe performance on labelled negatives, while the false-negative rate
+describes missed labelled positives. F1 combines precision and recall.
+
+| Additional metric | Formula | Interpretation |
 | --- | --- | --- |
-| Accuracy | `(TP + TN) / N` | Correct binary predictions among scored predictions |
-| Precision | `TP / (TP + FP)` | Fraction of positive predictions that are correct |
-| Recall | `TP / (TP + FN)` | Fraction of labelled positives found |
-| Specificity | `TN / (TN + FP)` | Fraction of labelled negatives correctly classified |
-| F1 | `2 × precision × recall / (precision + recall)` | Harmonic mean of precision and recall |
-| False-positive rate | `FP / (FP + TN)` | Fraction of labelled negatives predicted positive |
-| False-negative rate | `FN / (FN + TP)` | Fraction of labelled positives predicted negative |
 | Severity agreement | exact matches / evaluated severities | Separate from binary disposition |
 | Labelled binary coverage | labelled binary predictions / available labelled outcomes | Discloses abstentions among labelled available outcomes |
 | Availability | available outcomes / (available + unavailable outcomes) | Availability of the selected stored evaluation stream, not live uptime |
@@ -417,6 +401,99 @@ cohorts see [architecture](ARCHITECTURE.md) and [evaluation implementation](src/
    indicate an empty database or a different API database path. Check the API
    health endpoint, the configured path and browser origin, then restart the API
    after configuration changes. A missing enrichment response is not a clean finding.
+
+---
+
+### 5.3 End-to-End Execution Sequence
+
+Run these from the project root with the virtual environment active. Live CLI
+runs can contact both Groq and configured intelligence services and consume quota.
+
+1. **Prepare a dedicated synthetic alert input folder:**
+   ```powershell
+   New-Item -ItemType Directory -Force data/raw/demo | Out-Null
+   if (Test-Path -LiteralPath data/raw/demo/telemetry.json) { throw 'Demo input already exists; choose another directory or review it before replacing it.' }
+   Copy-Item -LiteralPath data/synthetic_soc_telemetry.json -Destination data/raw/demo/telemetry.json
+   ```
+   `data/raw/` is Git-ignored. Keep alert inputs separate from the benchmark JSON
+   and databases; do not feed the entire mixed `data/` directory into alert intake.
+
+2. **Run the pipeline:**
+   ```powershell
+   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db
+   ```
+   Save the `Evaluation run:` UUID and the final `PIPELINE EXECUTION SUMMARY`
+   for the comparison below. A configured Groq key and completed triage outcomes
+   are needed for a meaningful AI metric comparison; missing credentials skip
+   triage. This command makes live requests and may consume quota; one run of
+   this synthetic input produced 50 timelines, potentially requiring 50 triage
+   requests before retries. Check your available quota before starting.
+   To skip Groq while retaining enrichment:
+   ```powershell
+   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db --skip-llm
+   ```
+   **`--skip-llm` is not an offline switch:** intelligence lookups can still occur.
+   Use the guarded test suite for offline verification.
+
+3. **Check the database populated by that run:**
+   ```powershell
+   python -c "import sqlite3; c=sqlite3.connect('file:data/triagelens.db?mode=ro', uri=True); print('timelines:', c.execute('SELECT COUNT(*) FROM timelines').fetchone()[0], 'evaluations:', c.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0]); c.close()"
+   ```
+   The read-only open fails if the file is missing. Existing rows can be from
+   earlier runs; the Run selection below isolates this run. A zero evaluation
+   count does not demonstrate populated AI metrics.
+
+4. **Start the backend in a separate terminal, from the project root:**
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   $env:DATABASE_PATH = 'data/triagelens.db'
+   python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   Configure the API's `DATABASE_PATH` to the same file as the CLI. Open
+   `http://127.0.0.1:8000/docs` for the API or `/api/metrics` for stored metrics.
+
+5. **Start the dashboard in another terminal, initially at the project root:**
+   ```powershell
+   cd dashboard
+   npm ci
+   npm run dev
+   ```
+   Open the local URL printed by Vite (normally `http://localhost:5173`).
+   The default backend URL is `http://localhost:8000`. For a different backend,
+   put the public URL in `dashboard/.env.local` before starting Vite:
+   ```env
+   VITE_API_BASE_URL=http://127.0.0.1:8000
+   ```
+   Vite uses the dashboard directory for its environment files; setting this only
+   in the root `.env` does not configure the frontend. Restart Vite after changes.
+   Groq and intelligence secrets stay in the root `.env`, never in `VITE_*` values.
+
+---
+
+### 5.4 Manual Click-Through Verification Checklist
+
+- [ ] Open `/health` on the API and verify database connectivity.
+- [ ] Open `http://127.0.0.1:8000/api/metrics?scope=run&run_id=<UUID>`,
+  replacing `<UUID>` with the CLI's `Evaluation run:` value. Compare `tp`, `tn`,
+  `fp`, `fn`, `total`, `unknown`, `abstained` and `unavailable` with the CLI
+  summary; compare applicable rates after converting API fractions to percentages.
+- [ ] On dashboard `/`, select **Run** under **Scope**, enter the same UUID in
+  **Run UUID**, and click **Apply selection**. Verify the displayed Run ID, then
+  compare confusion counts, binary-labeled results, unscored outcomes, undetermined
+  dispositions, unavailable outcomes and applicable rates with the API and CLI.
+  Default History includes earlier evaluations and need not match the latest run.
+  N/A can be valid when a rate's denominator is zero; the CLI may print 0% instead.
+  Check loading/error states; the UI does not certify live provider availability.
+- [ ] Use the timeline list on `/` and follow a row to `/timeline/:id`. Verify its
+  alert details, intelligence and stored verdict. There is no `/timelines` page or
+  incident-detail drawer in the current router.
+- [ ] On `/hunt`, try `event_type == "ProcessCreate"` or
+  `CommandLine contains "powershell"`. A valid query may return zero matching rows.
+- [ ] Check that failed triage is unavailable rather than a benign prediction and
+  that historical model results remain distinguishable from new Groq results.
+- [ ] Record whether the same-run numbers match and share screenshots of the CLI
+  summary and dashboard selection/results, with sensitive information removed.
+  Do not claim this check passed until the operator confirms it on populated data.
 
 ---
 
@@ -736,7 +813,7 @@ to the provider under the existing quota and cache rules; it is never automatic.
 Offline adversarial file tests are recorded under T3.5 in [TASKS.md](TASKS.md).
 No detection-quality claim is made.
 
-### 5.3 Run Automated Test Suite
+### 5.5 Run Automated Test Suite
 
 ```powershell
 python -m pytest -q
@@ -761,8 +838,8 @@ suite and counts are recorded in the migration report and TASKS.md.
 The [CI workflow](.github/workflows/ci.yml) runs backend and dashboard checks,
 PostgreSQL-backed tests, dependency and secret scans, and generates SBOMs. Ruff
 and mypy gates currently cover limited scopes; Bandit reports findings and gates
-high-severity results. The badge at the top links to the hosted workflow; its
-displayed status is provided by GitHub and has not been checked in this review.
+high-severity results. The badge at the top links to the hosted workflow and its
+current status on GitHub.
 
 ### EVTX intake (offline)
 
@@ -807,98 +884,7 @@ Offline tests cover synthetic files and parser-output fixtures. A separate
 working-set growth after warm-up (batch 25, one parser thread). This does not
 establish real-data accuracy, throughput, or memory ceilings for unusual templates.
 
-### 5.4 End-to-End Execution Sequence
 
-Run these from the project root with the virtual environment active. Live CLI
-runs can contact both Groq and configured intelligence services and consume quota.
-
-1. **Prepare a dedicated synthetic alert input folder:**
-   ```powershell
-   python scripts/generate_soc_data.py
-   New-Item -ItemType Directory -Force data/raw/demo | Out-Null
-   Copy-Item data/synthetic_soc_telemetry.json data/raw/demo/telemetry.json
-   ```
-   `data/raw/` is Git-ignored. Keep alert inputs separate from the benchmark JSON
-   and databases; do not feed the entire mixed `data/` directory into alert intake.
-
-2. **Run the pipeline:**
-   ```powershell
-   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db
-   ```
-   Save the `Evaluation run:` UUID and the final `PIPELINE EXECUTION SUMMARY`
-   for the comparison below. A configured Groq key and completed triage outcomes
-   are needed for a meaningful AI metric comparison; missing credentials skip
-   triage. This command makes live requests and may consume quota; one run of
-   this synthetic input produced 50 timelines, potentially requiring 50 triage
-   requests before retries. Check your available quota before starting.
-   To skip Groq while retaining enrichment:
-   ```powershell
-   python -m src.cli --data-dir data/raw/demo --db-path data/triagelens.db --skip-llm
-   ```
-   **`--skip-llm` is not an offline switch:** intelligence lookups can still occur.
-   Use the guarded test suite for offline verification.
-
-3. **Check the database populated by that run:**
-   ```powershell
-   python -c "import sqlite3; c=sqlite3.connect('file:data/triagelens.db?mode=ro', uri=True); print('timelines:', c.execute('SELECT COUNT(*) FROM timelines').fetchone()[0], 'evaluations:', c.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0]); c.close()"
-   ```
-   The read-only open fails if the file is missing. Existing rows can be from
-   earlier runs; the Run selection below isolates this run. A zero evaluation
-   count does not demonstrate populated AI metrics.
-
-4. **Start the backend in a separate terminal, from the project root:**
-   ```powershell
-   .\.venv\Scripts\Activate.ps1
-   $env:DATABASE_PATH = 'data/triagelens.db'
-   python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
-   ```
-   Configure the API's `DATABASE_PATH` to the same file as the CLI. Open
-   `http://127.0.0.1:8000/docs` for the API or `/api/metrics` for stored metrics.
-
-5. **Start the dashboard in another terminal, initially at the project root:**
-   ```powershell
-   cd dashboard
-   npm ci
-   npm run dev
-   ```
-   Open the local URL printed by Vite (normally `http://localhost:5173`).
-   The default backend URL is `http://localhost:8000`. For a different backend,
-   put the public URL in `dashboard/.env.local` before starting Vite:
-   ```env
-   VITE_API_BASE_URL=http://127.0.0.1:8000
-   ```
-   Vite uses the dashboard directory for its environment files; setting this only
-   in the root `.env` does not configure the frontend. Restart Vite after changes.
-   Groq and intelligence secrets stay in the root `.env`, never in `VITE_*` values.
-
----
-
-### 5.5 Manual Click-Through Verification Checklist
-
-- [ ] Open `/health` on the API and verify database connectivity.
-- [ ] Open `http://127.0.0.1:8000/api/metrics?scope=run&run_id=<UUID>`,
-  replacing `<UUID>` with the CLI's `Evaluation run:` value. Compare `tp`, `tn`,
-  `fp`, `fn`, `total`, `unknown`, `abstained` and `unavailable` with the CLI
-  summary; compare applicable rates after converting API fractions to percentages.
-- [ ] On dashboard `/`, select **Run** under **Scope**, enter the same UUID in
-  **Run UUID**, and click **Apply selection**. Verify the displayed Run ID, then
-  compare confusion counts, binary-labeled results, unscored outcomes, undetermined
-  dispositions, unavailable outcomes and applicable rates with the API and CLI.
-  Default History includes earlier evaluations and need not match the latest run.
-  N/A can be valid when a rate's denominator is zero; the CLI may print 0% instead.
-  Check loading/error states; the UI does not certify live provider availability.
-- [ ] Use the timeline list on `/` and follow a row to `/timeline/:id`. Verify its
-  alert details, intelligence and stored verdict. There is no `/timelines` page or
-  incident-detail drawer in the current router.
-- [ ] On `/hunt`, try `event_type == "ProcessCreate"` or
-  `CommandLine contains "powershell"`. A valid query may return zero matching rows.
-- [ ] Check that failed triage is unavailable rather than a benign prediction and
-  that historical model results remain distinguishable from new Groq results.
-- [ ] Record whether the same-run numbers match and share screenshots of the CLI
-  summary and dashboard selection/results, with sensitive information removed.
-  Do not claim this check passed until the operator confirms it on populated data.
-
----
 
 ### Dashboard smoke test and screenshots
 
@@ -954,9 +940,9 @@ headers also constrain sends; a 429 token-reset header supplies a cooldown even
 without `Retry-After`. It honors a 429 `Retry-After` before a later request or fallback; it does not retry
 the same model. If the cumulative wait would exceed the budget, it withholds the
 request. Reservations include failed attempts. Future usage can exceed the estimate,
-and separate engines or processes do not share limits. The reported account
-limits of 1,000 requests/day and 200,000 tokens/day are not enforced; monitor
-account usage and configure limits for your model and account. Provider rate limits
+and separate engines or processes do not share limits. Daily account limits are
+not enforced by this pacing mechanism; monitor account usage and configure limits
+for your model and account. Provider rate limits
 can still be exceeded. Valid JSON does not prove
 correct security analysis. Evaluate sanitized cases before using real alerts.
 No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
