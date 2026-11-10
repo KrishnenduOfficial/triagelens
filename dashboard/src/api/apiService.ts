@@ -224,7 +224,24 @@ export async function fetchAlerts(query: AlertQuery): Promise<AlertPage> {
 export interface TimelineDetail extends TimelineSummary {
   alerts: NormalizedAlert[];
   verdict: TriageVerdict | null;
+  analyst_review: AnalystReview | null;
   timeline?: TimelineSummary;
+}
+
+export interface AnalystReview {
+  verdict_id: string;
+  decision: 'confirm' | 'override';
+  override_disposition: 'MALICIOUS' | 'BENIGN' | 'UNDETERMINED' | null;
+  rationale: string;
+  created_at: string;
+}
+
+export async function saveAnalystReview(timelineId: string, review: Omit<AnalystReview, 'created_at'>): Promise<AnalystReview> {
+  try {
+    return (await apiClient.post<AnalystReview>(`/api/timelines/${encodeURIComponent(timelineId)}/analyst-review`, review)).data;
+  } catch (error) {
+    throw normalizeError(error, 'Failed to save analyst review.');
+  }
 }
 
 export interface ApiErrorDetails {

@@ -51,6 +51,14 @@ class SavedHuntRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
 
 
+class AnalystReviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    verdict_id: UUID
+    decision: Literal['confirm', 'override']
+    override_disposition: Optional[Literal['MALICIOUS', 'BENIGN', 'UNDETERMINED']] = None
+    rationale: str = Field(default='', max_length=2000)
+
+
 class SavedHuntName(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=100)
@@ -309,8 +317,18 @@ def create_app(
         response_data = dict(timeline)
         response_data["alerts"] = alerts
         response_data["verdict"] = verdict
+        response_data["analyst_review"] = db.get_analyst_review(verdict['id']) if verdict else None
         response_data["timeline"] = timeline
         return response_data
+
+    @app.post('/api/timelines/{timeline_id}/analyst-review', tags=['Timelines'])
+    def save_analyst_review(timeline_id: str, review: AnalystReviewRequest, db: DatabaseManager = Depends(get_db)):
+        if (review.decision == 'confirm' and review.override_disposition is not None) or (review.decision == 'override' and (review.override_disposition is None or not review.rationale)):
+            raise HTTPException(status_code=422, detail='Override requires a disposition and rationale; confirmation has no override')
+        try:
+            return db.save_analyst_review(timeline_id, str(review.verdict_id), review.decision, review.override_disposition, review.rationale)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get('/api/alerts', tags=['Alerts'])
     def list_alerts(

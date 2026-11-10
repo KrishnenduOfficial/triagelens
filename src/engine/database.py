@@ -222,6 +222,12 @@ class DatabaseManager:
                 );
             """)
 
+            cursor.execute("""CREATE TABLE IF NOT EXISTS analyst_reviews (
+                verdict_id TEXT PRIMARY KEY REFERENCES verdicts(id) ON DELETE CASCADE,
+                decision TEXT NOT NULL, override_disposition TEXT, rationale TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""")
+
             # Migration: ensure model_name and uncertainty columns exist in verdicts table
             cursor.execute("PRAGMA table_info(verdicts);")
             existing_verdict_cols = {row["name"] for row in cursor.fetchall()}
@@ -1413,6 +1419,32 @@ class DatabaseManager:
             return self._decode_verdict(row, presentation=True)
 
     # =====================================================================
+    def get_analyst_review(self, verdict_id):
+        with self._lock:
+            row = self.connect().execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (str(verdict_id),)).fetchone()
+            return dict(row) if row else None
+
+    def save_analyst_review(self, timeline_id, verdict_id, decision, override_disposition, rationale):
+        with self._lock:
+            conn = self.connect()
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                latest = conn.execute('SELECT id FROM verdicts WHERE timeline_id = ? ORDER BY created_at DESC LIMIT 1', (timeline_id,)).fetchone()
+                if not latest or latest['id'] != verdict_id:
+                    raise ValueError('Verdict is missing or superseded')
+                row = conn.execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (verdict_id,)).fetchone()
+                if row:
+                    if (row['decision'], row['override_disposition'], row['rationale']) != (decision, override_disposition, rationale):
+                        raise ValueError('A review is already recorded for this verdict')
+                else:
+                    conn.execute('INSERT INTO analyst_reviews VALUES (?, ?, ?, ?, ?)', (verdict_id, decision, override_disposition, rationale, datetime.now(timezone.utc).isoformat()))
+                    row = conn.execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (verdict_id,)).fetchone()
+                conn.commit()
+                return dict(row)
+            except Exception:
+                conn.rollback()
+                raise
+
     # Evaluation Persistence
     # =====================================================================
 

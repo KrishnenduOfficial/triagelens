@@ -3,9 +3,20 @@ import { Link, useParams } from "react-router-dom";
 import { VerdictQualifications } from "../components/VerdictQualifications";
 import {
   fetchTimelineDetail,
+  saveAnalystReview,
+  type AnalystReview,
   type SeverityLevel,
   type TimelineDetail,
 } from "../api/apiService";
+
+export const AnalystReviewSummary: React.FC<{ review: AnalystReview }> = ({ review }) => (
+  <div>
+    <p>Decision: {review.decision}</p>
+    {review.override_disposition && <p>Analyst disposition: {review.override_disposition}</p>}
+    <p>Rationale: {review.rationale || 'None provided'}</p>
+    <p>Recorded: {review.created_at}</p>
+  </div>
+);
 
 export const TimelineView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +24,27 @@ export const TimelineView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedAlerts, setExpandedAlerts] = useState<Record<string, boolean>>({});
+  const [decision, setDecision] = useState<'confirm' | 'override'>('confirm');
+  const [override, setOverride] = useState<NonNullable<AnalystReview['override_disposition']>>('MALICIOUS');
+  const [rationale, setRationale] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submitReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id || !timeline?.verdict) return;
+    setSaving(true);
+    setReviewError('');
+    try {
+      const review = await saveAnalystReview(id, { verdict_id: timeline.verdict.id, decision,
+        override_disposition: decision === 'override' ? override : null, rationale: rationale.trim() });
+      setTimeline({ ...timeline, analyst_review: review });
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Review could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -218,6 +250,21 @@ export const TimelineView: React.FC = () => {
           </div>
 
           {/* Constituent Alert Events List */}
+          {timeline.verdict && <section className="dashboard-card">
+            <h2>Analyst review</h2>
+            {timeline.analyst_review ? <AnalystReviewSummary review={timeline.analyst_review} /> : <form onSubmit={submitReview}>
+              <p>Reviews are final for this verdict.</p>
+              <label>Decision <select value={decision} onChange={e => setDecision(e.target.value as 'confirm' | 'override')}>
+                <option value="confirm">Confirm assessment</option><option value="override">Override disposition</option>
+              </select></label>
+              {decision === 'override' && <label>Analyst disposition <select value={override} onChange={e => setOverride(e.target.value as typeof override)}>
+                <option>MALICIOUS</option><option>BENIGN</option><option>UNDETERMINED</option>
+              </select></label>}
+              <label>Rationale {decision === 'override' ? '(required)' : '(optional)'} <textarea maxLength={2000} required={decision === 'override'} value={rationale} onChange={e => setRationale(e.target.value)} /></label>
+              {reviewError && <p role="alert">{reviewError}</p>}
+              <button className="btn btn-primary" disabled={saving || (decision === 'override' && !rationale.trim())}>Save review</button>
+            </form>}
+          </section>}
           <div className="dashboard-card alerts-feed-card">
             <div className="card-header">
               <div>

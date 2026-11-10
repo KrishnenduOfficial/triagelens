@@ -2667,3 +2667,12 @@ The initial technical direction is:
 The exact database schema, frontend framework, model identifier, dataset, and deployment approach remain open decisions.
 
 **TriageLens must prioritize explainability, reproducibility, security, and measurable AI reliability over unnecessary complexity.**
+
+### ADR-066: Analyst review per verdict
+
+**Status:** Accepted and implemented for T4.5.
+
+An analyst can confirm a saved verdict or record an overriding disposition with a rationale.
+One final review is stored per verdict, separately from AI output and independent labels.
+Identical retries return the existing review; conflicts and superseded verdicts are rejected.
+The current local API access model applies; analyst identities are not authenticated.
