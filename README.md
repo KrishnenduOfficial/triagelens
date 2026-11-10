@@ -277,6 +277,35 @@ old models; use explicit run/cohort selections for a current-provider comparison
 
 ### Optional PostgreSQL storage
 
+#### Local Compose stack
+
+Docker Desktop with the Linux engine and Compose is required. The stack exposes
+only `http://127.0.0.1:8080`, has no authentication, and is intended for local
+use. It starts an empty PostgreSQL database; it does not import SQLite history.
+From the project root in PowerShell, create five distinct random passwords in an
+ignored runtime file, then start the services:
+
+```powershell
+if (Test-Path .env.compose) { throw 'Keep the existing .env.compose; do not overwrite its passwords.' }
+$names = 'TL_ADMIN_PASSWORD','TL_ANALYST_PASSWORD','TL_HUNT_PASSWORD','TL_EVALUATOR_PASSWORD','TL_TRIAGE_PASSWORD'
+$bytes = [byte[]]::new(32)
+$lines = foreach ($name in $names) { [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes); "$name=$([Convert]::ToHexString($bytes))" }
+[System.IO.File]::WriteAllLines((Join-Path (Get-Location) '.env.compose'), $lines)
+docker compose --env-file .env.compose up --build -d
+docker compose --env-file .env.compose ps
+```
+
+Open the dashboard at `http://127.0.0.1:8080`; `/health` checks API database
+connectivity. PostgreSQL is not exposed on the host. The migration service creates
+separate logins; the API receives only analyst and read-only hunting credentials.
+Provider credentials can be supplied in `.env.compose` for explicitly initiated
+enrichment; do not put secrets in `VITE_*` variables or images. Compose environment
+variables are visible to users with Docker access. The memory limits total 2.625 GiB,
+excluding Docker's own overhead. `docker compose --env-file .env.compose down`
+stops the stack while retaining the database volume. Keep `.env.compose`: generating
+new passwords does not change the PostgreSQL administrator password in an existing
+volume. Backup and restore are not yet covered by this task.
+
 SQLite remains the default. For a fresh UTF-8 PostgreSQL 17 database, install the
 optional dependencies and run the baseline as a migration owner with permission
 to create schemas and roles. Set `TRIAGELENS_POSTGRES_MIGRATION_DSN` in that

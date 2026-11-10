@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:17
+    user: "999:999"
+    mem_limit: 1g
+    environment:
+      POSTGRES_USER: triagelens_admin
+      POSTGRES_DB: triagelens
+      POSTGRES_PASSWORD: ${TL_ADMIN_PASSWORD:?Set TL_ADMIN_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/api.Dockerfile
+    image: triagelens-api:local
+    mem_limit: 512m
+    command: ["python", "deploy/start.py", "migrate"]
+    environment:
+      POSTGRES_PASSWORD: ${TL_ADMIN_PASSWORD:?Set TL_ADMIN_PASSWORD}
+      TL_ANALYST_PASSWORD: ${TL_ANALYST_PASSWORD:?Set TL_ANALYST_PASSWORD}
+      TL_HUNT_PASSWORD: ${TL_HUNT_PASSWORD:?Set TL_HUNT_PASSWORD}
+      TL_EVALUATOR_PASSWORD: ${TL_EVALUATOR_PASSWORD:?Set TL_EVALUATOR_PASSWORD}
+      TL_TRIAGE_PASSWORD: ${TL_TRIAGE_PASSWORD:?Set TL_TRIAGE_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  api:
+    image: triagelens-api:local
+    pull_policy: never
+    mem_limit: 1g
+    environment:
+      TL_ANALYST_PASSWORD: ${TL_ANALYST_PASSWORD:?Set TL_ANALYST_PASSWORD}
+      TL_HUNT_PASSWORD: ${TL_HUNT_PASSWORD:?Set TL_HUNT_PASSWORD}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      URLHAUS_API_KEY: ${URLHAUS_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  dashboard:
+    build:
+      context: .
+      dockerfile: deploy/dashboard.Dockerfile
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+volumes:
+  postgres_data:

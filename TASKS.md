@@ -80,6 +80,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T5.2 local Compose stack: PostgreSQL, API and dashboard run as non-root
+  with health checks, separate database logins and 2.625 GiB combined memory
+  limits. Fresh startup, localhost routes, role boundaries, repeated startup and
+  synthetic saved-hunt persistence across restart were verified. Offline checks:
+  1,320 backend tests passed, four PostgreSQL cases skipped without a test DSN,
+  88 dashboard tests passed, and the dashboard build passed. One existing
+  Starlette warning remains; no live provider calls. Docker overhead is extra.
+
 - [x] T5.1 PostgreSQL baseline (G9, ADR-067): SQLite stays the default. Alembic
   provisions a fresh PostgreSQL database with raw JSONB and a GIN index. Ground
   truth and evaluations use a protected schema. The inference cache uses a
