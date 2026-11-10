@@ -3,6 +3,7 @@
 > An alert triage pipeline that measures how often its AI is wrong.
 
 [![CI](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml/badge.svg)](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml)
+[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/krishnenduofficial/triagelens?utm_source=readme&utm_medium=badge)
 [![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
@@ -295,26 +296,29 @@ $y_i=1$ when that disposition is correct, otherwise $y_i=0$. For $n$ scored
 confidence pairs, the Brier score is:
 
 $$
-\operatorname{Brier}=\frac{1}{n}\sum_{i=1}^{n}(c_i-y_i)^2
+\mathrm{Brier}=\frac{1}{n}\sum_{i=1}^{n}(c_i-y_i)^2
 $$
 
 For five equal-width confidence bins $B_k$, expected calibration error (ECE) is:
 
 $$
-\operatorname{ECE}=\sum_{k=1}^{5}\frac{|B_k|}{n}\left|\operatorname{mean\_confidence}(B_k)-\operatorname{accuracy}(B_k)\right|
+\mathrm{ECE}=\sum_{k=1}^{5}\frac{|B_k|}{n}\left|\mathrm{confidence}(B_k)-\mathrm{accuracy}(B_k)\right|
 $$
 
-The implementation rounds bin means and accuracies before aggregation.
+Here, $\mathrm{confidence}(B_k)$ is the bin's mean confidence and
+$\mathrm{accuracy}(B_k)$ is its observed accuracy. The implementation rounds
+both values before aggregation.
 Abstentions are excluded from calibration.
 
 For a rate $\hat p=s/n$, where $s$ is the number of successes, the Wilson
 interval is given by:
 
 $$
-\frac{\hat p+\frac{z^2}{2n}\ \pm\ z\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}}{1+\frac{z^2}{n}},\qquad z\approx1.96\ \text{for 95% confidence}.
+\frac{\hat p+\frac{z^2}{2n}\ \pm\ z\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}}{1+\frac{z^2}{n}},\qquad z\approx1.96.
 $$
 
-Intervals describe sampling uncertainty under their assumptions, not label quality.
+The stated $z$ value gives a 95% confidence interval. Intervals describe sampling
+uncertainty under their assumptions, not label quality.
 
 The synthetic Sigma fragility demo divides lost matches by successfully evaluated,
 changed mutations of matching baselines. It excludes no-ops and reports errors and
