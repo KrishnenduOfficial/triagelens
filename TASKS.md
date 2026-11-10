@@ -80,6 +80,12 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.3 hunting UI: grammar help, persisted named query controls and JSON
+  export of up to 500 returned records, with raw telemetry/label disclosure.
+  Offline verification: 85 hunting tests, 1,312 backend tests and 84 dashboard
+  tests passed; dashboard build passed (one existing backend warning).
+  Interactive QA remains pending. No live provider calls.
+
 - [x] T4.2 threat intelligence view: recorded provider statuses, compact summaries
   and lookup times; unavailable outcomes are distinguished from clean findings.
   Offline verification: 1,311 backend tests and 81 dashboard tests passed; dashboard

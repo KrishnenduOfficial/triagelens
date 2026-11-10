@@ -218,7 +218,10 @@ whitespace trimmed), validated query, created-at and updated-at UTC timestamps.
 to 1000 definitions in name order; `delete_saved_query(name)` reports whether one
 was removed; `execute_saved_query(name, limit=None)` reparses and executes the
 stored definition. Unknown names raise `KQLParseError`. Saving never runs a query
-or stores hits. Saved-query HTTP routes and dashboard controls are deferred.
+or stores hits. `GET /api/hunt/saved` lists definitions, `PUT /api/hunt/saved`
+upserts a JSON `{name, query}`, and `POST /api/hunt/saved/delete` deletes a
+JSON `{name}`. The dashboard loads definitions into the editor and exports only
+returned results as JSON (at most 500), including raw telemetry and labels.
 
 From the project root in PowerShell:
 

@@ -329,3 +329,20 @@ export const huntAlerts = async (query: string): Promise<NormalizedAlert[]> => {
     throw normalizeError(error, "Failed to execute threat hunt query.");
   }
 };
+
+export interface SavedHunt { name: string; query: string; created_at: string; updated_at: string }
+
+export async function listSavedHunts(): Promise<SavedHunt[]> {
+  try { return (await apiClient.get<SavedHunt[]>("/api/hunt/saved")).data; }
+  catch (error) { throw normalizeError(error, "Failed to load saved queries."); }
+}
+
+export async function saveHunt(name: string, query: string): Promise<SavedHunt> {
+  try { return (await apiClient.put<SavedHunt>("/api/hunt/saved", { name, query })).data; }
+  catch (error) { throw normalizeError(error, "Failed to save query."); }
+}
+
+export async function deleteHunt(name: string): Promise<void> {
+  try { await apiClient.post("/api/hunt/saved/delete", { name }); }
+  catch (error) { throw normalizeError(error, "Failed to delete query."); }
+}

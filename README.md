@@ -616,6 +616,9 @@ No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
 | `GET` | `/api/enrichments/{indicator}` | Retrieve cached threat intelligence lookups for an indicator |
 | `GET` | `/api/threat-intelligence` | Retrieve recorded provider statuses and compact summaries by indicator query parameter |
 | `POST` | `/api/hunt` | Execute a parameterized KQL-style hunting filter across telemetry |
+| `GET` | `/api/hunt/saved` | List saved hunting query definitions |
+| `PUT` | `/api/hunt/saved` | Validate and save a named hunting query |
+| `POST` | `/api/hunt/saved/delete` | Delete a named hunting query |
 | `POST` | `/api/yara/scans` | Scan a registered directory offline with bounded inputs |
 | `GET` | `/api/yara/jobs/{job_id}` | Retrieve a YARA job and its recorded state |
 | `GET` | `/api/yara/scans/{scan_id}` | Retrieve a YARA snapshot result and linked detections |

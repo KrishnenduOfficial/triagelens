@@ -1,5 +1,9 @@
-import React, { useState } from "react";
-import { huntAlerts, type NormalizedAlert } from "../api/apiService";
+import React, { useEffect, useState } from "react";
+import { deleteHunt, huntAlerts, listSavedHunts, saveHunt, type NormalizedAlert, type SavedHunt } from "../api/apiService";
+
+export function huntExport(alerts: NormalizedAlert[]): string {
+  return JSON.stringify(alerts, null, 2);
+}
 
 export const ThreatHunt: React.FC = () => {
   const [query, setQuery] = useState<string>('CommandLine contains "mimikatz"');
@@ -8,6 +12,37 @@ export const ThreatHunt: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SavedHunt[]>([]);
+  const [name, setName] = useState("");
+  const [savedError, setSavedError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedLoading, setSavedLoading] = useState(true);
+  const [executedQuery, setExecutedQuery] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    listSavedHunts().then(items => { if (active) setSaved(items); })
+      .catch(err => { if (active) setSavedError(err instanceof Error ? err.message : "Failed to load saved queries."); })
+      .finally(() => { if (active) setSavedLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const updateSaved = async (action: () => Promise<unknown>) => {
+    setSaving(true);
+    setSavedError(null);
+    try { await action(); setSaved(await listSavedHunts()); }
+    catch (err: unknown) { setSavedError(err instanceof Error ? err.message : "Saved query operation failed."); }
+    finally { setSaving(false); }
+  };
+
+  const exportResults = () => {
+    const url = URL.createObjectURL(new Blob([huntExport(alerts)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "hunting-results.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const sampleQueries = [
     { label: "Mimikatz Activity", query: 'CommandLine contains "mimikatz"' },
@@ -20,15 +55,18 @@ export const ThreatHunt: React.FC = () => {
 
   const handleSearch = async (queryToRun?: string) => {
     const activeQuery = queryToRun !== undefined ? queryToRun : query;
-    if (!activeQuery.trim()) return;
+    if (loading || !activeQuery.trim()) return;
 
     setLoading(true);
     setError(null);
-    setHasExecuted(true);
+    setHasExecuted(false);
+    setAlerts([]);
 
     try {
       const results = await huntAlerts(activeQuery.trim());
       setAlerts(results);
+      setExecutedQuery(activeQuery.trim());
+      setHasExecuted(true);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -84,6 +122,7 @@ export const ThreatHunt: React.FC = () => {
           <span className="hunt-icon">🔎</span>
           <input
             type="text"
+            maxLength={2000}
             className="hunt-query-input mono"
             placeholder='e.g. event_type == "ProcessCreate" AND CommandLine contains "powershell"'
             value={query}
@@ -116,6 +155,7 @@ export const ThreatHunt: React.FC = () => {
               <button
                 key={idx}
                 type="button"
+                disabled={loading}
                 className="quick-query-pill mono text-xs"
                 onClick={() => {
                   setQuery(item.query);
@@ -128,6 +168,26 @@ export const ThreatHunt: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <details className="hunt-search-card">
+        <summary>Filter grammar help</summary>
+        <p>Compare fields with <code>== != &gt; &lt; &gt;= &lt;= contains !contains</code>. Combine expressions with <code>NOT</code>, <code>AND</code>, and <code>OR</code>; parentheses group expressions.</p>
+        <p>Quote string values; numbers and booleans are typed. Nested fields use dots, for example <code>Network.DestinationPort == 443</code>. NOT binds before AND, then OR. This is a KQL-style filter, not full KQL.</p>
+      </details>
+      <section className="hunt-search-card" aria-label="Saved queries">
+        <h2>Saved queries</h2>
+        <p>Saving an existing name replaces its definition. Saving does not run the query.</p>
+        <label>Query name <input value={name} maxLength={100} onChange={e => setName(e.target.value)} /></label>{" "}
+        <button type="button" disabled={saving || savedLoading || !name.trim() || !query.trim()} onClick={() => updateSaved(() => saveHunt(name, query))}>Save query</button>
+        {savedError && <p role="alert">{savedError} <button type="button" disabled={saving} onClick={() => updateSaved(async () => {})}>Retry loading</button></p>}
+        {savedLoading && <p>Loading saved queries...</p>}
+        {!savedLoading && saved.length === 0 && !savedError && <p>No saved queries.</p>}
+        <ul>{saved.map(item => <li key={item.name}>
+          <span>{item.name}</span>{" "}
+          <button type="button" disabled={saving} onClick={() => { setName(item.name); setQuery(item.query); }}>Load</button>{" "}
+          <button type="button" disabled={saving} onClick={() => updateSaved(() => deleteHunt(item.name))}>Delete</button>
+        </li>)}</ul>
+      </section>
 
       {/* Syntax / Query Error Banner */}
       {error && (
@@ -151,6 +211,9 @@ export const ThreatHunt: React.FC = () => {
             <strong className="text-accent mono">{alerts.length}</strong>
             <span className="text-muted">records found</span>
           </div>
+          <button type="button" onClick={exportResults}>Export returned results as JSON</button>
+          <span className="text-xs">Up to 500 returned records; additional matches may exist. Export includes raw telemetry and labels.</span>
+          <span className="text-xs">Results for: <code>{executedQuery}</code></span>
           {alerts.length > 0 && (
             <span className="text-xs text-muted mono">
               Queried against alerts table with parameterized SQLite JSON extraction

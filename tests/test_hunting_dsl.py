@@ -289,6 +289,24 @@ def test_saved_queries_persist_upsert_validate_and_delete(tmp_path):
     db.close()
 
 
+def test_saved_query_api_contract(db):
+    client = TestClient(create_app(db=db))
+    path = '/api/hunt/saved'
+    assert client.get(path).json() == []
+    payload = {"name": "folder/query", "query": "a == 1"}
+    saved = client.put(path, json=payload)
+    assert saved.status_code == 200
+    assert client.get(path).json()[0]['query'] == 'a == 1'
+    assert client.put(path, json={**payload, 'query': 'a == 2'}).status_code == 200
+    assert client.put(path, json={**payload, 'query': 'invalid'}).status_code == 400
+    assert client.get(path).json()[0]['query'] == 'a == 2'
+    assert client.put(path, json={**payload, 'unexpected': 1}).status_code == 422
+    assert client.put(path, json={**payload, 'name': ' '}).status_code == 400
+    assert client.post(path + '/delete', json={'name': payload['name']}).json() == {'deleted': True}
+    assert client.post(path + '/delete', json={'name': payload['name']}).status_code == 404
+    assert client.get(path).json() == []
+
+
 def _ascii_lower(text):
     return text.translate(str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'))
 

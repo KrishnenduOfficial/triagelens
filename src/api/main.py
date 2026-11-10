@@ -45,6 +45,17 @@ class HuntRequest(BaseModel):
     )
 
 
+class SavedHuntRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+    query: str = Field(min_length=1, max_length=2000)
+
+
+class SavedHuntName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+
+
 class YaraScanRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     job_id: UUID
@@ -380,6 +391,27 @@ def create_app(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"KQL-style hunting filter error: {str(parse_err)}",
             )
+
+    @app.get("/api/hunt/saved", tags=["Threat Hunting"])
+    def list_saved_hunts(db: DatabaseManager = Depends(get_db)) -> List[Dict[str, Any]]:
+        return ThreatHuntingEngine(db).list_saved_queries()
+
+    @app.put("/api/hunt/saved", tags=["Threat Hunting"])
+    def save_hunt(payload: SavedHuntRequest, db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        try:
+            return ThreatHuntingEngine(db).save_query(payload.name, payload.query)
+        except KQLParseError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+
+    @app.post("/api/hunt/saved/delete", tags=["Threat Hunting"])
+    def delete_hunt(payload: SavedHuntName, db: DatabaseManager = Depends(get_db)) -> Dict[str, bool]:
+        try:
+            deleted = ThreatHuntingEngine(db).delete_saved_query(payload.name)
+        except KQLParseError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Saved query does not exist.")
+        return {"deleted": True}
 
     return app
 
