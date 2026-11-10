@@ -217,6 +217,48 @@ class SQLiteDialect:
         return f"SELECT * FROM alerts WHERE {predicate} ORDER BY timestamp ASC, id ASC LIMIT ?;"
 
 
+class PostgresDialect:
+    """Compile the same scalar and three-valued logic against JSONB telemetry."""
+
+    def comparison(self, node: Comparison, params: list[Any]) -> str:
+        if not FIELD_PATTERN.fullmatch(node.field):
+            raise KQLParseError('Invalid field identifier.')
+        field = node.field.lower()
+        direct = DIRECT_COLUMNS.get(field)
+        text = isinstance(node.value, str)
+        if direct:
+            value = f'{direct} COLLATE "C"' if text else 'NULL::numeric'
+        else:
+            canonical = field in FIELD_MAPPINGS
+            if canonical:
+                expression = f"canonical_record -> '{field}'"
+            else:
+                expression = 'original_record' + ''.join(f" -> '{part}'" for part in node.field.split('.'))
+            json_value = f'({expression})'
+            if text:
+                value = (f"(CASE WHEN jsonb_typeof({json_value}) = 'string' "
+                         f'THEN {json_value} #>> ARRAY[]::text[] END) COLLATE "C"')
+            else:
+                boolean = (f"WHEN 'boolean' THEN CASE WHEN {json_value} = 'true'::jsonb THEN 1 ELSE 0 END"
+                           if not canonical else '')
+                value = f"(CASE jsonb_typeof({json_value}) WHEN 'number' THEN {json_value}::numeric {boolean} END)"
+        if node.operator in {'contains', '!contains'}:
+            if not text:
+                raise KQLParseError('Substring operators require a string value.')
+            params.append(node.value)
+            op = '>' if node.operator == 'contains' else '='
+            return f'(strpos(lower({value}), lower(CAST(? AS TEXT) COLLATE "C")) {op} 0)'
+        operators = {'==': '=', '!=': '!=', '>': '>', '<': '<', '>=': '>=', '<=': '<='}
+        if node.operator not in operators:
+            raise KQLParseError('Unsupported comparison operator.')
+        params.append(int(node.value) if isinstance(node.value, bool) else node.value)
+        parameter_type = 'text' if text else 'numeric'
+        return f'({value} {operators[node.operator]} CAST(? AS {parameter_type}))'
+
+    def select(self, predicate: str) -> str:
+        return f'SELECT * FROM hunting_alerts WHERE {predicate} ORDER BY timestamp COLLATE "C" ASC NULLS FIRST, id COLLATE "C" ASC LIMIT ?'
+
+
 def compile_query(tree: Expression, dialect: SQLDialect, limit: int) -> tuple[str, list[Any]]:
     params: list[Any] = []
 

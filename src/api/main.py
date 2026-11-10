@@ -113,8 +113,7 @@ def create_app(
 
     # 2. Attach DatabaseManager and AccuracyTracker to app state
     if db is None:
-        db_path = config.get_database_path()
-        db = DatabaseManager(db_path=db_path, check_same_thread=False)
+        db = config.open_database('analyst')
         db.init_db()
 
     app.state.db = db

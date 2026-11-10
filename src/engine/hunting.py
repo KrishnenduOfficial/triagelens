@@ -1,7 +1,7 @@
 """Threat hunting filter engine for TriageLens.
 
 Translates the limited KQL-style hunting filter syntax into secure,
-parameterized SQLite queries targeting relational columns and deep JSON telemetry.
+parameterized queries targeting relational columns and deep JSON telemetry.
 """
 
 from datetime import datetime
@@ -18,7 +18,7 @@ from src.engine.database import DatabaseManager
 from src.engine.fields import resolve_field
 from src.models.alert import NormalizedAlert
 from src.engine.hunting_dsl import (
-    DIRECT_COLUMNS, KQLParseError, SQLDialect, SQLiteDialect, compile_query, parse_query,
+    DIRECT_COLUMNS, KQLParseError, PostgresDialect, SQLDialect, SQLiteDialect, compile_query, parse_query,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,8 @@ class ThreatHuntingEngine:
         if not math.isfinite(timeout) or timeout <= 0 or timeout > 30:
             raise ValueError("Hunt timeout must be positive and at most 30 seconds.")
         self.db = db
-        self.dialect = dialect if dialect is not None else SQLiteDialect()
+        self.dialect = dialect if dialect is not None else (
+            PostgresDialect() if db.backend == 'postgresql' else SQLiteDialect())
         self.timeout = timeout
         self._clock = clock
 
@@ -108,7 +109,20 @@ class ThreatHuntingEngine:
             List of matching NormalizedAlert instances.
         """
         sql, params = self.translate_kql_to_sql(kql_query, limit=limit)
+        if self.db.backend == 'postgresql':
+            from src.engine.postgres import PostgresStorageError
 
+            try:
+                rows = self.db.hunt(sql, params, self.timeout)
+            except PostgresStorageError as exc:
+                if exc.sqlstate == '57014':
+                    raise HuntTimeoutError('Hunting filter execution timed out.') from None
+                raise
+        else:
+            rows = self._sqlite_hunt(sql, params)
+        return self._decode_matches(rows)
+
+    def _sqlite_hunt(self, sql, params):
         deadline = self._clock() + self.timeout
         if not self.db._lock.acquire(timeout=self.timeout):
             raise HuntTimeoutError("Hunting filter execution timed out.")
@@ -152,7 +166,10 @@ class ThreatHuntingEngine:
                 conn.execute(f"PRAGMA busy_timeout = {busy_timeout}")
         finally:
             self.db._lock.release()
+        return rows
 
+    @staticmethod
+    def _decode_matches(rows) -> List[NormalizedAlert]:
         matched_alerts: List[NormalizedAlert] = []
         for row in rows:
             data = dict(row)

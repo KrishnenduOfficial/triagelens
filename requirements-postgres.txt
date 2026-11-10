@@ -1,0 +1,4 @@
+-r requirements.txt
+alembic==1.17.2
+SQLAlchemy==2.0.44
+psycopg[binary]==3.3.3

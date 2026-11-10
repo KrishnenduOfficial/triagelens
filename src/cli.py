@@ -6,7 +6,7 @@ Coordinates all six major stages:
 3. Incident Timeline Correlation
 4. Cloud LLM-Assisted Triage (Groq API with PII Scrubbing)
 5. Ground-Truth Accuracy & Validation Evaluation
-6. Relational Persistence to SQLite
+6. Relational Persistence
 """
 
 import argparse
@@ -87,14 +87,13 @@ def run_pipeline(
     Returns:
         Dictionary of final accuracy evaluation metrics.
     """
-    db_file = config.get_database_path(db_path)
     logger.info("=" * 65)
     logger.info("Initializing TriageLens Pipeline")
     logger.info("Input directory and database configured")
     logger.info("=" * 65)
 
-    # 1. Initialize SQLite Database
-    db = DatabaseManager(db_path=db_file, check_same_thread=False)
+    # 1. Initialize storage for the trusted intake and evaluation coordinator.
+    db = config.open_database('evaluator', db_path, sqlite_factory=DatabaseManager)
     with evaluation_run(db, 'cli') as run:
         return _run_pipeline(db, run, data_dir, group_by, skip_llm, max_lookups)
 

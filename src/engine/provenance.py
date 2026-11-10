@@ -121,7 +121,12 @@ class RunRecorder:
             trace = acquisition_trace() or {}
             self.db.mark_observation_acquisition(observation_id,origin,
                 cache_validation=trace.get('cache_validation','unverified'),contract=trace.get('cache_contract'))
-        outcome = acquire_triage(engine,timeline,record,persistent_cache=self.db)
+        if self.db.backend == 'postgresql':
+            from src.engine.llm import TriageEngineBase
+
+            timeline = TriageEngineBase.inference_timeline(timeline)
+        with self.db.triage_cache() as cache:
+            outcome = acquire_triage(engine,timeline,record,persistent_cache=cache)
         self._acquisitions[observation_id]=outcome
         return outcome
 

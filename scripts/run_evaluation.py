@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
 
 from src.cli import detect_indicator_type
-from src.config import get_database_path, get_groq_api_key
+from src.config import open_database, get_groq_api_key
 from src.engine.database import DatabaseManager
 from src.engine.attack import evaluate_timeline
 from src.engine.sigma import load_curated_rules
@@ -92,7 +92,8 @@ def run_protocol(timelines, manifest, split, settings, frozen, engine, db_path, 
     inserted = set()
     rule_pack = load_curated_rules()
     for repetition in range(1, repetitions + 1):
-        db = DatabaseManager(db_path=get_database_path(str(db_path) if db_path is not None else None))
+        db = open_database('evaluator', str(db_path) if db_path is not None else None,
+                           sqlite_factory=DatabaseManager)
         with evaluation_run(db, 'evaluation') as run:
             tracker = AccuracyTracker()
             records = []
@@ -330,8 +331,7 @@ def run_evaluation_pipeline(
     if not api_key:
         raise ValueError("GROQ_API_KEY environment variable is missing or empty.")
 
-    target_db = get_database_path(db_path)
-    db = DatabaseManager(db_path=target_db)
+    db = open_database('evaluator', db_path, sqlite_factory=DatabaseManager)
     with evaluation_run(db, 'evaluation') as run:
         engine = GroqTriageEngine(api_key=api_key)
         return _run_evaluation_with_db(db, run, engine, timelines, benchmark_path,

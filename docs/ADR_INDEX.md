@@ -1,5 +1,6 @@
 # ADR index
 
+- [ADR-067](../DECISIONS.md#adr-067-optional-postgresql-baseline-and-separated-storage-roles) — Optional PostgreSQL baseline and separated storage roles — Accepted for T5.1.
 - [ADR-066](../DECISIONS.md#adr-066-analyst-review-per-verdict) — Analyst review per verdict — Accepted and implemented for T4.5.
 
 Statuses below are recorded in each ADR; later decisions may supersede historical entries. Consult ADR-055 for the active provider.

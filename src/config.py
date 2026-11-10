@@ -34,6 +34,11 @@ CANONICAL_CONFIG_VARS = [
     "VIRUSTOTAL_MIN_DETECTIONS",
     "ABUSEIPDB_MIN_SCORE",
     "DATABASE_PATH",
+    "DATABASE_BACKEND",
+    "TRIAGELENS_POSTGRES_EVALUATOR_DSN",
+    "TRIAGELENS_POSTGRES_TRIAGE_DSN",
+    "TRIAGELENS_POSTGRES_ANALYST_DSN",
+    "TRIAGELENS_POSTGRES_HUNT_DSN",
     "BACKEND_HOST",
     "BACKEND_PORT",
     "ALLOWED_ORIGINS",
@@ -99,6 +104,39 @@ def get_database_path(override: Optional[str] = None) -> str:
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
+
+
+def get_database_backend(override: Optional[str] = None) -> str:
+    if override is not None:
+        return 'sqlite'
+    backend = os.getenv('DATABASE_BACKEND', '').strip().lower() or 'sqlite'
+    if backend not in ('sqlite', 'postgresql'):
+        raise ValueError('DATABASE_BACKEND must be sqlite or postgresql.')
+    return backend
+
+
+def open_database(role: str, override: Optional[str] = None, *, sqlite_factory=None):
+    """Select the backend for a trusted entry point without logging credentials."""
+    if get_database_backend(override) == 'sqlite':
+        from src.engine.database import DatabaseManager
+
+        factory = sqlite_factory or DatabaseManager
+        return factory(db_path=get_database_path(override), check_same_thread=False)
+
+    def dsn(name):
+        key = f'TRIAGELENS_POSTGRES_{name.upper()}_DSN'
+        value = os.getenv(key, '').strip()
+        if not value:
+            raise ValueError(f'Set {key} for PostgreSQL storage.')
+        return value
+
+    try:
+        from src.engine.postgres import PostgresDatabase
+    except ImportError:
+        raise RuntimeError('Install requirements-postgres.txt to use PostgreSQL storage.') from None
+    return PostgresDatabase(dsn(role), role,
+                            hunt_dsn=dsn('hunt') if role == 'analyst' else None,
+                            triage_dsn=dsn('triage') if role == 'evaluator' else None)
 
 
 def get_groq_api_key() -> Optional[str]:
@@ -272,7 +310,8 @@ def validate_config() -> Dict[str, Any]:
     CRITICAL SECURITY MANDATE:
     Never prints, logs, or returns raw API keys or secret values.
     """
-    db_path = get_database_path()
+    db_backend = get_database_backend()
+    db_path = get_database_path() if db_backend == 'sqlite' else 'PostgreSQL'
     groq_key = get_groq_api_key()
     groq_model = get_groq_model()
     groq_fallbacks = get_groq_fallback_models()
@@ -303,7 +342,7 @@ def validate_config() -> Dict[str, Any]:
         "virustotal_requests_per_minute": vt_rpm,
     }
 
-    logger.info("[Config] Target SQLite Database: %s", db_path)
+    logger.info("[Config] Database target: %s", db_path)
     logger.info(
         "[Config] Groq Triage Engine : Model='%s', Fallbacks=%s, API Key=%s",
         groq_model,

@@ -660,6 +660,29 @@ class TriageEngineBase:
                 return cls._OMIT_TELEMETRY_VALUE
         return value
 
+    @classmethod
+    def _triage_telemetry(cls, record: Dict[str, Any]) -> Dict[str, Any]:
+        details: Dict[str, Any] = {}
+        for key, value in record.items():
+            key_text = str(key).strip()
+            if key_text.lower() in cls.ALLOWLISTED_FIELDS and not cls._is_forbidden_metadata_key(key_text):
+                sanitized = cls._sanitize_telemetry_value(value)
+                if sanitized is not cls._OMIT_TELEMETRY_VALUE:
+                    details[key_text] = sanitized
+        return details
+
+    @classmethod
+    def inference_timeline(cls, timeline: ThreatTimeline) -> ThreatTimeline:
+        """Project the trusted coordinator's timeline before inference sees it."""
+        alerts = [alert.model_copy(update={
+            'ground_truth_label': None, 'ground_truth_metadata': None,
+            'source_file': '', 'source_dataset': '',
+            'original_record': cls._triage_telemetry(alert.original_record),
+        }) for alert in timeline.alerts]
+        return timeline.model_copy(update={
+            'alerts': alerts, 'grouping_key': 'timeline-001', 'correlation_reason': None,
+        })
+
     def _build_sanitized_triage_payload(self, timeline: ThreatTimeline) -> Dict[str, Any]:
         """Builds a strictly allow-listed, sanitized triage payload from a ThreatTimeline.
 
@@ -677,20 +700,7 @@ class TriageEngineBase:
                 "indicators": list(alert.extracted_indicators or []),
             }
 
-            details: Dict[str, Any] = {}
-            if isinstance(alert.original_record, dict):
-                for k, v in alert.original_record.items():
-                    k_str = str(k).strip()
-                    lower_k = k_str.lower()
-
-                    if self._is_forbidden_metadata_key(k_str):
-                        continue
-
-                    # Allow-list filter
-                    if lower_k in self.ALLOWLISTED_FIELDS:
-                        sanitized = self._sanitize_telemetry_value(v)
-                        if sanitized is not self._OMIT_TELEMETRY_VALUE:
-                            details[k_str] = sanitized
+            details = self._triage_telemetry(alert.original_record) if isinstance(alert.original_record, dict) else {}
 
             if details:
                 event_entry["details"] = details

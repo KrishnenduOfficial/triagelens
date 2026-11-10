@@ -181,13 +181,13 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | :--- | :--- | :--- |
 | **Core Processing** | Python 3.14, Pydantic 2.x | Normalization, pipeline orchestration, data validation |
 | **Backend API** | FastAPI 0.162, Uvicorn, Starlette | High-performance async REST API and OpenAPI schema |
-| **Database** | SQLite 3 (`WAL` mode, foreign keys) | Lightweight, ACID-compliant relational persistence |
+| **Database** | SQLite 3 by default, optional PostgreSQL 17 | Relational persistence with backend-specific migrations |
 | **AI Inference** | Groq chat-completions API | Cloud DFIR triage (`openai/gpt-oss-120b`, strict JSON schema) |
 | **Protocol Abstraction**| `TriageProvider` Protocol | Provider-independent interface for interchangeable LLM backends |
 | **Response Caching** | `LLMResponseCache` | In-memory thread-safe LRU/TTL cache with SHA-256 keys |
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
-| **Query Engine** | KQL-style hunting filter to SQLite translator | Parameterized security hunting queries with JSON path extraction |
+| **Query Engine** | KQL-style hunting filter with SQLite and PostgreSQL dialects | Parameterized security hunting queries with JSON path extraction |
 | **Testing** | Pytest 9.2 (728 passing backend tests) | Unit, adversarial, security injection, and regression testing |
 | **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
 
@@ -272,6 +272,51 @@ old models; use explicit run/cohort selections for a current-provider comparison
    the default `data/triagelens.db`; to select it, use `DATABASE_PATH=triagelens.db`
    consistently for both processes. A genuinely empty selected database still
    produces zero metrics. See the [path verification](docs/results/database_paths_20261108.md).
+
+---
+
+### Optional PostgreSQL storage
+
+SQLite remains the default. For a fresh UTF-8 PostgreSQL 17 database, install the
+optional dependencies and run the baseline as a migration owner with permission
+to create schemas and roles. Set `TRIAGELENS_POSTGRES_MIGRATION_DSN` in that
+process before running Alembic.
+
+```powershell
+python -m pip install --only-binary=:all: -r requirements-postgres.txt
+python -m alembic upgrade head
+```
+
+Provision four separate non-owner logins. Grant each login membership in just
+the corresponding group role and use separate credentials. Supply connection
+strings through process-scoped environment variables.
+
+| Group role | Connection variable | Caller |
+| --- | --- | --- |
+| `triagelens_evaluator` | `TRIAGELENS_POSTGRES_EVALUATOR_DSN` | CLI and evaluation coordinator |
+| `triagelens_triage` | `TRIAGELENS_POSTGRES_TRIAGE_DSN` | Restricted inference cache |
+| `triagelens_analyst` | `TRIAGELENS_POSTGRES_ANALYST_DSN` | API |
+| `triagelens_hunt` | `TRIAGELENS_POSTGRES_HUNT_DSN` | API hunting queries |
+
+Set `DATABASE_BACKEND=postgresql` for the API, CLI, and standard evaluation runner.
+An explicit `--db-path` selects SQLite for that invocation. The dedicated live
+protocol requires this explicit SQLite path. The PostgreSQL baseline starts empty
+and leaves SQLite history in its original file.
+
+The trusted evaluator preserves independent labels and raw records. The triage
+login reads verdicts only. The hunt login queries a read-only analyst view that
+includes alert labels, with a server-side statement timeout. The raw record has a
+JSONB GIN index for supported containment queries. Time partitioning is disabled.
+Within each CLI or evaluation run, the trusted coordinator passes a label-filtered
+timeline and a restricted cache login to the inference stage in the same process.
+
+For verification, point `TRIAGELENS_TEST_POSTGRES_DSN` at an administrative login
+on a disposable instance at `127.0.0.1`. The tests create and remove a test
+database and test logins. The baseline group roles remain on the test instance.
+
+```powershell
+python -m pytest -q -x --tb=short tests/test_database_contract.py
+```
 
 ---
 

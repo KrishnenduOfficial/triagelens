@@ -1,4 +1,4 @@
-"""SQLite persistence and storage engine for TriageLens.
+"""Relational persistence with SQLite as the default backend.
 
 Provides connection management, schema initialization, parameterized queries,
 foreign key enforcement, and thread-safe concurrent execution.
@@ -30,6 +30,28 @@ class DatabaseManager:
 
     AI triage verdicts, and accuracy evaluation metrics.
     """
+
+    backend = 'sqlite'
+    _alert_from = 'alerts'
+    _alert_columns = 'alerts.*'
+    _alert_time = 'julianday(timestamp)'
+    _bound_time = 'julianday(?)'
+    _canonical_field = 'alert_field(original_record, ?)'
+    _scan_order = 'rowid'
+
+    @staticmethod
+    def _contains(column):
+        return f'instr(lower({column}), lower(?)) > 0'
+
+    def _alert_order(self, sort, column, direction):
+        expression = self._alert_time if sort == 'timestamp' else column + ' COLLATE NOCASE'
+        return f'{expression} {direction.upper()}'
+
+    @staticmethod
+    def _prepare_alert_list(conn):
+        from src.engine.fields import resolve_field
+
+        conn.create_function('alert_field', 2, lambda raw, name: resolve_field(json.loads(raw), name), deterministic=True)
 
     def __init__(
         self,
@@ -340,7 +362,10 @@ class DatabaseManager:
             conn = self.connect()
             nested = conn.in_transaction
             name = f"provenance_{self._atomic_depth}"
-            conn.execute(f"SAVEPOINT {name}" if nested else "BEGIN IMMEDIATE")
+            if nested:
+                conn.execute(f"SAVEPOINT {name}")
+            else:
+                self._begin_write(conn)
             self._atomic_depth += 1
             try:
                 yield conn
@@ -354,6 +379,27 @@ class DatabaseManager:
                 raise
             finally:
                 self._atomic_depth -= 1
+
+    def _begin_write(self, conn):
+        conn.execute('BEGIN IMMEDIATE')
+
+    @contextmanager
+    def _read_snapshot(self):
+        with self._lock:
+            conn = self.connect()
+            conn.execute('SAVEPOINT metric_read_snapshot')
+            try:
+                yield conn
+            finally:
+                conn.execute('RELEASE SAVEPOINT metric_read_snapshot')
+
+    def _columns(self, table):
+        return {row['name'] for row in self.connect().execute(f'PRAGMA table_info({table})')}
+
+    @contextmanager
+    def triage_cache(self):
+        """Supply the persistent cache for one inference acquisition."""
+        yield self
 
     def _init_provenance(self, conn: sqlite3.Connection) -> None:
         """Add lineage after legacy outcome rebuilding, leaving old rows unknown."""
@@ -415,22 +461,16 @@ class DatabaseManager:
         return run_id
 
     def metric_snapshot(self):
-        """Copy metrics and coverage under one SQLite snapshot, including across writers."""
-        with self._lock:
-            conn = self.connect()
-            conn.execute('SAVEPOINT metric_read_snapshot')
-            try:
-                rows = [dict(row) for row in conn.execute('SELECT * FROM evaluations ORDER BY id')]
-                snapshot = {
-                    'rows': rows, 'history': self.get_all_evaluations(),
-                    'runs': {row['run_id']: dict(row) for row in conn.execute('SELECT * FROM evaluation_runs')},
-                    'observations': {row['observation_id']: dict(row) for row in conn.execute('SELECT * FROM triage_observations')},
-                    'cohorts': {row['cohort_id']: row['manifest'] for row in conn.execute('SELECT * FROM metric_cohorts')},
-                    'bindings': {row['run_id']: row['cohort_id'] for row in conn.execute('SELECT * FROM metric_run_cohorts')},
-                }
-                return snapshot
-            finally:
-                conn.execute('RELEASE SAVEPOINT metric_read_snapshot')
+        """Copy metrics and coverage under one database snapshot."""
+        with self._read_snapshot() as conn:
+            return {
+                'rows': [dict(row) for row in conn.execute('SELECT * FROM evaluations ORDER BY id')],
+                'history': self.get_all_evaluations(),
+                'runs': {row['run_id']: dict(row) for row in conn.execute('SELECT * FROM evaluation_runs')},
+                'observations': {row['observation_id']: dict(row) for row in conn.execute('SELECT * FROM triage_observations')},
+                'cohorts': {row['cohort_id']: row['manifest'] for row in conn.execute('SELECT * FROM metric_cohorts')},
+                'bindings': {row['run_id']: row['cohort_id'] for row in conn.execute('SELECT * FROM metric_run_cohorts')},
+            }
 
     def register_metric_cohort(self, manifest) -> str:
         """Register an immutable declaration; identical canonical input is idempotent."""
@@ -448,7 +488,7 @@ class DatabaseManager:
                 observed['revision'] = normalized['revision']
                 if observed != normalized:
                     raise MetricSelectionError('Ad hoc manifest must match its terminal source run')
-            conn.execute('INSERT OR IGNORE INTO metric_cohorts(cohort_id,manifest) VALUES(?,?)',
+            conn.execute('INSERT INTO metric_cohorts(cohort_id,manifest) VALUES(?,?) ON CONFLICT(cohort_id) DO NOTHING',
                          (cohort_id, canonical(normalized)))
         return cohort_id
 
@@ -473,7 +513,7 @@ class DatabaseManager:
             existing = conn.execute('SELECT cohort_id FROM metric_run_cohorts WHERE run_id=?', (run_id,)).fetchone()
             if existing and existing[0] != cohort_id:
                 raise MetricSelectionError('Run already has an immutable cohort binding')
-            conn.execute('INSERT OR IGNORE INTO metric_run_cohorts(run_id,cohort_id) VALUES(?,?)', (run_id,cohort_id))
+            conn.execute('INSERT INTO metric_run_cohorts(run_id,cohort_id) VALUES(?,?) ON CONFLICT(run_id) DO NOTHING', (run_id,cohort_id))
             conn.execute('UPDATE evaluation_runs SET inference_policy_hash=? WHERE run_id=?',
                          (manifest['inference_policy_hash'],run_id))
 
@@ -661,7 +701,7 @@ class DatabaseManager:
         with self._lock:
             conn = self.connect()
             total = conn.execute('SELECT COUNT(*) FROM evaluations').fetchone()[0]
-            columns = {row['name'] for row in conn.execute('PRAGMA table_info(evaluations)')}
+            columns = self._columns('evaluations')
             legacy = total if not {'observation_id','provenance_version'}.issubset(columns) else conn.execute('SELECT COUNT(*) FROM evaluations WHERE observation_id IS NULL OR provenance_version IS NULL').fetchone()[0]
             return {'evaluation_rows':total,'legacy_unknown':legacy,'linked':total-legacy}
 
@@ -747,8 +787,7 @@ class DatabaseManager:
         Returns:
             String representation of the alert's internal_id.
         """
-        with self._lock:
-            conn = self.connect()
+        with self._atomic_write() as conn:
             alert_id_str = str(alert.internal_id)
             timeline_id_str = str(timeline_id) if timeline_id else None
             ts_str = alert.timestamp.isoformat() if alert.timestamp else None
@@ -786,28 +825,28 @@ class DatabaseManager:
                     now_str,
                 ),
             )
-            conn.commit()
             return alert_id_str
+
+    @staticmethod
+    def _decode_alert(row):
+        data = dict(row)
+        for key in ('original_record', 'extracted_indicators'):
+            data[key] = json.loads(data[key])
+        metadata = data.get('ground_truth_metadata')
+        data['ground_truth_metadata'] = json.loads(metadata) if metadata else None
+        return data
 
     def get_alert(self, alert_id: Union[UUID, str]) -> Optional[Dict[str, Any]]:
         """Retrieves a single alert by ID, parsing stored JSON fields."""
         with self._lock:
             conn = self.connect()
-            cursor = conn.execute("SELECT * FROM alerts WHERE id = ?;", (str(alert_id),))
+            cursor = conn.execute(f'SELECT {self._alert_columns} FROM {self._alert_from} WHERE alerts.id = ?', (str(alert_id),))
             row = cursor.fetchone()
-            if not row:
-                return None
-            data = dict(row)
-            data["original_record"] = json.loads(data["original_record"])
-            data["extracted_indicators"] = json.loads(data["extracted_indicators"])
-            data["ground_truth_metadata"] = json.loads(data["ground_truth_metadata"]) if data["ground_truth_metadata"] else None
-            return data
+            return self._decode_alert(row) if row else None
 
     def list_alerts(self, *, skip: int, limit: int, filters: Dict[str, Any],
                     sort: str, direction: str) -> Dict[str, Any]:
         """List alerts with literal case-insensitive filters and stable ordering."""
-        from src.engine.fields import resolve_field
-
         columns = {'timestamp': 'timestamp', 'dataset': 'source_dataset',
                    'event_type': 'event_type', 'source_file': 'source_file'}
         if sort not in columns or direction not in ('asc', 'desc'):
@@ -815,32 +854,29 @@ class DatabaseManager:
         clauses, params = [], []
         for key, column in (('dataset', 'source_dataset'), ('event_type', 'event_type')):
             if filters.get(key):
-                clauses.append(f'instr(lower({column}), lower(?)) > 0')
+                clauses.append(self._contains(column))
                 params.append(filters[key])
         for key, field in (('host', 'device.hostname'), ('user', 'user.name')):
             if filters.get(key):
-                clauses.append('instr(lower(alert_field(original_record, ?)), lower(?)) > 0')
+                clauses.append(self._contains(self._canonical_field))
                 params.extend((field, filters[key]))
         if filters.get('search'):
-            clauses.append('(instr(lower(id), lower(?)) > 0 OR instr(lower(source_dataset), lower(?)) > 0 OR instr(lower(event_type), lower(?)) > 0 OR instr(lower(source_file), lower(?)) > 0)')
+            clauses.append('(' + ' OR '.join(self._contains(column) for column in
+                            ('alerts.id', 'source_dataset', 'event_type', 'source_file')) + ')')
             params.extend([filters['search']] * 4)
         for key, operator in (('start', '>='), ('end', '<=')):
             if filters.get(key):
-                clauses.append(f'julianday(timestamp) {operator} julianday(?)')
+                clauses.append(f'{self._alert_time} {operator} {self._bound_time}')
                 params.append(filters[key])
         where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
         with self._lock:
             conn = self.connect()
-            conn.create_function('alert_field', 2, lambda raw, name: resolve_field(json.loads(raw), name), deterministic=True)
+            self._prepare_alert_list(conn)
             total = conn.execute('SELECT COUNT(*) FROM alerts' + where, params).fetchone()[0]
-            order = f"julianday(timestamp)" if sort == 'timestamp' else columns[sort] + ' COLLATE NOCASE'
-            rows = conn.execute(f'SELECT * FROM alerts{where} ORDER BY {order} {direction.upper()}, id ASC LIMIT ? OFFSET ?', [*params, limit, skip]).fetchall()
-            items = []
-            for row in rows:
-                data = dict(row)
-                for key in ('original_record', 'extracted_indicators', 'ground_truth_metadata'):
-                    data[key] = json.loads(data[key]) if data[key] is not None else None
-                items.append(data)
+            order = self._alert_order(sort, columns[sort], direction)
+            rows = conn.execute(f'SELECT {self._alert_columns} FROM {self._alert_from}{where} '
+                                f'ORDER BY {order}, alerts.id ASC LIMIT ? OFFSET ?', [*params, limit, skip])
+            items = [self._decode_alert(row) for row in rows]
             return {'items': items, 'total': total, 'skip': skip, 'limit': limit}
 
     def count_alerts(self) -> int:
@@ -889,7 +925,7 @@ class DatabaseManager:
                 if previous[0] != encoded:
                     raise ValueError('Scan ID already exists with different content')
                 return
-            conn.execute('INSERT INTO yara_scans VALUES (?, ?)', (result.scan_id, encoded))
+            conn.execute('INSERT INTO yara_scans (id, result_json) VALUES (?, ?)', (result.scan_id, encoded))
             digest = result.sha256
             if result.status != 'match' or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
                 return
@@ -923,7 +959,7 @@ class DatabaseManager:
         with self._lock:
             conn = self.connect()
             total = conn.execute('SELECT count(*) FROM yara_scans').fetchone()[0]
-            rows = conn.execute('SELECT result_json FROM yara_scans ORDER BY rowid DESC LIMIT ? OFFSET ?',
+            rows = conn.execute(f'SELECT result_json FROM yara_scans ORDER BY {self._scan_order} DESC LIMIT ? OFFSET ?',
                                 (limit, skip)).fetchall()
             return {'total': total, 'items': [json.loads(row[0]) for row in rows]}
 
@@ -1009,8 +1045,7 @@ class DatabaseManager:
         Returns:
             String representation of timeline_id.
         """
-        with self._lock:
-            conn = self.connect()
+        with self._atomic_write() as conn:
             timeline_id_str = str(timeline.timeline_id)
             start_str = timeline.start_time.isoformat() if timeline.start_time else None
             end_str = timeline.end_time.isoformat() if timeline.end_time else None
@@ -1041,7 +1076,6 @@ class DatabaseManager:
             for alert in timeline.alerts:
                 self.insert_alert(alert, timeline_id=timeline.timeline_id)
 
-            conn.commit()
             return timeline_id_str
 
     def get_timeline(self, timeline_id: Union[UUID, str]) -> Optional[Dict[str, Any]]:
@@ -1057,7 +1091,7 @@ class DatabaseManager:
             data = dict(row)
             # Fetch associated alerts
             alert_cursor = conn.execute(
-                "SELECT id FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC;",
+                "SELECT id FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC NULLS FIRST, id ASC;",
                 (str(timeline_id),),
             )
             data["alert_ids"] = [r[0] for r in alert_cursor.fetchall()]
@@ -1075,7 +1109,7 @@ class DatabaseManager:
             for row in cursor.fetchall():
                 data = dict(row)
                 alert_cursor = conn.execute(
-                    "SELECT id FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC;",
+                    "SELECT id FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC NULLS FIRST, id ASC;",
                     (data["id"],),
                 )
                 data["alert_ids"] = [r[0] for r in alert_cursor.fetchall()]
@@ -1096,17 +1130,11 @@ class DatabaseManager:
         with self._lock:
             conn = self.connect()
             cursor = conn.execute(
-                "SELECT * FROM alerts WHERE timeline_id = ? ORDER BY timestamp ASC;",
+                f'SELECT {self._alert_columns} FROM {self._alert_from} '
+                'WHERE timeline_id = ? ORDER BY timestamp ASC NULLS FIRST, alerts.id ASC',
                 (str(timeline_id),),
             )
-            results = []
-            for row in cursor.fetchall():
-                data = dict(row)
-                data["original_record"] = json.loads(data["original_record"])
-                data["extracted_indicators"] = json.loads(data["extracted_indicators"])
-                data["ground_truth_metadata"] = json.loads(data["ground_truth_metadata"]) if data["ground_truth_metadata"] else None
-                results.append(data)
-            return results
+            return [self._decode_alert(row) for row in cursor]
 
     # =====================================================================
     # Enrichment Persistence
@@ -1121,8 +1149,7 @@ class DatabaseManager:
         Returns:
             Auto-incremented integer ID.
         """
-        with self._lock:
-            conn = self.connect()
+        with self._atomic_write() as conn:
             ts_str = enrichment.lookup_timestamp.isoformat()
             raw_json = json.dumps(enrichment.raw_response, default=str)
             is_malicious_int = 1 if enrichment.is_malicious else 0
@@ -1133,7 +1160,7 @@ class DatabaseManager:
                 INSERT INTO enrichments (
                     indicator, indicator_type, provider, is_malicious,
                     raw_response, lookup_timestamp, lookup_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id;
                 """,
                 (
                     enrichment.indicator,
@@ -1145,8 +1172,7 @@ class DatabaseManager:
                     lookup_status_str,
                 ),
             )
-            conn.commit()
-            return cursor.lastrowid
+            return cursor.fetchone()[0]
 
     def get_enrichments(self, indicator: str) -> List[Dict[str, Any]]:
         """Retrieves all enrichment results for a specific indicator."""
@@ -1210,10 +1236,15 @@ class DatabaseManager:
 
             conn.execute(
                 """
-                INSERT OR REPLACE INTO enrichment_cache (
+                INSERT INTO enrichment_cache (
                     cache_key, indicator, indicator_type, provider, lookup_status,
                     is_malicious, raw_response, cached_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(cache_key) DO UPDATE SET indicator=excluded.indicator,
+                    indicator_type=excluded.indicator_type, provider=excluded.provider,
+                    lookup_status=excluded.lookup_status, is_malicious=excluded.is_malicious,
+                    raw_response=excluded.raw_response, cached_at=excluded.cached_at,
+                    expires_at=excluded.expires_at;
                 """,
                 (
                     cache_key,
@@ -1287,7 +1318,7 @@ class DatabaseManager:
                 VALUES (?, ?, 1)
                 ON CONFLICT(provider, date_key) DO UPDATE SET
                     request_count = enrichment_quotas.request_count + 1
-                WHERE ? IS NULL OR enrichment_quotas.request_count < ?;
+                WHERE CAST(? AS BIGINT) IS NULL OR enrichment_quotas.request_count < ?;
                 """,
                 (provider.strip().lower(), target_date, limit, limit),
             )
@@ -1319,9 +1350,8 @@ class DatabaseManager:
         Returns:
             String representation of verdict_id.
         """
-        with self._lock:
+        with self._atomic_write() as conn:
             verdict = TriageVerdict.model_validate(verdict.model_dump(mode='json'))
-            conn = self.connect()
             verdict_id_str = str(verdict.verdict_id)
             timeline_id_str = str(verdict.timeline_id)
             now_str = datetime.now(timezone.utc).isoformat()
@@ -1362,8 +1392,6 @@ class DatabaseManager:
                     json.dumps(verdict.predicted_techniques) if verdict.predicted_techniques is not None else None,
                 ),
             )
-            if not self._atomic_depth:
-                conn.commit()
             return verdict_id_str
 
     def get_verdict(self, verdict_id: Union[UUID, str]) -> Optional[Dict[str, Any]]:
@@ -1425,25 +1453,18 @@ class DatabaseManager:
             return dict(row) if row else None
 
     def save_analyst_review(self, timeline_id, verdict_id, decision, override_disposition, rationale):
-        with self._lock:
-            conn = self.connect()
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                latest = conn.execute('SELECT id FROM verdicts WHERE timeline_id = ? ORDER BY created_at DESC LIMIT 1', (timeline_id,)).fetchone()
-                if not latest or latest['id'] != verdict_id:
-                    raise ValueError('Verdict is missing or superseded')
+        with self._atomic_write() as conn:
+            latest = conn.execute('SELECT id FROM verdicts WHERE timeline_id = ? ORDER BY created_at DESC LIMIT 1', (timeline_id,)).fetchone()
+            if not latest or latest['id'] != verdict_id:
+                raise ValueError('Verdict is missing or superseded')
+            row = conn.execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (verdict_id,)).fetchone()
+            if row:
+                if (row['decision'], row['override_disposition'], row['rationale']) != (decision, override_disposition, rationale):
+                    raise ValueError('A review is already recorded for this verdict')
+            else:
+                conn.execute('INSERT INTO analyst_reviews VALUES (?, ?, ?, ?, ?)', (verdict_id, decision, override_disposition, rationale, self._now_utc()))
                 row = conn.execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (verdict_id,)).fetchone()
-                if row:
-                    if (row['decision'], row['override_disposition'], row['rationale']) != (decision, override_disposition, rationale):
-                        raise ValueError('A review is already recorded for this verdict')
-                else:
-                    conn.execute('INSERT INTO analyst_reviews VALUES (?, ?, ?, ?, ?)', (verdict_id, decision, override_disposition, rationale, datetime.now(timezone.utc).isoformat()))
-                    row = conn.execute('SELECT * FROM analyst_reviews WHERE verdict_id = ?', (verdict_id,)).fetchone()
-                conn.commit()
-                return dict(row)
-            except Exception:
-                conn.rollback()
-                raise
+            return dict(row)
 
     # Evaluation Persistence
     # =====================================================================
@@ -1462,10 +1483,9 @@ class DatabaseManager:
         Returns:
             Auto-incremented integer ID.
         """
-        with self._lock:
-            if evaluation.observation_id is not None and not self._atomic_depth:
+        with self._atomic_write() as conn:
+            if evaluation.observation_id is not None and self._atomic_depth == 1:
                 raise ValueError('Use finalize_observation for tracked outcomes')
-            conn = self.connect()
             timeline_id_str = str(evaluation.timeline_id)
             verdict_id_str = str(evaluation.verdict_id) if evaluation.verdict_id is not None else None
             now_str = datetime.now(timezone.utc).isoformat()
@@ -1494,7 +1514,7 @@ class DatabaseManager:
                     severity_ground_truth, severity_correct, observation_id,
                     evaluation_context_hash, quality_cohort_hash, provenance_version,
                     disposition, prediction_basis, policy_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
                 """,
                 (
                     timeline_id_str,
@@ -1517,9 +1537,7 @@ class DatabaseManager:
                     evaluation.policy_version,
                 ),
             )
-            if not self._atomic_depth:
-                conn.commit()
-            return cursor.lastrowid
+            return cursor.fetchone()[0]
 
     def get_evaluations_for_timeline(
         self, timeline_id: Union[UUID, str]
@@ -1556,8 +1574,7 @@ class DatabaseManager:
         """Retrieves all stored evaluation records joined with verdicts for metric recomputation."""
         with self._lock:
             conn = self.connect()
-            cursor = conn.execute("PRAGMA table_info(evaluations);")
-            cols = {row["name"] for row in cursor.fetchall()}
+            cols = self._columns('evaluations')
             has_conf = "confidence_score" in cols
             has_sev = "severity_prediction" in cols
 

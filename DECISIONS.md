@@ -2676,3 +2676,15 @@ An analyst can confirm a saved verdict or record an overriding disposition with 
 One final review is stored per verdict, separately from AI output and independent labels.
 Identical retries return the existing review; conflicts and superseded verdicts are rejected.
 The current local API access model applies; analyst identities are not authenticated.
+
+### ADR-067: Optional PostgreSQL baseline and separated storage roles
+
+**Status:** Accepted for T5.1 under G9.
+
+Keep SQLite as the default and preserve its path rules and migration history.
+Use Alembic with a separate migration owner for a fresh PostgreSQL database.
+Preserve raw alerts as JSONB with a GIN index. Leave time partitioning disabled.
+Keep labels, evaluation snapshots and cohorts in `triagelens_truth`.
+The trusted evaluator scores independently. The triage login only reads verdicts.
+The analyst API uses a separate read-only, time-bounded hunting connection.
+Use shared persistence contracts and disposable loopback PostgreSQL tests.

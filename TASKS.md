@@ -80,6 +80,15 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T5.1 PostgreSQL baseline (G9, ADR-067): SQLite stays the default. Alembic
+  provisions a fresh PostgreSQL database with raw JSONB and a GIN index. Ground
+  truth and evaluations use a protected schema. The inference cache uses a
+  restricted login and hunts use a separate read-only, time-bounded connection.
+  The same storage and hunting tests ran on both engines. The six focused cases
+  and all 1,321 backend tests passed against disposable PostgreSQL 17.11 and SQLite
+  (one existing Starlette/HTTPX warning). Verified upgrade, downgrade, role grants,
+  rollback, timeout, and synthetic CLI-to-API parity. Time partitioning is disabled.
+
 - [x] S4 dashboard redesign follow-up: responsive workspace navigation, a prominent
   investigation queue, separate assessment and analyst review panels, and consistent
   forms, tables and ATT&CK annotations. Verified with 88 dashboard tests, the
