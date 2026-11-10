@@ -16,50 +16,32 @@ the analyst retains authority over investigation and response.
 [API](#6-api-reference) · [Limitations](#7-known-limitations--operational-boundaries) ·
 [Repository](#8-repository-structure) · [License](#9-license)
 
-**Active provider: Groq, `openai/gpt-oss-120b` (ADR-055).**
-A pre-policy six-case live synthetic check on 2026-11-08 returned six valid verdicts:
-6/6 binary classifications matched the labels, but exact severity matched 1/6.
-This small selected sample does not establish general accuracy or service uptime.
-Gemini runtime support is removed. Historical results remain attributed correctly.
-The later `triage-v1` check returned six valid assessments, including one abstention,
-but still exposed a false negative and unsupported assertions; see
-[new-policy evidence](docs/results/triage_v1_live_check_20261108.md).
+**Current status:** Groq is the active inference provider; SQLite is the default
+database. Real EVTX intake and detection features are implemented, but reviewed
+real-data evaluation and live quality acceptance of the current `triage-v2`
+policy remain pending. See [evaluation evidence](#3-groq-capabilities-and-verification)
+and [project progress](TASKS.md).
 
-Real EVTX intake and source comparisons have been checked on small public samples,
-but independently reviewed labels and a scored real-data evaluation are still
-pending. Public-source categories do not verify event labels, and small classes and
-source shortcuts limit conclusions. See the [real-data status report](docs/results/real_data_evaluation_20261109.md).
+| Capability | Support and boundaries |
+| --- | --- |
+| Alert intake | JSON, CSV and EVTX normalization, with source provenance |
+| Intelligence | VirusTotal, AbuseIPDB and URLhaus; credentials and availability vary |
+| Correlation | Deterministic grouping and time-windowed timelines |
+| AI triage | Groq structured assessments, evidence references and explicit uncertainty |
+| Detection | Curated Sigma subset, KQL-style hunting, optional YARA-X and ATT&CK annotations |
+| Evaluation | Independent labels, confusion metrics, calibration, coverage and metric scopes |
+| Analyst workspace | FastAPI and React dashboard, including separate analyst review |
+| Storage and deployment | SQLite by default; optional PostgreSQL, Compose and saved-hunt worker |
 
-The reviewed-cohort protocol also reports `sigma_vs_ai`: per-technique paired
-detection rates for exact Sigma tags versus the AI's recorded binary prediction,
-and false-positive rates on independently labelled benign timelines. Counts and
-Wilson intervals accompany each rate; unsupported rules and unavailable outcomes
-are reported. These are timeline-level comparisons, not proof that a rule or AI
-identified a technique correctly. Real reviewed cohorts and real AI outcomes are
-still needed; the existing protocol `run` mode requires separate live approval.
+### Dashboard preview
 
-Run `.\.venv\Scripts\python.exe scripts/run_rule_fragility.py` for an offline
-synthetic Sigma fragility demo. For each supported rule, the score is lost matches
-divided by successfully evaluated, changed mutations of a matching baseline.
-Field renames, UTF-8 base64 representations and case changes are counted separately;
-unmatched baselines, errors and unsupported rules are reported, and no-ops are excluded.
-These perturbations are not necessarily equivalent telemetry, and this small selected
-sample does not measure real-world detection quality or adversary behavior. To supply
-other synthetic cases, use `SyntheticCase` and `evaluate_fragility` in
-`src.engine.rule_fragility`; do not pass real logs.
+![Synthetic dashboard overview](docs/images/dashboard-overview.png)
+*Dashboard overview using synthetic data.*
 
-> **An alert triage pipeline that measures how often its AI is wrong.**
+![Synthetic timeline and analyst review](docs/images/dashboard-timeline.png)
+*Timeline and analyst review using synthetic data.*
 
-[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.162.0-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-
-TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
-
-Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing capability is measuring how often its AI makes mistakes** — calculating precision, recall, false-positive rate, false-negative rate, Brier score calibration, and Expected Calibration Error (ECE) on independently labelled evaluation cases.
+[Set up the project](#5-quickstart-guide) · [Run the end-to-end example](#54-end-to-end-execution-sequence) · [Explore the repository](#8-repository-structure)
 
 ---
 
@@ -67,13 +49,15 @@ Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing ca
 
 ```mermaid
 flowchart LR
-    A[JSON / CSV / EVTX] --> B[Normalize and correlate]
-    B --> C[Threat intelligence]
+    A[JSON / CSV / EVTX] --> B[Normalize and extract indicators]
+    B --> C[Threat intelligence and correlation]
     C --> D[Sanitize and Groq triage]
     D --> E[Assessment and uncertainty]
-    B --> F[Sigma / hunting / optional YARA]
+    B --> F[Sigma / hunting]
+    K[Registered file snapshots] --> Y[Optional YARA scan]
     E --> G[SQLite / optional PostgreSQL]
     F --> G
+    Y --> G
     L[Independent labels] --> H[Evaluation]
     E --> H
     H --> G
@@ -84,6 +68,14 @@ flowchart LR
 Labels, model assessments, rule detections and analyst dispositions remain
 distinct. Stored evidence references are structural links, not proof that a
 model claim is factually supported. See [architecture decisions](docs/ADR_INDEX.md).
+
+For example, a synthetic process event is normalized into an alert, its extracted
+indicators can be enriched, and related alerts become a timeline. A sanitized
+timeline can produce a Groq assessment; if independent labels are available, the
+evaluator scores it. The dashboard presents the evidence, model output and any
+separate analyst review. Provider failures are recorded as unavailable outcomes.
+The correlation engine defaults to a 30-minute gap and a 100-event cap; shared
+identifiers support grouping but do not prove that events belong to one incident.
 
 Six functional stages turn alert telemetry into analyst-reviewed results:
 
@@ -115,10 +107,10 @@ Later synthetic browser checks are recorded in [TASKS.md](TASKS.md).
 
 1. **Human Analyst Authority:** AI output provides structured evidence and suggested response actions, never autonomous remediation.
 2. **Independent Ground Truth (ADR-008):** AI predictions and reference labels are stored and evaluated separately. The prompt serializer recursively filters structured evaluation/provenance metadata beneath allow-listed telemetry fields, including nested lists and key variants (ADR-040). Original evidence and independent provider detection counts are preserved. Dataset adapters must keep labels and provenance out of free-form observable text; see the [prompt-isolation verification](docs/results/prompt_isolation_20261108.md).
-3. **Prompt Injection Boundary Isolation (ADR-023):** Adversarial log telemetry is encapsulated inside `<FORENSIC_EVIDENCE>...</FORENSIC_EVIDENCE>` XML delimiters, instructing the model to treat all evidence strictly as untrusted forensic data.
-4. **Wire-Level PII & Secret Scrubbing (ADR-018, ADR-019):** Cloud API keys, AWS/GCP tokens, private keys, passwords, bearer tokens, emails, and Luhn-validated credit cards are redacted before network egress.
+3. **Prompt Injection Boundaries (ADR-023):** Evidence is delimited as untrusted input and the model is instructed not to follow instructions in it. This does not guarantee resistance to prompt injection.
+4. **PII and Secret Scrubbing (ADR-018, ADR-019):** Masking targets credentials, private keys, emails and other supported patterns before external transmission; it cannot guarantee removal of every sensitive value.
 5. **Measurable Confidence Calibration (ADR-025):** Model confidence scores are evaluated using Brier scores and Expected Calibration Error (ECE) across 5 probability bins.
-6. **SQL Injection Defense (ADR-015, ADR-019):** KQL-style hunting filter expressions are compiled to parameterized SQLite queries using SQLite's `json_extract()` function.
+6. **SQL Injection Defense (ADR-015, ADR-019):** KQL-style hunting filter expressions are compiled to parameterized queries for the supported SQLite and PostgreSQL dialects.
 
 ---
 
@@ -137,7 +129,7 @@ Refused, truncated, mismatched or invalid responses become unavailable outcomes.
 These are tested software boundaries, not a guarantee against every model error
 or adversarial prompt. `GROQ_FALLBACK_MODELS` is empty by default.
 
-### 3.2 Operator-observed live result ? 2026-11-08
+### 3.2 Operator-observed live result — 2026-11-08
 
 | Check | Observed result |
 |---|---|
@@ -241,6 +233,15 @@ the local verification recorded in [TASKS.md](TASKS.md).
 ---
 
 ## Evaluation mathematics
+
+An independent label is the reference for scoring; an analyst review is recorded
+separately and is not automatically ground truth. Evaluation manifests fix cohort
+membership and development/test splits. Record the policy, provider, model and
+scope with any result: History counts stored evaluation rows, Run counts run
+occurrences, Quality selects declared case/evidence/context/policy combinations,
+and Fresh attempts concerns completed fresh acquisitions. Replay and missing
+outcomes affect interpretation. Small synthetic cohorts cannot establish field
+performance; see the [real-data evaluation status](docs/results/real_data_evaluation_20261109.md).
 
 For independently labelled binary assessments, let TP, TN, FP and FN denote
 true positives, true negatives, false positives and false negatives, and let
@@ -687,7 +688,8 @@ To explicitly look up a stored snapshot hash with the configured VirusTotal
 provider, use `POST /api/yara/scans/{scan_id}/enrichment`. This sends only the hash
 to the provider under the existing quota and cache rules; it is never automatic.
 `unavailable`, an incomplete job, and `no_match` do not establish that a file is safe.
-Broader adversarial file testing remains T3.5. No detection-quality claim is made.
+Offline adversarial file tests are recorded under T3.5 in [TASKS.md](TASKS.md).
+No detection-quality claim is made.
 
 ### 5.3 Run Automated Test Suite
 
@@ -710,6 +712,12 @@ Groq wire/schema tests use injected senders or MockTransport. Shared privacy/cac
 provenance tests use a neutral test-only transport; it is not a production provider.
 Live provider commands are manual and separate from tests. The latest verified
 suite and counts are recorded in the migration report and TASKS.md.
+
+The [CI workflow](.github/workflows/ci.yml) runs backend and dashboard checks,
+PostgreSQL-backed tests, dependency and secret scans, and generates SBOMs. Ruff
+and mypy gates currently cover limited scopes; Bandit reports findings and gates
+high-severity results. The badge at the top links to the hosted workflow; its
+displayed status is provided by GitHub and has not been checked in this review.
 
 ### EVTX intake (offline)
 
@@ -849,10 +857,8 @@ runs can contact both Groq and configured intelligence services and consume quot
 
 ### Dashboard smoke test and screenshots
 
-These screenshots use synthetic data and do not represent measured AI accuracy.
-
-![Synthetic dashboard overview](docs/images/dashboard-overview.png)
-![Synthetic timeline and analyst review](docs/images/dashboard-timeline.png)
+The [dashboard previews](#dashboard-preview) use synthetic data and do not
+represent measured AI accuracy.
 
 The Playwright smoke test starts a local API with a temporary synthetic SQLite
 database and a local dashboard. It does not call threat-intelligence or AI providers.
@@ -945,10 +951,10 @@ To ensure transparency and maintain defensible security engineering standards, t
 1. **Telemetry Identity Preservation (Unmasked Internal Identifiers):**
    - **Design Decision:** Internal RFC 1918 private IP addresses (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), workstation hostnames, and user account names (e.g., `admin_jdoe`, `WORKSTATION-01`) are **intentionally NOT masked** in outbound LLM prompts.
    - **Rationale:** In Digital Forensics and Incident Response (DFIR), hostnames, user identities, and network topology are essential forensic anchors. Redacting them would blind the AI to user-process relationships, service executions, and lateral movement paths.
-   - **Boundary Enforcement:** `PIIScrubber` strictly and aggressively redacts passwords, cloud secrets (AWS, GCP, GitHub tokens), private keys, authorization tokens, emails, and Luhn-validated credit cards prior to prompt encapsulation.
+   - **Boundary Enforcement:** `PIIScrubber` targets passwords, common cloud secrets, private keys, authorization tokens, emails, and Luhn-validated credit cards. Review data before transmission; masking is pattern-based and may miss sensitive values.
 2. **Single-Analyst SQLite Architecture:**
    - The embedded SQLite database utilizes Write-Ahead Logging (`PRAGMA journal_mode=WAL`) and foreign keys (`PRAGMA foreign_keys=ON`) for lightweight, zero-configuration local workstation deployment (optimizing for 8 GB RAM machines).
-   - Enterprise multi-tenant deployments requiring distributed ingest pipelines or concurrent analyst write operations should transition to PostgreSQL.
+   - PostgreSQL is an optional storage backend with separated roles. Its availability does not establish multi-tenant readiness or authenticated analyst identities.
 3. **External LLM Cloud Dependency & API Rate Limits:**
    - Cloud triage requires outbound HTTPS access to `api.groq.com`.
    - Free-tier quotas can produce HTTP 429. Caching reduces repeated requests; fallback is opt-in and cannot guarantee availability. Missing credentials skip CLI triage; evaluation fails before processing.
