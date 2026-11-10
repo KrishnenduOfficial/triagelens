@@ -152,7 +152,8 @@ export const TimelineView: React.FC = () => {
             <div className="summary-top-row">
               <div>
                 <span className="badge badge-accent">Correlated Incident</span>
-                <h1 className="timeline-title mono">{timeline.grouping_key}</h1>
+                  <h1 className="timeline-title mono">{timeline.grouping_key}</h1>
+                  <a className="evidence-jump" href="#timeline-evidence">Jump to source events ↓</a>
               </div>
               <div className="event-count-box">
                 <span className="stat-label">Correlated Events</span>
@@ -254,8 +255,9 @@ export const TimelineView: React.FC = () => {
           </div>
 
           {/* Constituent Alert Events List */}
-          {timeline.verdict && <section className="dashboard-card">
-            <h2>Analyst review</h2>
+          {timeline.verdict && <section className="dashboard-card analyst-review-card">
+            <p className="workspace-eyebrow">Human decision</p>
+            <h2 className="card-title">Analyst review</h2>
             {timeline.analyst_review ? <AnalystReviewSummary review={timeline.analyst_review} /> : <form onSubmit={submitReview}>
               <p>Reviews are final for this verdict.</p>
               <label>Decision <select value={decision} onChange={e => setDecision(e.target.value as 'confirm' | 'override')}>
@@ -269,10 +271,10 @@ export const TimelineView: React.FC = () => {
               <button className="btn btn-primary" disabled={saving || (decision === 'override' && !rationale.trim())}>Save review</button>
             </form>}
           </section>}
-          <div className="dashboard-card alerts-feed-card">
+          <section className="dashboard-card alerts-feed-card" id="timeline-evidence" tabIndex={-1} aria-labelledby="timeline-evidence-heading">
             <div className="card-header">
               <div>
-                <h3 className="card-title">Constituent Alert Sequence</h3>
+                <h2 className="card-title" id="timeline-evidence-heading">Constituent Alert Sequence</h2>
                 <p className="card-subtitle">
                   Raw telemetry and normalized security alerts ordered chronologically.
                 </p>
@@ -357,7 +359,7 @@ export const TimelineView: React.FC = () => {
                 })}
               </div>
             )}
-          </div>
+          </section>
         </div>
       )}
     </div>

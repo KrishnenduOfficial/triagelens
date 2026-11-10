@@ -24,7 +24,7 @@ export const apiClient: AxiosInstance = axios.create({
 export interface DetectionHit { id: string; rule_id: string; source: string; detected_at: string; technique_ids: string[] | null; event_ids: string[] }
 export interface SigmaRule { id: string; title: string; author: string; license: string; source: string; tags: string[]; level: string | null }
 export interface RuleIssue { source: string; status: string; reason: string }
-export interface CoverageRow { tactic: string; technique_id: string; name: string; parent: string | null; sources: { sigma: boolean; yara: boolean } }
+export interface CoverageRow { tactic: string; technique_id: string; name: string; parent: string | null; sources: { sigma: boolean | null; yara: boolean | null } }
 export interface YaraRecord { scan_id: string; status: string; sha256: string | null; ended_at: string; engine: string; version: string | null; matches: { namespace: string; rule: string; metadata: Record<string, string>; technique_ids: string[]; invalid_technique_ids: string[] }[]; diagnostics: { category: string }[] }
 export interface PageResult<T> { total: number; items: T[] }
 
@@ -342,15 +342,17 @@ export async function fetchTimelineDetail(
   }
 }
 
+export type HuntAlert = Omit<NormalizedAlert, "id"> & { internal_id: string };
+
 /**
  * Executes a KQL-style hunting filter against the alerts telemetry database.
  *
  * @param query KQL-style hunting filter (e.g., 'CommandLine contains "powershell"')
  * @returns Array of matching NormalizedAlert objects
  */
-export const huntAlerts = async (query: string): Promise<NormalizedAlert[]> => {
+export const huntAlerts = async (query: string): Promise<HuntAlert[]> => {
   try {
-    const response = await apiClient.post<NormalizedAlert[]>("/api/hunt", {
+    const response = await apiClient.post<HuntAlert[]>("/api/hunt", {
       query,
     });
     return response.data;

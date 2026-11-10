@@ -45,8 +45,7 @@ export const TimelineFeed: React.FC = () => {
       <div className="card-header">
         <div>
           <div className="badge-row">
-            <span className="badge badge-accent">Stage 3 Correlation</span>
-            <span className="badge badge-neutral">Chronological Events</span>
+            <span className="workspace-eyebrow">Investigation queue</span>
           </div>
           <h2 className="card-title">Correlated Threat Timelines</h2>
           <p className="card-subtitle">
@@ -110,7 +109,7 @@ export const TimelineFeed: React.FC = () => {
       )}
 
       {!loading && !error && timelines.length > 0 && (
-        <div className="timeline-table-wrapper">
+        <div className="timeline-table-wrapper" role="region" aria-label="Investigation queue table" tabIndex={0}>
           <table className="data-table" aria-label="Timelines List">
             <thead>
               <tr>
@@ -129,6 +128,9 @@ export const TimelineFeed: React.FC = () => {
                     <div className="grouping-cell">
                       <span className="mono key-text">{tl.grouping_key}</span>
                       <span className="timeline-id-sub mono">ID: {tl.id.substring(0, 8)}...</span>
+                      <Link to={`/timeline/${encodeURIComponent(tl.id)}`} className="timeline-mobile-action">
+                        Investigate →
+                      </Link>
                     </div>
                   </td>
                   <td>
@@ -145,7 +147,7 @@ export const TimelineFeed: React.FC = () => {
                   <td className="mono text-muted text-sm">
                     {formatDate(tl.created_at)}
                   </td>
-                  <td className="text-right">
+                  <td className="text-right timeline-desktop-action">
                     <Link
                       to={`/timeline/${encodeURIComponent(tl.id)}`}
                       className="btn btn-primary btn-sm"

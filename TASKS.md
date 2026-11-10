@@ -80,6 +80,19 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] S4 dashboard redesign follow-up: responsive workspace navigation, a prominent
+  investigation queue, separate assessment and analyst review panels, and consistent
+  forms, tables and ATT&CK annotations. Verified with 88 dashboard tests, the
+  production build, and two Playwright tests in Edge using synthetic data.
+  Usability follow-up: inline alert details and a filter reset, source-event and
+  coverage shortcuts, and per-record hunting inspection using the stored alert ID.
+  Browser checks exercise all six views at desktop and phone widths.
+  The Enterprise 17.1 matrix now uses ordered tactic columns, expandable
+  sub-techniques, technique search, and a recorded-hit filter with separate
+  Sigma and YARA markers. Shared spacing and heading styles were refined.
+  The two Edge checks passed alongside the running practice dashboard on
+  separate loopback ports. The dashboard suite (88 tests) and build passed.
+
 - [x] T4.7 dashboard smoke test: Playwright exercised all views against an isolated
   synthetic database, including analyst review, saved hunts, Sigma and YARA records.
   Fixed CORS for saved-query PUT/DELETE; README includes synthetic screenshots and

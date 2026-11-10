@@ -5,13 +5,22 @@ const initial: AlertQuery = { skip: 0, limit: 50, sort: 'timestamp', direction: 
 const fields = [ ['search', 'Search ID, dataset, event type or source file'], ['dataset', 'Dataset'],
   ['event_type', 'Event type'], ['host', 'Host'], ['user', 'User'], ['start', 'From (local time)'], ['end', 'To (local time)'] ] as const;
 
-export function AlertDetail({ alert }: { alert: NormalizedAlert }) {
-  return <section className="dashboard-card alert-detail" aria-label="Alert detail">
-    <h2>Alert detail</h2><p><strong>ID:</strong> {alert.id}</p>
-    <p><strong>Dataset:</strong> {alert.source_dataset} · <strong>Event:</strong> {alert.event_type}</p>
-    <p><strong>Source:</strong> {alert.source_file}</p><p><strong>Time:</strong> {alert.timestamp ?? 'Unavailable'}</p>
-    <h3>Raw telemetry</h3><pre>{JSON.stringify(alert.original_record, null, 2)}</pre>
-    <h3>Extracted indicators</h3><pre>{JSON.stringify(alert.extracted_indicators, null, 2)}</pre>
+export function AlertDetail({ alert, id }: { alert: NormalizedAlert; id?: string }) {
+  return <section id={id} className="alert-detail" aria-label="Alert detail">
+    <h2>Alert detail</h2>
+    <dl className="alert-detail-facts">
+      <div><dt>Event type</dt><dd>{alert.event_type}</dd></div>
+      <div><dt>Dataset</dt><dd>{alert.source_dataset}</dd></div>
+      <div><dt>Source file</dt><dd>{alert.source_file}</dd></div>
+      <div><dt>Time</dt><dd>{alert.timestamp ?? 'Unavailable'}</dd></div>
+      <div><dt>Alert ID</dt><dd className="mono">{alert.id}</dd></div>
+    </dl>
+    <h3>Raw telemetry</h3>
+    <pre tabIndex={0} aria-label="Raw telemetry JSON">{JSON.stringify(alert.original_record, null, 2)}</pre>
+    <h3>Extracted indicators</h3>
+    {alert.extracted_indicators.length > 0
+      ? <pre tabIndex={0} aria-label="Extracted indicators JSON">{JSON.stringify(alert.extracted_indicators, null, 2)}</pre>
+      : <p>No indicators extracted.</p>}
   </section>;
 }
 
@@ -19,12 +28,12 @@ export function Alerts() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [query, setQuery] = useState<AlertQuery>(initial);
   const [page, setPage] = useState<AlertPage | null>(null);
-  const [selected, setSelected] = useState<NormalizedAlert | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    setLoading(true); setError(''); setSelected(null);
+    setLoading(true); setError(''); setExpandedId(null);
     fetchAlerts(query).then(result => { if (active) setPage(result); })
       .catch(err => { if (active) { setPage(null); setError(err.message); } })
       .finally(() => { if (active) setLoading(false); });
@@ -39,11 +48,22 @@ export function Alerts() {
     }
     setQuery({ ...initial, sort: query.sort, direction: query.direction, ...values });
   }
+  function clearFilters() {
+    setDraft({});
+    setQuery({ ...initial, sort: query.sort, direction: query.direction });
+  }
   return <div className="alerts-page">
-    <h1>Alerts</h1>
-    <form className="dashboard-card alert-filters" onSubmit={submit}>
+    <header className="console-banner"><div className="console-info">
+      <p className="workspace-eyebrow">Event inventory</p>
+      <h1 className="console-title">Alerts</h1>
+      <p className="console-description">Filter ingested events and inspect the original telemetry.</p>
+    </div></header>
+    <form className="dashboard-card alert-filters" aria-label="Alert filters" onSubmit={submit}>
       {fields.map(([key, label]) => <label key={key}>{label}<input type={key === 'start' || key === 'end' ? 'datetime-local' : 'text'} maxLength={200} value={draft[key] ?? ''} onChange={e => setDraft({ ...draft, [key]: e.target.value })} /></label>)}
-      <button type="submit">Apply filters</button>
+      <div className="workspace-controls">
+        <button className="btn btn-primary" type="submit">Apply filters</button>
+        <button className="btn btn-secondary" type="button" onClick={clearFilters}>Clear filters</button>
+      </div>
     </form>
     <div className="alert-controls">
       <label>Sort by <select value={query.sort} onChange={e => setQuery({ ...query, sort: e.target.value, skip: 0 })}>
@@ -51,14 +71,43 @@ export function Alerts() {
       </select></label>
       <label>Order <select value={query.direction} onChange={e => setQuery({ ...query, direction: e.target.value, skip: 0 })}><option value="desc">Descending</option><option value="asc">Ascending</option></select></label>
     </div>
-    {loading && <p>Loading alerts…</p>}{error && <p role="alert">{error}</p>}
-    {!loading && !error && page && <>
-      <p>{page.total} matching alerts</p>
-      {page.items.length === 0 ? <p>No matching alerts found.</p> : <div className="alert-table-wrap"><table><thead><tr><th>Time</th><th>Dataset</th><th>Event type</th><th>Source file</th><th>Detail</th></tr></thead><tbody>
-        {page.items.map(alert => <tr key={alert.id}><td>{alert.timestamp ?? 'Unavailable'}</td><td>{alert.source_dataset}</td><td>{alert.event_type}</td><td>{alert.source_file}</td><td><button type="button" onClick={() => setSelected(alert)}>View</button></td></tr>)}
-      </tbody></table></div>}
-      <div className="alert-controls"><button disabled={query.skip === 0} onClick={() => setQuery({ ...query, skip: Math.max(0, query.skip - query.limit) })}>Previous</button><span>Offset {query.skip}</span><button disabled={query.skip + query.limit >= page.total} onClick={() => setQuery({ ...query, skip: query.skip + query.limit })}>Next</button></div>
-    </>}
-    {selected && <AlertDetail alert={selected} />}
+    {loading && <p className="state-container" role="status">Loading alerts…</p>}{error && <p className="state-container error-state" role="alert">{error}</p>}
+    {!loading && !error && page && <section className="dashboard-card data-panel" aria-label="Alert results">
+      <p role="status">{page.total} {page.total === 1 ? 'matching alert' : 'matching alerts'}</p>
+      {page.items.length === 0 ? <p className="state-container">No matching alerts found. Try clearing a filter.</p> : (
+        <div className="alert-table-wrap" tabIndex={0} role="region" aria-label="Alert table">
+          <table>
+            <thead><tr>
+              <th scope="col">Time</th>
+              <th scope="col" className="alert-secondary-column">Dataset</th>
+              <th scope="col">Event type</th>
+              <th scope="col" className="alert-secondary-column">Source file</th>
+              <th scope="col">Details</th>
+            </tr></thead>
+            <tbody>{page.items.map(alert => {
+              const expanded = expandedId === alert.id;
+              const detailId = `alert-detail-${alert.id}`;
+              return <React.Fragment key={alert.id}>
+                <tr className={expanded ? 'alert-row-expanded' : undefined}>
+                  <td className="mono">{alert.timestamp ?? 'Unavailable'}</td>
+                  <td className="alert-secondary-column">{alert.source_dataset}</td>
+                  <td><span className="event-type-badge">{alert.event_type}</span></td>
+                  <td className="alert-secondary-column">{alert.source_file}</td>
+                  <td><button className="btn btn-secondary btn-sm" type="button" aria-expanded={expanded}
+                    aria-controls={expanded ? detailId : undefined}
+                    onClick={() => setExpandedId(expanded ? null : alert.id)}>
+                    {expanded ? 'Hide' : 'View'}
+                  </button></td>
+                </tr>
+                {expanded && <tr className="alert-detail-row">
+                  <td colSpan={5}><AlertDetail alert={alert} id={detailId} /></td>
+                </tr>}
+              </React.Fragment>;
+            })}</tbody>
+          </table>
+        </div>
+      )}
+      {page.total > query.limit && <div className="alert-controls"><button disabled={query.skip === 0} onClick={() => setQuery({ ...query, skip: Math.max(0, query.skip - query.limit) })}>Previous</button><span>Showing {query.skip + 1}–{query.skip + page.items.length} of {page.total}</span><button disabled={query.skip + query.limit >= page.total} onClick={() => setQuery({ ...query, skip: query.skip + query.limit })}>Next</button></div>}
+    </section>}
   </div>;
 }

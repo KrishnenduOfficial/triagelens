@@ -5,11 +5,12 @@ import { TimelineFeed } from "../components/TimelineFeed";
 export const DashboardHome: React.FC = () => {
   return (
     <div className="dashboard-home">
-      <div className="console-banner">
+      <div className="console-banner overview-banner">
         <div className="console-info">
-          <h1 className="console-title">Security Operations Triage Console</h1>
+          <p className="workspace-eyebrow">Triage workspace</p>
+          <h1 className="console-title">Security operations</h1>
           <p className="console-description">
-            Automated SOC timeline correlation, AI-assisted threat triage, and continuous reliability validation.
+            Investigate correlated alerts and measure AI triage against independent ground truth.
           </p>
         </div>
         <div className="pipeline-status-badge">
@@ -18,8 +19,8 @@ export const DashboardHome: React.FC = () => {
       </div>
 
       <div className="dashboard-grid">
-        <MetricsOverview />
         <TimelineFeed />
+        <MetricsOverview />
       </div>
     </div>
   );

@@ -8,7 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 temporary = tempfile.TemporaryDirectory(prefix="triagelens-smoke-")
 os.environ["DATABASE_PATH"] = str(Path(temporary.name) / "smoke.sqlite")
-os.environ["ALLOWED_ORIGINS"] = "http://127.0.0.1:18742"
+api_port = int(os.environ.get("TRIAGELENS_SMOKE_API_PORT", "18741"))
+ui_port = int(os.environ.get("TRIAGELENS_SMOKE_UI_PORT", "18742"))
+os.environ["ALLOWED_ORIGINS"] = f"http://127.0.0.1:{ui_port}"
 
 import uvicorn
 from src.api.main import app
@@ -37,4 +39,4 @@ db.insert_enrichment(EnrichmentResult(indicator="example.invalid", indicator_typ
     provider="fixture-provider", is_malicious=False, raw_response={}, lookup_status="error"))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=18741, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=api_port, log_level="warning")

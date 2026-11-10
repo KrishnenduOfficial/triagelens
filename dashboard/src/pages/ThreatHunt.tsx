@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { deleteHunt, huntAlerts, listSavedHunts, saveHunt, type NormalizedAlert, type SavedHunt } from "../api/apiService";
+import { deleteHunt, huntAlerts, listSavedHunts, saveHunt, type HuntAlert, type SavedHunt } from "../api/apiService";
 
-export function huntExport(alerts: NormalizedAlert[]): string {
+export function huntExport(alerts: HuntAlert[]): string {
   return JSON.stringify(alerts, null, 2);
 }
 
 export const ThreatHunt: React.FC = () => {
   const [query, setQuery] = useState<string>('CommandLine contains "mimikatz"');
-  const [alerts, setAlerts] = useState<NormalizedAlert[]>([]);
+  const [alerts, setAlerts] = useState<HuntAlert[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
@@ -60,6 +60,7 @@ export const ThreatHunt: React.FC = () => {
     setLoading(true);
     setError(null);
     setHasExecuted(false);
+    setExpandedId(null);
     setAlerts([]);
 
     try {
@@ -105,22 +106,23 @@ export const ThreatHunt: React.FC = () => {
       {/* Console Header Banner */}
       <div className="console-banner">
         <div className="console-info">
-          <h1 className="console-title">Telemetry Threat Hunting Console</h1>
+          <p className="workspace-eyebrow">Query workspace</p>
+          <h1 className="console-title">Threat hunting</h1>
           <p className="console-description">
             Search ingested endpoint, network, and cloud telemetry with a parameterized KQL-style hunting filter.
           </p>
         </div>
         <div className="pipeline-status-badge">
-          <span className="status-dot pulsing" />
-          <span>KQL-style filter to SQL translator active</span>
+          <span>KQL-style filter</span>
         </div>
       </div>
 
       {/* Query Bar Section */}
       <div className="hunt-search-card">
+        <label className="workspace-eyebrow hunt-query-label" htmlFor="hunt-query">Hunt query</label>
         <div className="hunt-input-wrapper">
-          <span className="hunt-icon">🔎</span>
           <input
+            id="hunt-query"
             type="text"
             maxLength={2000}
             className="hunt-query-input mono"
@@ -174,11 +176,11 @@ export const ThreatHunt: React.FC = () => {
         <p>Compare fields with <code>== != &gt; &lt; &gt;= &lt;= contains !contains</code>. Combine expressions with <code>NOT</code>, <code>AND</code>, and <code>OR</code>; parentheses group expressions.</p>
         <p>Quote string values; numbers and booleans are typed. Nested fields use dots, for example <code>Network.DestinationPort == 443</code>. NOT binds before AND, then OR. This is a KQL-style filter, not full KQL.</p>
       </details>
-      <section className="hunt-search-card" aria-label="Saved queries">
-        <h2>Saved queries</h2>
+      <details className="hunt-search-card saved-hunts">
+        <summary>Saved queries{saved.length > 0 && ` (${saved.length})`}</summary>
         <p>Saving an existing name replaces its definition. Saving does not run the query.</p>
-        <label>Query name <input value={name} maxLength={100} onChange={e => setName(e.target.value)} /></label>{" "}
-        <button type="button" disabled={saving || savedLoading || !name.trim() || !query.trim()} onClick={() => updateSaved(() => saveHunt(name, query))}>Save query</button>
+        <div className="workspace-controls"><label>Query name <input value={name} maxLength={100} onChange={e => setName(e.target.value)} /></label>
+        <button className="btn btn-secondary" type="button" disabled={saving || savedLoading || !name.trim() || !query.trim()} onClick={() => updateSaved(() => saveHunt(name, query))}>Save query</button></div>
         {savedError && <p role="alert">{savedError} <button type="button" disabled={saving} onClick={() => updateSaved(async () => {})}>Retry loading</button></p>}
         {savedLoading && <p>Loading saved queries...</p>}
         {!savedLoading && saved.length === 0 && !savedError && <p>No saved queries.</p>}
@@ -187,7 +189,7 @@ export const ThreatHunt: React.FC = () => {
           <button type="button" disabled={saving} onClick={() => { setName(item.name); setQuery(item.query); }}>Load</button>{" "}
           <button type="button" disabled={saving} onClick={() => updateSaved(() => deleteHunt(item.name))}>Delete</button>
         </li>)}</ul>
-      </section>
+      </details>
 
       {/* Syntax / Query Error Banner */}
       {error && (
@@ -206,12 +208,12 @@ export const ThreatHunt: React.FC = () => {
       {/* Results Header */}
       {hasExecuted && !error && (
         <div className="hunt-results-header">
-          <div className="results-count-badge">
+          <div className="results-count-badge" role="status">
             <span className="text-secondary">Matches:</span>
             <strong className="text-accent mono">{alerts.length}</strong>
             <span className="text-muted">records found</span>
           </div>
-          <button type="button" onClick={exportResults}>Export returned results as JSON</button>
+          <button className="btn btn-secondary" type="button" onClick={exportResults}>Export returned results as JSON</button>
           <span className="text-xs">Up to 500 returned records; additional matches may exist. Export includes raw telemetry and labels.</span>
           <span className="text-xs">Results for: <code>{executedQuery}</code></span>
           {alerts.length > 0 && (
@@ -233,23 +235,29 @@ export const ThreatHunt: React.FC = () => {
           <table className="hunt-table">
             <thead>
               <tr>
+                <th scope="col" style={{ width: "90px" }}>Payload</th>
                 <th scope="col" style={{ width: "170px" }}>Timestamp</th>
                 <th scope="col" style={{ width: "140px" }}>Event Type</th>
                 <th scope="col" style={{ width: "200px" }}>Source / Dataset</th>
                 <th scope="col" style={{ width: "120px" }}>Ground Truth</th>
                 <th scope="col">Extracted Indicators</th>
-                <th scope="col" style={{ width: "90px" }} className="text-right">Payload</th>
               </tr>
             </thead>
             <tbody>
               {alerts.map((alert) => {
-                const isExpanded = expandedId === alert.id;
+                const isExpanded = expandedId === alert.internal_id;
                 const isMalicious = alert.ground_truth_label?.toLowerCase() === "malicious";
                 const isBenign = alert.ground_truth_label?.toLowerCase() === "benign";
 
                 return (
-                  <React.Fragment key={alert.id}>
+                  <React.Fragment key={alert.internal_id}>
                     <tr className={`hunt-row ${isExpanded ? "row-expanded" : ""}`}>
+                      <td>
+                        <button type="button" className="btn-inspect mono text-xs"
+                          onClick={() => toggleExpand(alert.internal_id)} aria-expanded={isExpanded}>
+                          {isExpanded ? "Hide" : "Inspect"}
+                        </button>
+                      </td>
                       <td className="mono text-xs text-secondary">
                         {formatTimestamp(alert.timestamp)}
                       </td>
@@ -286,23 +294,13 @@ export const ThreatHunt: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="text-right">
-                        <button
-                          type="button"
-                          className="btn-inspect mono text-xs"
-                          onClick={() => toggleExpand(alert.id)}
-                          aria-expanded={isExpanded}
-                        >
-                          {isExpanded ? "Hide" : "Inspect"}
-                        </button>
-                      </td>
                     </tr>
                     {isExpanded && (
                       <tr className="detail-expanded-row">
                         <td colSpan={6}>
                           <div className="record-details-card">
                             <div className="record-details-header">
-                              <span className="text-xs text-muted mono">Alert ID: {alert.id}</span>
+                              <span className="text-xs text-muted mono">Alert ID: {alert.internal_id}</span>
                               <button
                                 type="button"
                                 className="btn-copy text-xs mono"

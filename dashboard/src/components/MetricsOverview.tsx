@@ -123,7 +123,7 @@ export const MetricResults: React.FC<{ metrics: Metrics }> = ({ metrics }) => {
         hint={`${countText(calibrationDenominator)} calibration samples`} />
     </div>
 
-    {coverage && <details className="metric-coverage" open>
+    {coverage && <details className="metric-coverage">
       <summary>Selection and acquisition coverage</summary>
       <dl className="metric-facts coverage-facts">
         {coverageLabels.filter(([key]) => coverage[key] !== undefined).map(([key, label]) =>
