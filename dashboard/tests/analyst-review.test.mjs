@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AnalystReviewSummary } from '../src/pages/TimelineView.tsx';
+import { AnalystReviewSummary, HumanReviewNotice } from '../src/pages/TimelineView.tsx';
 
 test('analyst review displays the recorded decision and escapes rationale', () => {
   const html = renderToStaticMarkup(React.createElement(AnalystReviewSummary, { review: {
@@ -13,4 +13,10 @@ test('analyst review displays the recorded decision and escapes rationale', () =
   assert.match(html, /BENIGN/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test('AI assessment notice states analyst authority', () => {
+  const html = renderToStaticMarkup(React.createElement(HumanReviewNotice));
+  assert.match(html, /AI output needs human review/);
+  assert.match(html, /never the final authority/);
 });

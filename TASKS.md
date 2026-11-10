@@ -80,6 +80,8 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.6 dashboard quality: explicit human-review notice, retryable detection loading/error and empty-coverage states, and stale timeline suppression. Offline API contract and safe-rendering checks passed; 1,314 backend tests and 88 dashboard tests passed, and the dashboard build passed (one existing backend warning). Interactive QA remains T4.7; no live provider calls.
+
 - [x] T4.5 analyst disposition: final per-verdict confirmation or override stored separately from AI output and ground truth. Identical retries are accepted and superseded verdicts rejected. Offline verification: 1,314 backend tests and 86 dashboard tests passed, dashboard build passed (one existing backend warning). Interactive dashboard QA remains pending. No live provider calls.
 
 - [x] T4.4 detections and coverage: curated Sigma rules and load issues,

@@ -33,25 +33,35 @@ export function DetectionResults({ rules, issues, hits, scans, rows }: { rules: 
     </section>
     <section className="dashboard-card"><h2>ATT&amp;CK Enterprise annotation coverage</h2>
       <p>Version 17.1. Highlighting means a persisted Sigma or YARA hit has an explicit technique mapping; it is not detection effectiveness. No highlight does not establish that a technique was tested. AI predictions and dataset labels are not included.</p>
+      {!rows.length && <p>No coverage annotations available.</p>}
       <CoverageMatrix rows={rows} />
     </section>
   </>;
+}
+
+export function DetectionState({ loading, error, retry }: { loading: boolean; error: string; retry: () => void }) {
+  if (loading) return <p role="status">Loading recorded results…</p>;
+  if (error) return <p role="alert">{error} <button type="button" onClick={retry}>Retry</button></p>;
+  return null;
 }
 
 export const Detections: React.FC = () => {
   const [rules, setRules] = useState<SigmaRule[]>([]); const [issues, setIssues] = useState<RuleIssue[]>([]);
   const [hits, setHits] = useState<PageResult<DetectionHit> | null>(null); const [scans, setScans] = useState<PageResult<YaraRecord> | null>(null);
   const [rows, setRows] = useState<CoverageRow[] | null>(null); const [hitPage, setHitPage] = useState(0); const [scanPage, setScanPage] = useState(0);
-  const [error, setError] = useState('');
-  useEffect(() => { let active = true; Promise.all([fetchDetectionRules(), fetchDetectionCoverage()]).then(([r, c]) => {
-    if (active) { setRules(r.rules); setIssues(r.issues); setRows(c.rows); }
-  }).catch(() => { if (active) setError('Unable to load rules or coverage.'); }); return () => { active = false; }; }, []);
-  useEffect(() => { let active = true; setHits(null); fetchDetectionHits(hitPage * 50).then(value => { if (active) setHits(value); }).catch(() => { if (active) setError('Unable to load rule hits.'); }); return () => { active = false; }; }, [hitPage]);
-  useEffect(() => { let active = true; setScans(null); fetchYaraScans(scanPage * 50).then(value => { if (active) setScans(value); }).catch(() => { if (active) setError('Unable to load YARA scans.'); }); return () => { active = false; }; }, [scanPage]);
+  const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoading(true); setError(''); setHits(null); setScans(null); setRows(null);
+    Promise.all([fetchDetectionRules(), fetchDetectionCoverage(), fetchDetectionHits(hitPage * 50), fetchYaraScans(scanPage * 50)])
+      .then(([r, c, h, s]) => { if (active) { setRules(r.rules); setIssues(r.issues); setRows(c.rows); setHits(h); setScans(s); } })
+      .catch(() => { if (active) setError('Unable to load recorded detection results.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [hitPage, scanPage, revision]);
   return <div><h1>Detections and coverage</h1><p>Recorded rule results are separate from AI output, ground truth and analyst decisions.</p>
-    {error && <p role="alert">{error}</p>}
-    {(!hits || !scans || !rows) && !error && <p>Loading recorded results…</p>}
-    {hits && scans && rows && <><div className="dashboard-card"><p>Rule hits: {hits.total} · YARA scans: {scans.total}</p>
+    <DetectionState loading={loading} error={error} retry={() => setRevision(value => value + 1)} />
+    {!loading && !error && hits && scans && rows && <><div className="dashboard-card"><p>Rule hits: {hits.total} · YARA scans: {scans.total}</p>
       <button disabled={hitPage === 0} onClick={() => setHitPage(hitPage - 1)}>Previous hits</button> <span>Page {hitPage + 1}</span> <button disabled={(hitPage + 1) * 50 >= hits.total} onClick={() => setHitPage(hitPage + 1)}>Next hits</button>{' '}
       <button disabled={scanPage === 0} onClick={() => setScanPage(scanPage - 1)}>Previous scans</button> <span>Page {scanPage + 1}</span> <button disabled={(scanPage + 1) * 50 >= scans.total} onClick={() => setScanPage(scanPage + 1)}>Next scans</button></div>
       <DetectionResults rules={rules} issues={issues} hits={hits.items} scans={scans.items} rows={rows} /></>}

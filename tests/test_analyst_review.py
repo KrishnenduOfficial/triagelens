@@ -19,12 +19,19 @@ def test_review_persistence_validation_and_isolation(tmp_path):
     client = TestClient(create_app(db))
     url = f'/api/timelines/{timeline.timeline_id}'
     before = client.get(url).json()
+    assert before['id'] == str(timeline.timeline_id)
+    assert before['verdict']['id'] == str(verdict.verdict_id)
+    assert before['alerts'] == [] and before['analyst_review'] is None
+    assert client.get(f'/api/timelines/{uuid4()}').status_code == 404
     payload = {'verdict_id': str(verdict.verdict_id), 'decision': 'override',
                'override_disposition': 'BENIGN', 'rationale': 'Reviewed evidence'}
     assert client.post(url + '/analyst-review', json={**payload, 'rationale': ' '}).status_code == 422
     assert client.post(url + '/analyst-review', json={**payload, 'decision': 'confirm'}).status_code == 422
     response = client.post(url + '/analyst-review', json=payload)
     assert response.status_code == 200
+    assert response.json()['verdict_id'] == str(verdict.verdict_id)
+    assert response.json()['decision'] == 'override'
+    assert response.json()['rationale'] == 'Reviewed evidence'
     assert client.post(url + '/analyst-review', json=payload).json() == response.json()
     assert client.post(url + '/analyst-review', json={**payload, 'decision': 'confirm', 'override_disposition': None}).status_code == 409
     after = client.get(url).json()

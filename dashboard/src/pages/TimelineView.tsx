@@ -18,6 +18,13 @@ export const AnalystReviewSummary: React.FC<{ review: AnalystReview }> = ({ revi
   </div>
 );
 
+export const HumanReviewNotice: React.FC = () => (
+  <div className="analyst-advisory-banner" role="note">
+    <span className="advisory-icon">🛡️</span>
+    <div className="advisory-text"><strong>AI output needs human review.</strong> AI-generated assessments are advisory. The AI is never the final authority on incident maliciousness.</div>
+  </div>
+);
+
 export const TimelineView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [timeline, setTimeline] = useState<TimelineDetail | null>(null);
@@ -48,24 +55,27 @@ export const TimelineView: React.FC = () => {
 
   useEffect(() => {
     if (!id) return;
+    let active = true;
     const loadDetail = async () => {
       setLoading(true);
       setError(null);
+      setTimeline(null);
       try {
         const data = await fetchTimelineDetail(id);
-        setTimeline(data);
+        if (active) setTimeline(data);
       } catch (err) {
-        setError(
+        if (active) setError(
           err instanceof Error
             ? err.message
             : `Failed to load details for timeline ID ${id}.`
         );
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     loadDetail();
+    return () => { active = false; };
   }, [id]);
 
   const toggleAlertExpand = (alertId: string) => {
@@ -135,7 +145,7 @@ export const TimelineView: React.FC = () => {
         </div>
       )}
 
-      {timeline && (
+      {!loading && !error && timeline && timeline.id === id && (
         <div className="timeline-detail-content">
           {/* Header Card: Grouping Key & Time Bounds */}
           <div className="dashboard-card timeline-summary-card">
@@ -196,13 +206,7 @@ export const TimelineView: React.FC = () => {
             </div>
 
             {/* Analyst Review Advisory */}
-            <div className="analyst-advisory-banner" role="alert">
-              <span className="advisory-icon">🛡️</span>
-              <div className="advisory-text">
-                <strong>Human Analyst Review Mandated:</strong> AI-generated assessments are advisory.
-                The AI is never the final authority on incident maliciousness.
-              </div>
-            </div>
+            <HumanReviewNotice />
 
             {timeline.verdict ? (
               <div className="verdict-body">

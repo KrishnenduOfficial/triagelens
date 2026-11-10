@@ -41,6 +41,8 @@ def test_time_bounds_and_detail(client):
     assert result['total'] == 2
     item = result['items'][0]
     assert client.get('/api/alerts/' + item['id']).json()['original_record'] == item['original_record']
+    assert item['original_record']['text'] == '<script>bad</script>'
+    assert client.get('/api/alerts', params={'search': 'no-such-alert'}).json() == {'total': 0, 'items': [], 'skip': 0, 'limit': 50}
 
 
 @pytest.mark.parametrize('params', [ {'limit': 101}, {'limit': 0}, {'skip': -1}, {'sort': 'id; DROP TABLE alerts'},
