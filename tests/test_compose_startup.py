@@ -40,3 +40,19 @@ def test_api_uses_only_analyst_and_hunt_credentials(monkeypatch):
         assert parsed["user"] == f"tl_{role.lower()}_login"
     assert startup.os.environ["DATABASE_BACKEND"] == "postgresql"
     assert invoked[0][0] == "uvicorn"
+
+
+def test_worker_uses_only_queue_and_hunt_credentials(monkeypatch):
+    for role in ("ANALYST", "EVALUATOR", "TRIAGE", "QUEUE", "HUNT"):
+        monkeypatch.delenv(f"TRIAGELENS_POSTGRES_{role}_DSN", raising=False)
+    monkeypatch.setenv("TL_QUEUE_PASSWORD", "queue-password")
+    monkeypatch.setenv("TL_HUNT_PASSWORD", "hunt-password")
+    invoked = []
+    monkeypatch.setattr(startup.os, "execvp", lambda *args: invoked.append(args))
+    startup.worker("--once")
+    for role in ("QUEUE", "HUNT"):
+        parsed = conninfo_to_dict(startup.os.environ[f"TRIAGELENS_POSTGRES_{role}_DSN"])
+        assert parsed["user"] == f"tl_{role.lower()}_login"
+    for role in ("ANALYST", "EVALUATOR", "TRIAGE"):
+        assert f"TRIAGELENS_POSTGRES_{role}_DSN" not in startup.os.environ
+    assert invoked[0][1][1:] == ["-m", "src.worker", "run", "--once"]

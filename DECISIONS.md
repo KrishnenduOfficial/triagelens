@@ -2698,3 +2698,11 @@ Gate Ruff correctness rules and three model modules with mypy initially; expand
 the type and lint scope as existing findings are fixed. Bandit reports all findings
 but gates high severity; existing lower-severity findings require review. Gitleaks
 scans Git history, excluding only reviewed historical fixture fingerprints.
+
+### ADR-069: Leased PostgreSQL saved-hunt jobs
+**Status:** Accepted for T5.4.
+Use an operator-supplied UUID to deduplicate submissions and keep the first query snapshot.
+Claim in short PostgreSQL transactions with `FOR UPDATE SKIP LOCKED` and a fenced 30-second lease.
+Allow three attempts with 5- and 10-second backoff for transient failures or expired leases.
+Use separate analyst, queue and read-only hunting credentials. Persist only a bounded count as the result.
+Keep the worker opt-in. Read-only execution may repeat after a crash, with one persisted terminal outcome.

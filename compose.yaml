@@ -27,6 +27,7 @@ services:
       TL_HUNT_PASSWORD: ${TL_HUNT_PASSWORD:?Set TL_HUNT_PASSWORD}
       TL_EVALUATOR_PASSWORD: ${TL_EVALUATOR_PASSWORD:?Set TL_EVALUATOR_PASSWORD}
       TL_TRIAGE_PASSWORD: ${TL_TRIAGE_PASSWORD:?Set TL_TRIAGE_PASSWORD}
+      TL_QUEUE_PASSWORD: ${TL_QUEUE_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +50,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+  worker:
+    profiles: [jobs]
+    image: triagelens-api:local
+    pull_policy: never
+    mem_limit: 256m
+    command: ["python", "deploy/start.py", "worker"]
+    environment:
+      TL_QUEUE_PASSWORD: ${TL_QUEUE_PASSWORD:-}
+      TL_HUNT_PASSWORD: ${TL_HUNT_PASSWORD:?Set TL_HUNT_PASSWORD}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "on-failure:5"
   dashboard:
     build:
       context: .

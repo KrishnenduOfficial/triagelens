@@ -316,21 +316,68 @@ python -m pip install --only-binary=:all: -r requirements-postgres.txt
 python -m alembic upgrade head
 ```
 
-Provision four separate non-owner logins. Grant each login membership in just
-the corresponding group role and use separate credentials. Supply connection
-strings through process-scoped environment variables.
+Provision separate non-owner logins for the four baseline roles and the optional
+worker role. Grant each login membership in just its corresponding group role.
+Supply distinct credentials through process-scoped environment variables.
 
 | Group role | Connection variable | Caller |
 | --- | --- | --- |
 | `triagelens_evaluator` | `TRIAGELENS_POSTGRES_EVALUATOR_DSN` | CLI and evaluation coordinator |
 | `triagelens_triage` | `TRIAGELENS_POSTGRES_TRIAGE_DSN` | Restricted inference cache |
-| `triagelens_analyst` | `TRIAGELENS_POSTGRES_ANALYST_DSN` | API |
-| `triagelens_hunt` | `TRIAGELENS_POSTGRES_HUNT_DSN` | API hunting queries |
+| `triagelens_analyst` | `TRIAGELENS_POSTGRES_ANALYST_DSN` | API and job submission/status |
+| `triagelens_hunt` | `TRIAGELENS_POSTGRES_HUNT_DSN` | Read-only hunting queries |
+| `triagelens_queue` (optional) | `TRIAGELENS_POSTGRES_QUEUE_DSN` | Worker claims and job results |
 
 Set `DATABASE_BACKEND=postgresql` for the API, CLI, and standard evaluation runner.
 An explicit `--db-path` selects SQLite for that invocation. The dedicated live
 protocol requires this explicit SQLite path. The PostgreSQL baseline starts empty
 and leaves SQLite history in its original file.
+
+#### Saved-hunt worker
+
+The optional PostgreSQL worker runs an existing saved hunting filter and stores
+its returned row count, capped at the requested limit (1–1,000, default 500).
+Save the hunt in the dashboard first. Submission snapshots the filter. Use the
+same job ID, hunt name, and limit to retry a submission, including after the
+saved hunt is edited or removed. Use a fresh ID to run it again.
+
+To enable the Compose worker, add a distinct `TL_QUEUE_PASSWORD` to the ignored
+`.env.compose` file. Generate it once, then keep it with the other credentials.
+
+```powershell
+if (-not (Select-String -LiteralPath .env.compose -Pattern '^TL_QUEUE_PASSWORD=' -Quiet)) {
+    $queueBytes = [byte[]]::new(32)
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($queueBytes)
+    Add-Content -LiteralPath .env.compose -Value "TL_QUEUE_PASSWORD=$([Convert]::ToHexString($queueBytes))"
+}
+docker compose --env-file .env.compose --profile jobs up --build -d
+$jobId = [guid]::NewGuid().ToString()
+docker compose --env-file .env.compose exec api python deploy/start.py queue enqueue 'My saved hunt' $jobId --limit 500
+docker compose --env-file .env.compose exec api python deploy/start.py queue status $jobId
+```
+
+The worker adds a 256 MiB limit to the Compose stack. To stop the stack with
+the worker enabled, use `docker compose --env-file .env.compose --profile jobs down`.
+
+For standalone PostgreSQL, apply `python -m alembic upgrade head` and grant
+`triagelens_queue` to a dedicated login. Set the queue and hunt DSNs in the
+worker process and run `python -m src.worker run`. In a separate process with
+the analyst DSN, use `python -m src.worker enqueue 'My saved hunt' <job-id>`
+and `python -m src.worker status <job-id>`. Use `run --once` for a single poll.
+
+Claims use 30-second leases. Transient failures and expired leases can retry
+after 5 and 10 seconds, with at most three attempts. An expired attempt may
+repeat the read-only query against current data. The lease token prevents a
+stale attempt from publishing a result. Job rows and filter snapshots remain
+in PostgreSQL. Status shows a bounded count or a short failure code.
+
+To run the offline regression checks, set `TRIAGELENS_TEST_POSTGRES_DSN` to a
+disposable PostgreSQL instance on `127.0.0.1` using a login that can create
+temporary test databases and roles. Then run:
+
+```powershell
+python -m pytest -q -x --tb=short tests/test_database_contract.py tests/test_compose_startup.py
+```
 
 The trusted evaluator preserves independent labels and raw records. The triage
 login reads verdicts only. The hunt login queries a read-only analyst view that

@@ -1,4 +1,4 @@
-"""Compose-only migration and API startup, without printing credentials."""
+"""Compose-only database, API and worker startup, without printing credentials."""
 import os
 import sys
 
@@ -25,8 +25,10 @@ def migrate():
 
     admin = dsn("triagelens_admin", credential("POSTGRES_PASSWORD"))
     roles = ("analyst", "hunt", "evaluator", "triage")
+    if os.environ.get("TL_QUEUE_PASSWORD"):
+        roles += ("queue",)
     passwords = {role: credential(f"TL_{role.upper()}_PASSWORD") for role in roles}
-    if len(set(passwords.values()) | {credential("POSTGRES_PASSWORD")}) != 5:
+    if len(set(passwords.values()) | {credential("POSTGRES_PASSWORD")}) != len(roles) + 1:
         raise ValueError("Database passwords must be distinct")
     os.environ["TRIAGELENS_POSTGRES_MIGRATION_DSN"] = admin
     command.upgrade(Config("alembic.ini"), "head")
@@ -54,19 +56,36 @@ def migrate():
                 sql.Identifier(f"triagelens_{role}"), sql.Identifier(name)))
 
 
-def api():
-    for role in ("analyst", "hunt"):
+def configure_logins(*roles):
+    for role in roles:
         os.environ[f"TRIAGELENS_POSTGRES_{role.upper()}_DSN"] = dsn(
             f"tl_{role}_login", credential(f"TL_{role.upper()}_PASSWORD"))
+
+
+def api():
+    configure_logins("analyst", "hunt")
     os.environ["DATABASE_BACKEND"] = "postgresql"
     os.execvp("uvicorn", ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"])
 
 
+def worker(*args):
+    configure_logins("queue", "hunt")
+    os.execvp(sys.executable, [sys.executable, "-m", "src.worker", "run", *args])
+
+
+def queue(*args):
+    if not args or args[0] not in ("enqueue", "status"):
+        raise ValueError("Expected enqueue or status")
+    configure_logins("analyst")
+    os.execvp(sys.executable, [sys.executable, "-m", "src.worker", *args])
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1] not in ("migrate", "api"):
-        raise SystemExit("Expected migrate or api")
+    commands = {"migrate": migrate, "api": api, "worker": worker, "queue": queue}
+    if len(sys.argv) < 2 or sys.argv[1] not in commands:
+        raise SystemExit("Expected migrate, api, worker or queue")
     try:
-        {"migrate": migrate, "api": api}[sys.argv[1]]()
+        commands[sys.argv[1]](*sys.argv[2:])
     except Exception as exc:
         # Driver exceptions can contain connection details; report only their type.
         raise SystemExit(f"Startup failed: {type(exc).__name__}") from None

@@ -115,6 +115,8 @@ class PostgresDatabase(DatabaseManager):
             if role == 'hunt':
                 conn.execute('SET default_transaction_read_only = on')
                 conn.execute("SET statement_timeout = '2s'")
+            elif role == 'queue':
+                conn.execute("SET statement_timeout = '5s'")
             PostgresDatabase._validate_role(conn, role)
         except BaseException:
             conn.close()
@@ -141,8 +143,8 @@ class PostgresDatabase(DatabaseManager):
         trusted = role in ('evaluator', 'analyst')
         if (not row or not row['expected_role'] or not row['restricted'] or row['can_create']
                 or row['can_read_truth'] != trusted or row['can_read_alerts'] != trusted
-                or row['member_of_trusted_role'] != trusted or row['can_hunt'] != (role != 'triage')
-                or (role == 'triage' and row['member_of_hunt_role'])):
+                or row['member_of_trusted_role'] != trusted or row['can_hunt'] != (trusted or role == 'hunt')
+                or (role in ('triage', 'queue') and row['member_of_hunt_role'])):
             raise RuntimeError(f'PostgreSQL login does not have the required {role} role privileges.')
 
     def init_db(self) -> None:
@@ -152,7 +154,7 @@ class PostgresDatabase(DatabaseManager):
             if exc.sqlstate in ('3F000', '42P01'):
                 raise RuntimeError('PostgreSQL schema is missing. Run the Alembic upgrade first.') from None
             raise
-        if not row or row[0] != '0001_postgresql':
+        if not row or row[0] != '0002_hunt_jobs':
             raise RuntimeError('PostgreSQL schema revision is unsupported. Run the Alembic upgrade first.')
 
     def _begin_write(self, conn: _Connection):

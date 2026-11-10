@@ -1,9 +1,12 @@
 """Shared persistence tests, with explicitly opt-in PostgreSQL on loopback."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+from threading import Barrier
+import time
 from uuid import uuid4
 
 import pytest
@@ -47,7 +50,7 @@ def postgres_logins():
                 command.downgrade(config, 'base')
                 command.upgrade(config, 'head')
             logins = {}
-            for role in ('evaluator', 'analyst', 'triage', 'hunt'):
+            for role in ('evaluator', 'analyst', 'triage', 'hunt', 'queue'):
                 username = f't51_{role}_{suffix}'
                 login = Identifier(username)
                 password = uuid4().hex
@@ -256,3 +259,187 @@ def test_postgresql_cli_and_api(postgres_logins, monkeypatch, tmp_path):
             assert response.status_code == 200 and len(response.json()) == 1
     finally:
         app.state.db.close()
+
+
+@pytest.fixture
+def hunt_jobs(postgres_logins):
+    from src.engine.job_queue import HuntJobQueue
+    from src.engine.postgres import PostgresDatabase
+
+    databases = []
+
+    def connect(role):
+        db = PostgresDatabase(postgres_logins[role], role, hunt_dsn=postgres_logins['hunt'])
+        databases.append(db)
+        db.init_db()
+        return HuntJobQueue(db)
+
+    try:
+        yield connect
+    finally:
+        for db in databases:
+            db.close()
+
+
+def test_job_cli_uses_first_snapshot_and_bounded_count(hunt_jobs, postgres_logins, monkeypatch, capsys):
+    from src import worker
+
+    name, job_id = uuid4().hex, uuid4()
+    query = f'test_value == "{name}"'
+    hunter = ThreatHuntingEngine(hunt_jobs('analyst').db)
+    writer = hunt_jobs('evaluator').db
+    for _ in range(2):
+        writer.insert_alert(_alert({'test_value': name, 'private_fixture': 'do not return'}))
+    hunter.save_query(name, query)
+    for role in ('analyst', 'hunt', 'queue'):
+        monkeypatch.setenv(f'TRIAGELENS_POSTGRES_{role.upper()}_DSN', postgres_logins[role])
+
+    def cli(*args):
+        monkeypatch.setattr('sys.argv', ['worker', *args])
+        assert worker.main() == 0
+        return capsys.readouterr().out
+
+    enqueue = ('enqueue', name, str(job_id), '--limit', '1')
+    queued = cli(*enqueue)
+    assert json.loads(queued)['state'] == 'queued'
+    hunter.save_query(name, 'test_value == "edited"')
+    assert hunter.delete_saved_query(name)
+    assert cli(*enqueue) == queued
+    assert cli('run', '--once') == ''
+    output = cli('status', str(job_id))
+    job = json.loads(output)
+    assert (job['state'], job['attempts'], job['row_count'], job['row_limit']) == ('succeeded', 1, 1, 1)
+    assert query not in output and 'private_fixture' not in output and 'lease_token' not in output
+    assert cli(*enqueue) == output
+    with pytest.raises(ValueError, match='different submission'):
+        hunt_jobs('analyst').enqueue(job_id, name, 2)
+    with pytest.raises(ValueError, match='does not exist'):
+        hunt_jobs('analyst').enqueue(uuid4(), name, 1)
+
+
+def test_job_concurrent_submissions_and_skip_locked_claim(hunt_jobs):
+    analyst = hunt_jobs('analyst')
+    name = uuid4().hex
+    ThreatHuntingEngine(analyst.db).save_query(name, 'event_type == "synthetic"')
+    first, second = uuid4(), uuid4()
+    submissions = [analyst, hunt_jobs('analyst')]
+    barrier = Barrier(2, timeout=5)
+
+    def submit(queue):
+        barrier.wait()
+        return queue.enqueue(first, name, 5)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert [job['id'] for job in pool.map(submit, submissions)] == [first, first]
+    analyst.enqueue(second, name, 5)
+    first_worker, second_worker = hunt_jobs('queue'), hunt_jobs('queue')
+    conn = first_worker.db.connect()
+    conn.execute('BEGIN')
+    try:
+        assert conn.execute('SELECT id FROM hunt_jobs WHERE id = ? FOR UPDATE', (first,)).fetchone()[0] == first
+        job2 = second_worker.claim()
+        assert job2 is not None and job2.id == second
+        assert second_worker.complete(job2, 0)
+    finally:
+        conn.rollback()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(lambda queue: queue.claim(), (first_worker, second_worker)))
+    active = [job for job in claims if job is not None]
+    assert len(active) == 1 and active[0].id == first
+    assert first_worker.complete(active[0], 0)
+
+
+def test_job_retry_and_expired_lease_fencing(hunt_jobs, monkeypatch):
+    from src.engine.postgres import PostgresStorageError
+
+    analyst, queue, other = (hunt_jobs(role) for role in ('analyst', 'queue', 'queue'))
+    name, job_id = uuid4().hex, uuid4()
+    ThreatHuntingEngine(analyst.db).save_query(name, 'event_type == "synthetic"')
+    analyst.enqueue(job_id, name, 5)
+
+    def timeout(*args):
+        raise PostgresStorageError('57014')
+
+    monkeypatch.setattr(queue.db, 'hunt', timeout)
+    assert queue.work_once()
+    job = analyst.status(job_id)
+    assert (job['state'], job['attempts'], job['error_code']) == ('queued', 1, 'hunt_timeout')
+    conn = queue.db.connect()
+    assert 0 < conn.execute('SELECT extract(epoch FROM (? - clock_timestamp()))', (job['ready_at'],)).fetchone()[0] <= 5
+    assert other.claim() is None
+    conn.execute('UPDATE hunt_jobs SET ready_at = clock_timestamp() WHERE id = ?', (job_id,))
+    expired = queue.claim()
+    assert expired is not None
+    assert conn.execute('SELECT extract(epoch FROM ready_at - lease_until) FROM hunt_jobs WHERE id = ?',
+                        (job_id,)).fetchone()[0] == 10
+    conn.execute("UPDATE hunt_jobs SET lease_until = clock_timestamp() - interval '1 second' WHERE id = ?", (job_id,))
+    assert not queue.complete(expired, 1)
+    assert other.claim() is None
+    conn.execute('UPDATE hunt_jobs SET ready_at = clock_timestamp() WHERE id = ?', (job_id,))
+    latest = other.claim()
+    assert latest is not None and latest.id == expired.id and latest.lease_token != expired.lease_token
+    assert not queue.fail(expired, 'hunt_timeout', retry=True)
+    conn.execute('UPDATE hunt_jobs SET ready_at = clock_timestamp(), lease_until = clock_timestamp() WHERE id = ?', (job_id,))
+    assert queue.claim() is None
+    job = analyst.status(job_id)
+    assert (job['state'], job['attempts'], job['error_code']) == ('failed', 3, 'lease_expired')
+    assert not other.complete(latest, 0)
+
+
+def test_job_role_boundaries_and_permanent_failure(hunt_jobs):
+    from src.engine.postgres import PostgresStorageError
+
+    analyst, queue, hunter = (hunt_jobs(role) for role in ('analyst', 'queue', 'hunt'))
+    name, job_id = uuid4().hex, uuid4()
+    # Simulate an invalid persisted definition without including it in errors or output.
+    analyst.db.connect().execute('INSERT INTO saved_hunting_queries VALUES (?, ?, ?, ?)',
+                                 (name, 'invalid', 'now', 'now'))
+    analyst.enqueue(job_id, name, 5)
+    for login, statement in (
+        (analyst, 'UPDATE hunt_jobs SET attempts = 3'),
+        (analyst, 'SELECT lease_token FROM hunt_jobs'),
+        (queue, 'SELECT * FROM triagelens_truth.alert_labels'),
+        (queue, 'SELECT * FROM hunting_alerts'),
+        (queue, 'SELECT * FROM saved_hunting_queries'),
+        (queue, "UPDATE hunt_jobs SET query = 'invalid'"),
+        (hunter, 'SELECT id FROM hunt_jobs'),
+    ):
+        with pytest.raises(PostgresStorageError) as denied:
+            login.db.connect().execute(statement)
+        assert denied.value.sqlstate == '42501'
+    assert queue.work_once()
+    job = analyst.status(job_id)
+    assert (job['state'], job['attempts'], job['error_code']) == ('failed', 1, 'invalid_query')
+
+
+def test_job_completion_rechecks_expiry_after_row_lock_wait(hunt_jobs):
+    analyst, worker, blocker = (hunt_jobs(role) for role in ('analyst', 'queue', 'queue'))
+    name, job_id = uuid4().hex, uuid4()
+    ThreatHuntingEngine(analyst.db).save_query(name, 'event_type == "synthetic"')
+    analyst.enqueue(job_id, name, 5)
+    job = worker.claim()
+    assert job is not None and job.id == job_id
+    conn = blocker.db.connect()
+    conn.execute("UPDATE hunt_jobs SET lease_until = clock_timestamp() + interval '2 seconds' WHERE id = ?", (job_id,))
+    conn.execute('BEGIN')
+    conn.execute('SELECT id FROM hunt_jobs WHERE id = ? FOR UPDATE', (job_id,))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        try:
+            pid = worker.db.connect().raw.info.backend_pid
+            finished = pool.submit(worker.complete, job, 0)
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                conn.execute('SELECT pg_stat_clear_snapshot()')
+                if conn.execute('SELECT wait_event_type FROM pg_stat_activity WHERE pid = ?', (pid,)).fetchone()[0] == 'Lock':
+                    break
+                time.sleep(0.02)
+            else:
+                pytest.fail('Completion did not reach the row lock before lease expiry')
+            conn.execute('SELECT pg_sleep(2.05)')
+        finally:
+            conn.rollback()
+        assert not finished.result(timeout=5)
+    conn.execute('UPDATE hunt_jobs SET ready_at = clock_timestamp() WHERE id = ?', (job_id,))
+    recovered = worker.claim()
+    assert recovered is not None and recovered.id == job_id
+    assert worker.complete(recovered, 0)

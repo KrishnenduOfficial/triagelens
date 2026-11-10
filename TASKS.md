@@ -80,6 +80,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T5.4 PostgreSQL saved-hunt queue (ADR-069): idempotent submissions,
+  `SKIP LOCKED` claims, fenced leases and bounded backoff. The opt-in Compose
+  worker completed a synthetic hunt saved before enablement in one attempt,
+  with a row count of 1 at a limit of 1. Offline verification: 15 focused and
+  1,330 full backend tests passed with SQLite and disposable PostgreSQL, with
+  one existing Starlette warning. Expired attempts may repeat the read-only
+  hunt. The Compose demo used cached images with the current source mounted.
+
 - [x] T5.3 CI workflow implemented (ADR-068): Python and dashboard checks, disposable
   PostgreSQL, dependency and redacted secret scans, and CycloneDX SBOMs. Initial
   lint and typing gates are scoped; Bandit reports all findings and gates high
