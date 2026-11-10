@@ -80,6 +80,13 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.7 dashboard smoke test: Playwright exercised all views against an isolated
+  synthetic database, including analyst review, saved hunts, Sigma and YARA records.
+  Fixed CORS for saved-query PUT/DELETE; README includes synthetic screenshots and
+  run instructions. Offline verification: 1,315 backend tests, 88 dashboard tests,
+  one Edge browser smoke test and the dashboard build passed. No live provider calls.
+  Chromium installation did not finish; a React hunting list key warning remains.
+
 - [x] T4.6 dashboard quality: explicit human-review notice, retryable detection loading/error and empty-coverage states, and stale timeline suppression. Offline API contract and safe-rendering checks passed; 1,314 backend tests and 88 dashboard tests passed, and the dashboard build passed (one existing backend warning). Interactive QA remains T4.7; no live provider calls.
 
 - [x] T4.5 analyst disposition: final per-verdict confirmation or override stored separately from AI output and ground truth. Identical retries are accepted and superseded verdicts rejected. Offline verification: 1,314 backend tests and 86 dashboard tests passed, dashboard build passed (one existing backend warning). Interactive dashboard QA remains pending. No live provider calls.

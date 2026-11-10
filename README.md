@@ -562,6 +562,28 @@ runs can contact both Groq and configured intelligence services and consume quot
 
 ---
 
+### Dashboard smoke test and screenshots
+
+These screenshots use synthetic data and do not represent measured AI accuracy.
+
+![Synthetic dashboard overview](docs/images/dashboard-overview.png)
+![Synthetic timeline and analyst review](docs/images/dashboard-timeline.png)
+
+The Playwright smoke test starts a local API with a temporary synthetic SQLite
+database and a local dashboard. It does not call threat-intelligence or AI providers.
+From PowerShell, after the backend and dashboard dependencies are installed:
+
+```powershell
+cd dashboard
+npx playwright install chromium
+$env:SMOKE_PYTHON = '..\.venv\Scripts\python.exe'
+npm run test:e2e
+```
+
+Alternatively set `$env:SMOKE_BROWSER = 'msedge'` to use installed Microsoft Edge.
+Ports 18741 and 18742 must be free. The test covers one synthetic path, not all
+browser combinations, live integrations, or real-data performance.
+
 ### 5.6 Groq Verification
 
 From the project root, use these operator commands (each live command is separate):

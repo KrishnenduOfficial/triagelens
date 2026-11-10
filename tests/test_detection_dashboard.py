@@ -10,6 +10,19 @@ from src.models.alert import NormalizedAlert
 from test_yara_integration import sample_result
 
 
+def test_saved_hunt_cors_preflight(tmp_path):
+    db = DatabaseManager(str(tmp_path / 'cors.sqlite'))
+    db.init_db()
+    with TestClient(create_app(db)) as client:
+        for method in ('PUT', 'DELETE'):
+            response = client.options('/api/hunt/saved', headers={
+                'Origin': 'http://localhost:5173',
+                'Access-Control-Request-Method': method,
+            })
+            assert response.status_code == 200
+            assert method in response.headers['access-control-allow-methods']
+
+
 def test_recorded_results_and_coverage_are_separate(tmp_path):
     db = DatabaseManager(str(tmp_path / 'test.sqlite'))
     db.init_db()
