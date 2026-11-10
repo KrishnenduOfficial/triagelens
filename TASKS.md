@@ -80,6 +80,13 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T5.5 PostgreSQL backup and restore notes: a data-only custom archive was
+  restored into a separately migrated, disposable PostgreSQL 17 Compose project.
+  Synthetic alert, independent label and saved hunt survived; checks confirmed
+  triage lacked truth-schema access and hunting remained read-only. Recovery needs
+  matching migrations, separate credentials and an empty target; it does not cover
+  SQLite, cluster roles, custom settings or continuous recovery.
+
 - [x] T5.4 PostgreSQL saved-hunt queue (ADR-069): idempotent submissions,
   `SKIP LOCKED` claims, fenced leases and bounded backoff. The opt-in Compose
   worker completed a synthetic hunt saved before enablement in one attempt,

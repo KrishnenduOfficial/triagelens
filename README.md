@@ -304,7 +304,72 @@ variables are visible to users with Docker access. The memory limits total 2.625
 excluding Docker's own overhead. `docker compose --env-file .env.compose down`
 stops the stack while retaining the database volume. Keep `.env.compose`: generating
 new passwords does not change the PostgreSQL administrator password in an existing
-volume. Backup and restore are not yet covered by this task.
+volume.
+
+#### PostgreSQL backup and restore
+
+This procedure covers the local Compose PostgreSQL database, not SQLite files. It
+uses a data-only archive and the existing migrations to recreate the schema and
+grants. Store the archive and revision file together in an access-restricted,
+encrypted location outside the repository: they contain sensitive alerts, labels,
+reviews and other investigation data. Keep `.env.compose` securely and separately;
+the archive does not contain cluster roles, passwords or external provider keys.
+Choose a new backup directory that does not already contain these filenames.
+
+Stop all writers, including the optional worker and any external CLI or evaluation
+processes, and do not run migrations during the backup. From the project root in
+PowerShell, with the database running, set `$backupDir` to that directory:
+
+```powershell
+docker compose --env-file .env.compose --profile jobs stop api worker
+$db = docker compose --env-file .env.compose ps -q db
+if (-not $db) { throw 'Start the database first.' }
+docker exec $db psql -X -U triagelens_admin -d triagelens -At -v ON_ERROR_STOP=1 -c 'SELECT version_num FROM triagelens.alembic_version' | Set-Content -Encoding utf8 (Join-Path $backupDir 'revision.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Could not read migration revision.' }
+docker exec $db pg_dump -U triagelens_admin -d triagelens -Fc --data-only --exclude-table-data=triagelens.alembic_version -f /tmp/triagelens-backup.dump
+if ($LASTEXITCODE -ne 0) { throw 'Backup failed.' }
+docker cp "${db}:/tmp/triagelens-backup.dump" (Join-Path $backupDir 'triagelens.dump')
+if ($LASTEXITCODE -ne 0) { throw 'Copy failed.' }
+docker exec $db rm /tmp/triagelens-backup.dump
+```
+
+Resume the stack with `docker compose --env-file .env.compose --profile jobs up -d`
+if the worker is used; omit `--profile jobs` otherwise. Check the archive and
+revision file exist and regularly test recovery. A dump is a point-in-time snapshot,
+not continuous recovery; changes after it are not included.
+
+Restore first into a **new, isolated Compose project and empty volume**, never over
+an existing database. Use the same trusted code and migrations as the backup;
+build the application image from that checkout before starting the target. The
+commands below use project name `triagelens-recovery`, which must not already
+exist. Use the protected credentials file intended for the target and ensure its
+optional queue password is set if the worker is needed. Stop and investigate any
+failed command. Do not restore an archive from an untrusted source.
+
+```powershell
+docker compose --env-file .env.compose -p triagelens-recovery up -d --build db migrate
+if ($LASTEXITCODE -ne 0) { throw 'Target startup failed.' }
+$migration = docker compose --env-file .env.compose -p triagelens-recovery ps -aq migrate
+if ((docker wait $migration) -ne '0') { throw 'Target migration failed.' }
+$target = docker compose --env-file .env.compose -p triagelens-recovery ps -q db
+$revision = docker exec $target psql -X -U triagelens_admin -d triagelens -At -v ON_ERROR_STOP=1 -c 'SELECT version_num FROM triagelens.alembic_version'
+if ($LASTEXITCODE -ne 0 -or $revision.Trim() -ne (Get-Content (Join-Path $backupDir 'revision.txt') -Raw).Trim()) { throw 'Revision mismatch; do not restore.' }
+docker cp (Join-Path $backupDir 'triagelens.dump') "${target}:/tmp/triagelens-restore.dump"
+if ($LASTEXITCODE -ne 0) { throw 'Copy failed.' }
+docker exec $target pg_restore -U triagelens_admin -d triagelens --exit-on-error --single-transaction /tmp/triagelens-restore.dump
+if ($LASTEXITCODE -ne 0) { throw 'Restore failed; investigate before using target.' }
+docker exec $target rm /tmp/triagelens-restore.dump
+```
+
+If restore fails, discard the isolated target and start again with an empty volume;
+sequence changes are not necessarily rolled back with the transaction. Before
+directing users or jobs to the recovered instance, verify representative
+records, independent labels, saved hunts, role permissions and application behavior.
+The migration recreates the version row and permissions; the archive deliberately
+excludes that row. The archive does not restore custom database settings, custom
+roles or changes outside the tracked migrations. In-flight jobs may be retried
+after recovery; check their state before enabling the worker. This procedure was
+tested with synthetic data on PostgreSQL 17, not as a production disaster drill.
 
 SQLite remains the default. For a fresh UTF-8 PostgreSQL 17 database, install the
 optional dependencies and run the baseline as a migration owner with permission
