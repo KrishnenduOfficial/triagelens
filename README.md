@@ -3,7 +3,20 @@
 > An alert triage pipeline that measures how often its AI is wrong.
 
 [![CI](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml/badge.svg)](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-default-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-optional-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Sigma](https://img.shields.io/badge/Sigma-rule%20subset-6A4C93)](rules/sigma/)
+[![YARA-X](https://img.shields.io/badge/YARA--X-optional-CC5500)](requirements-yara.txt)
+[![Pytest](https://img.shields.io/badge/pytest-1330%20recorded-0A9EDC?logo=pytest&logoColor=white)](TASKS.md#roadmap-progress)
+[![Dashboard tests](https://img.shields.io/badge/dashboard%20tests-88%20recorded-1F6FEB)](TASKS.md#roadmap-progress)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+Test-count badges show previously recorded offline runs, not a live count or a
+claim about the current checkout. The CI badge reports GitHub's workflow status.
 
 TriageLens assists security analysts with alert intake, threat intelligence,
 event correlation, cloud-based AI triage, detection and evaluation. It compares
@@ -248,6 +261,18 @@ true positives, true negatives, false positives and false negatives, and let
 `N = TP + TN + FP + FN`. These counts exclude unavailable outcomes, unknown
 truth and abstentions. The selected metric scope determines the counting unit.
 
+$$
+\begin{aligned}
+\mathrm{Accuracy} &= \frac{TP+TN}{TP+TN+FP+FN}, &
+\mathrm{Precision} &= \frac{TP}{TP+FP}, \\
+\mathrm{Recall} &= \frac{TP}{TP+FN}, &
+\mathrm{Specificity} &= \frac{TN}{TN+FP}, \\
+\mathrm{F1} &= \frac{2TP}{2TP+FP+FN}, &
+\mathrm{FPR} &= \frac{FP}{FP+TN}, \quad
+\mathrm{FNR} = \frac{FN}{FN+TP}.
+\end{aligned}
+$$
+
 | Metric | Formula | Interpretation |
 | --- | --- | --- |
 | Accuracy | `(TP + TN) / N` | Correct binary predictions among scored predictions |
@@ -265,14 +290,30 @@ Zero denominators require care: the base tracker returns zero for some metrics
 and a validity flag or null for others; protocol and scope presentations can
 report undefined values. Consult the selected response and its denominators.
 
-For calibration, `cᵢ` is confidence in the **selected disposition** and `yᵢ`
-is 1 if that disposition was correct, otherwise 0. The implemented Brier score
-is `Σ(cᵢ − yᵢ)² / n`. ECE is `Σ(|Bₖ| / n) × |mean(c in Bₖ) − accuracy(Bₖ)|`
-over five equal-width confidence bins; the implementation rounds bin means and
-accuracies before aggregation. Abstentions are excluded from calibration.
-For a rate `p = successes/n`, the Wilson interval uses center
-`(p + z²/(2n))/(1 + z²/n)` and half-width
-`z√(p(1−p)/n + z²/(4n²))/(1 + z²/n)`, with `z ≈ 1.96` for 95% intervals.
+For calibration, let $c_i$ be confidence in the **selected disposition** and
+$y_i=1$ when that disposition is correct, otherwise $y_i=0$. For $n$ scored
+confidence pairs, the Brier score is:
+
+$$
+\operatorname{Brier}=\frac{1}{n}\sum_{i=1}^{n}(c_i-y_i)^2
+$$
+
+For five equal-width confidence bins $B_k$, expected calibration error (ECE) is:
+
+$$
+\operatorname{ECE}=\sum_{k=1}^{5}\frac{|B_k|}{n}\left|\operatorname{mean\_confidence}(B_k)-\operatorname{accuracy}(B_k)\right|
+$$
+
+The implementation rounds bin means and accuracies before aggregation.
+Abstentions are excluded from calibration.
+
+For a rate $\hat p=s/n$, where $s$ is the number of successes, the Wilson
+interval is given by:
+
+$$
+\frac{\hat p+\frac{z^2}{2n}\ \pm\ z\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}}{1+\frac{z^2}{n}},\qquad z\approx1.96\ \text{for 95% confidence}.
+$$
+
 Intervals describe sampling uncertainty under their assumptions, not label quality.
 
 The synthetic Sigma fragility demo divides lost matches by successfully evaluated,
