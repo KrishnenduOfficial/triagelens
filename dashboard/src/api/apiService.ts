@@ -21,6 +21,18 @@ export const apiClient: AxiosInstance = axios.create({
   },
 });
 
+export interface DetectionHit { id: string; rule_id: string; source: string; detected_at: string; technique_ids: string[] | null; event_ids: string[] }
+export interface SigmaRule { id: string; title: string; author: string; license: string; source: string; tags: string[]; level: string | null }
+export interface RuleIssue { source: string; status: string; reason: string }
+export interface CoverageRow { tactic: string; technique_id: string; name: string; parent: string | null; sources: { sigma: boolean; yara: boolean } }
+export interface YaraRecord { scan_id: string; status: string; sha256: string | null; ended_at: string; engine: string; version: string | null; matches: { namespace: string; rule: string; metadata: Record<string, string>; technique_ids: string[]; invalid_technique_ids: string[] }[]; diagnostics: { category: string }[] }
+export interface PageResult<T> { total: number; items: T[] }
+
+export async function fetchDetectionRules() { return (await apiClient.get<{rules: SigmaRule[]; issues: RuleIssue[]}>('/api/detections/rules')).data; }
+export async function fetchDetectionHits(skip: number) { return (await apiClient.get<PageResult<DetectionHit>>('/api/detections', { params: { skip, limit: 50 } })).data; }
+export async function fetchDetectionCoverage() { return (await apiClient.get<{version: string; scope: string; rows: CoverageRow[]}>('/api/detections/coverage')).data; }
+export async function fetchYaraScans(skip: number) { return (await apiClient.get<PageResult<YaraRecord>>('/api/yara/scans', { params: { skip, limit: 50 } })).data; }
+
 // =====================================================================
 // Type Definitions Matching FastAPI Models
 // =====================================================================

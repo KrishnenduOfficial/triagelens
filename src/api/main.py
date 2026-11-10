@@ -116,6 +116,33 @@ def create_app(
     app.state.yara_service = YaraService(db, config.get_yara_scan_roots())
     app.state.yara_enrichment = EnrichmentEngine(db=db)
 
+    @app.get('/api/detections/rules', tags=['Detections'])
+    def sigma_rules() -> Dict[str, Any]:
+        from dataclasses import asdict
+        from src.engine.sigma import load_curated_rules
+        loaded = load_curated_rules()
+        fields = ('id', 'title', 'author', 'license', 'source', 'tags', 'level')
+        return {'rules': [{key: getattr(rule, key) for key in fields} for rule in loaded.rules],
+                'issues': [asdict(issue) for issue in loaded.issues]}
+
+    @app.get('/api/detections', tags=['Detections'])
+    def list_detections(skip: int = Query(0, ge=0, le=1000000),
+                        limit: int = Query(50, ge=1, le=100),
+                        db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        return db.list_detections(skip, limit)
+
+    @app.get('/api/detections/coverage', tags=['Detections'])
+    def detection_coverage(db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        from src.engine.attack import coverage_matrix
+        return {'version': '17.1', 'scope': 'persisted_rule_hits',
+                'rows': coverage_matrix(db.detection_techniques())}
+
+    @app.get('/api/yara/scans', tags=['YARA'])
+    def list_yara_scans(skip: int = Query(0, ge=0, le=1000000),
+                        limit: int = Query(50, ge=1, le=100),
+                        db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+        return db.list_yara_scans(skip, limit)
+
     @app.post('/api/yara/scans', tags=['YARA'])
     def yara_scan(payload: YaraScanRequest, request: Request) -> Dict[str, Any]:
         from src.engine.yara_files import FileRejected

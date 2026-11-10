@@ -80,6 +80,14 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.4 detections and coverage: curated Sigma rules and load issues,
+  paginated recorded rule hits and YARA scans, and an ATT&CK 17.1 matrix of
+  explicit mappings on persisted Sigma/YARA hits. Annotation coverage is not
+  detection effectiveness; unmatched YARA scans remain visible independently.
+  Offline verification: 1,313 backend tests and 85 dashboard tests passed;
+  dashboard build passed (one existing backend warning). Interactive QA remains
+  pending. No live provider calls.
+
 - [x] T4.3 hunting UI: grammar help, persisted named query controls and JSON
   export of up to 500 returned records, with raw telemetry/label disclosure.
   Offline verification: 85 hunting tests, 1,312 backend tests and 84 dashboard

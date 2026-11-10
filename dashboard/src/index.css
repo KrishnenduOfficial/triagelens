@@ -465,6 +465,9 @@ body {
 .metric-facts dt { color: var(--text-muted); }
 .metric-facts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .coverage-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); column-gap: 1.5rem; }
+.attack-matrix { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); overflow-x: auto; gap: 0.5rem; align-items: start; }
+.attack-cell { padding: 0.5rem; margin-bottom: 0.3rem; border: 1px solid #64748b; border-radius: 4px; }
+.attack-covered { background: #155e4e; color: #fff; }
 .metric-coverage summary { cursor: pointer; margin-bottom: 0.75rem; }
 .metric-caveat { color: var(--text-muted); }
 @media (max-width: 600px) {

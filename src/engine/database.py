@@ -913,6 +913,37 @@ class DatabaseManager:
                 'SELECT detection_id FROM yara_scan_detections WHERE scan_id=? ORDER BY rule_key', (scan_id,))]
             return result
 
+    def list_yara_scans(self, skip: int, limit: int) -> Dict[str, Any]:
+        with self._lock:
+            conn = self.connect()
+            total = conn.execute('SELECT count(*) FROM yara_scans').fetchone()[0]
+            rows = conn.execute('SELECT result_json FROM yara_scans ORDER BY rowid DESC LIMIT ? OFFSET ?',
+                                (limit, skip)).fetchall()
+            return {'total': total, 'items': [json.loads(row[0]) for row in rows]}
+
+    def list_detections(self, skip: int, limit: int) -> Dict[str, Any]:
+        with self._lock:
+            conn = self.connect()
+            total = conn.execute('SELECT count(*) FROM detections').fetchone()[0]
+            rows = conn.execute('SELECT * FROM detections ORDER BY detected_at DESC, id LIMIT ? OFFSET ?',
+                                (limit, skip)).fetchall()
+            items = []
+            for row in rows:
+                item = dict(row)
+                item['technique_ids'] = json.loads(item['technique_ids']) if item['technique_ids'] is not None else None
+                item['event_ids'] = [r[0] for r in conn.execute(
+                    'SELECT alert_id FROM detection_events WHERE detection_id=? ORDER BY alert_id', (item['id'],))]
+                items.append(item)
+            return {'total': total, 'items': items}
+
+    def detection_techniques(self) -> Dict[str, List[str]]:
+        """Collect only explicit mappings attached to persisted rule hits."""
+        result: Dict[str, set] = {'sigma': set(), 'yara': set()}
+        with self._lock:
+            for row in self.connect().execute("SELECT source, technique_ids FROM detections WHERE source IN ('sigma', 'yara') AND technique_ids IS NOT NULL"):
+                result[row['source']].update(json.loads(row['technique_ids']))
+        return {source: sorted(ids) for source, ids in result.items()}
+
     def insert_detection(self, rule_id: str, source: str, event_ids: List[Union[UUID, str]],
                          detected_at: datetime, technique_ids: Optional[List[str]] = None) -> str:
         """Store one rule hit and its existing alert references atomically.
