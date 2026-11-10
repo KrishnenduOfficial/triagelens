@@ -8,6 +8,7 @@ Tests:
 - Severity Boundary Defense: Mapping of CRITICAL, HIGH, MEDIUM, LOW, INFORMATIONAL to binary predictions.
 """
 
+from typing import Optional
 from uuid import uuid4
 import pytest
 

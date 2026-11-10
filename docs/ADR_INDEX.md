@@ -1,5 +1,6 @@
 # ADR index
 
+- [ADR-068](../DECISIONS.md#adr-068-initial-ci-checks-and-explicit-scan-scope) — Initial CI checks and explicit scan scope — Accepted for T5.3; hosted run pending.
 - [ADR-067](../DECISIONS.md#adr-067-optional-postgresql-baseline-and-separated-storage-roles) — Optional PostgreSQL baseline and separated storage roles — Accepted for T5.1.
 - [ADR-066](../DECISIONS.md#adr-066-analyst-review-per-verdict) — Analyst review per verdict — Accepted and implemented for T4.5.
 

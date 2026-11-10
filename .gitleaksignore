@@ -1,0 +1,14 @@
+# Historical false positives: an empty README setting and synthetic test credentials.
+# Fingerprints include the originating commit so new matches remain visible.
+9ab7b0ae08595a1be375dbbe13d62510b1a65200:README.md:generic-api-key:167
+c5767847efdf373c8363855b0148e502b901db8f:tests/test_llm_adversarial.py:generic-api-key:91
+31ead34d911b636a8491b24fb648f3be340d1db1:tests/test_config.py:generic-api-key:28
+31ead34d911b636a8491b24fb648f3be340d1db1:tests/test_config.py:generic-api-key:32
+31ead34d911b636a8491b24fb648f3be340d1db1:tests/test_config.py:generic-api-key:36
+31ead34d911b636a8491b24fb648f3be340d1db1:tests/test_config.py:generic-api-key:39
+a86639246ad0970c9f969eaa0d1dce0c55c58b64:tests/test_llm_adversarial.py:generic-api-key:800
+13e40ae04bfecf0431bef32667d21534053dfca3:tests/test_api_adversarial.py:generic-api-key:218
+f758c21d8ca074acb3a996b3c72347331d1b0c4e:tests/test_llm_adversarial.py:github-pat:420
+f758c21d8ca074acb3a996b3c72347331d1b0c4e:tests/test_llm_adversarial.py:generic-api-key:88
+f758c21d8ca074acb3a996b3c72347331d1b0c4e:tests/test_llm_adversarial.py:generic-api-key:89
+f758c21d8ca074acb3a996b3c72347331d1b0c4e:tests/test_llm_adversarial.py:generic-api-key:290

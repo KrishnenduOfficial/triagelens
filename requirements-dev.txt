@@ -1,0 +1,6 @@
+# Development-only CI tools; these are not runtime dependencies.
+ruff==0.11.13
+mypy==1.15.0
+bandit==1.9.4
+pip-audit==2.10.1
+cyclonedx-bom==8.0.0

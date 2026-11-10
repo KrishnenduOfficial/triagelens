@@ -80,6 +80,13 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T5.3 CI workflow implemented (ADR-068): Python and dashboard checks, disposable
+  PostgreSQL, dependency and redacted secret scans, and CycloneDX SBOMs. Initial
+  lint and typing gates are scoped; Bandit reports all findings and gates high
+  severity. Windows: 1,320 passed, four PostgreSQL tests skipped. Linux Python
+  3.13 with PostgreSQL: 1,260 passed, 64 skipped. Dashboard: 88 passed and build
+  passed. Hosted GitHub Actions remains unverified; review Bandit findings.
+
 - [x] T5.2 local Compose stack: PostgreSQL, API and dashboard run as non-root
   with health checks, separate database logins and 2.625 GiB combined memory
   limits. Fresh startup, localhost routes, role boundaries, repeated startup and

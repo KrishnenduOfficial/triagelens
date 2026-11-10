@@ -2688,3 +2688,13 @@ Keep labels, evaluation snapshots and cohorts in `triagelens_truth`.
 The trusted evaluator scores independently. The triage login only reads verdicts.
 The analyst API uses a separate read-only, time-bounded hunting connection.
 Use shared persistence contracts and disposable loopback PostgreSQL tests.
+
+### ADR-068: Initial CI checks and explicit scan scope
+
+**Status:** Accepted for T5.3; hosted GitHub Actions verification pending.
+
+Run backend and dashboard tests, dependency and secret scans, and produce SBOMs.
+Gate Ruff correctness rules and three model modules with mypy initially; expand
+the type and lint scope as existing findings are fixed. Bandit reports all findings
+but gates high severity; existing lower-severity findings require review. Gitleaks
+scans Git history, excluding only reviewed historical fixture fingerprints.
