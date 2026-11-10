@@ -80,6 +80,9 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] Refresh the root README with architecture, evaluation mathematics, CI
+  badge, implementation status, configuration and repository navigation.
+
 - [x] T5.5 PostgreSQL backup and restore notes: a data-only custom archive was
   restored into a separately migrated, disposable PostgreSQL 17 Compose project.
   Synthetic alert, independent label and saved hunt survived; checks confirmed

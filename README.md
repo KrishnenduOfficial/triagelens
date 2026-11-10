@@ -1,5 +1,21 @@
 # TriageLens
 
+> An alert triage pipeline that measures how often its AI is wrong.
+
+[![CI](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml/badge.svg)](https://github.com/KrishnenduOfficial/triagelens/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+TriageLens assists security analysts with alert intake, threat intelligence,
+event correlation, cloud-based AI triage, detection and evaluation. It compares
+AI assessments with independent labels when available and records uncertainty;
+the analyst retains authority over investigation and response.
+
+**Contents:** [Architecture](#1-system-architecture) · [Principles](#2-core-engineering-principles) ·
+[AI and evidence](#3-groq-capabilities-and-verification) · [Stack](#4-technology-stack) ·
+[Metrics](#evaluation-mathematics) · [Setup and operations](#5-quickstart-guide) ·
+[API](#6-api-reference) · [Limitations](#7-known-limitations--operational-boundaries) ·
+[Repository](#8-repository-structure) · [License](#9-license)
+
 **Active provider: Groq, `openai/gpt-oss-120b` (ADR-055).**
 A pre-policy six-case live synthetic check on 2026-11-08 returned six valid verdicts:
 6/6 binary classifications matched the labels, but exact severity matched 1/6.
@@ -39,7 +55,6 @@ other synthetic cases, use `SyntheticCase` and `evaluate_fragility` in
 [![React](https://img.shields.io/badge/React-19.3.1-20232A?logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Pytest](https://img.shields.io/badge/Pytest-728_Passing-0A9EDC?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 TriageLens is a cybersecurity engineering platform designed to automate Tier-1 and Tier-2 Security Operations Center (SOC) alert investigation while maintaining strict human-in-the-loop oversight. It ingests raw telemetry, enriches indicators with threat intelligence, reconstructs chronological incident timelines, applies cloud-based LLM digital forensics triage, and evaluates its own AI reliability against independently labelled ground truth.
@@ -49,6 +64,26 @@ Unlike conventional AI summarizers or chatbots, **TriageLens's distinguishing ca
 ---
 
 ## 1. System Architecture
+
+```mermaid
+flowchart LR
+    A[JSON / CSV / EVTX] --> B[Normalize and correlate]
+    B --> C[Threat intelligence]
+    C --> D[Sanitize and Groq triage]
+    D --> E[Assessment and uncertainty]
+    B --> F[Sigma / hunting / optional YARA]
+    E --> G[SQLite / optional PostgreSQL]
+    F --> G
+    L[Independent labels] --> H[Evaluation]
+    E --> H
+    H --> G
+    G --> I[FastAPI and analyst dashboard]
+    I --> J[Human review]
+```
+
+Labels, model assessments, rule detections and analyst dispositions remain
+distinct. Stored evidence references are structural links, not proof that a
+model claim is factually supported. See [architecture decisions](docs/ADR_INDEX.md).
 
 Six functional stages turn alert telemetry into analyst-reviewed results:
 
@@ -71,7 +106,8 @@ The human analyst retains final investigation and response authority.
 The pipeline's implementation is verified offline. An operator-checked three-case
 CLI/database/API/dashboard run matched stored counts (three unavailable outcomes,
 zero scored; 2026-11-09). Successful-verdict display and broader interactive UI
-verification remain pending; this workflow check does not establish AI quality.
+verification were not established by that run; it does not establish AI quality.
+Later synthetic browser checks are recorded in [TASKS.md](TASKS.md).
 
 ---
 
@@ -177,6 +213,15 @@ old models; use explicit run/cohort selections for a current-provider comparison
 
 ## 4. Technology Stack
 
+SQLite is the default; PostgreSQL, Compose, the saved-hunt worker and YARA-X
+are optional. Sigma evaluates a documented local subset, and hunting implements
+a [KQL-style filter](docs/HUNTING_DSL.md), not the full KQL language. ATT&CK
+coverage describes annotations on recorded hits, not detection effectiveness.
+EVTX intake is available, while independently reviewed real-data evaluation
+remains pending. The current `triage-v2` policy has not had live quality acceptance.
+The repository contains a CI workflow; its hosted execution is not established by
+the local verification recorded in [TASKS.md](TASKS.md).
+
 | Layer | Technologies | Purpose |
 | :--- | :--- | :--- |
 | **Core Processing** | Python 3.14, Pydantic 2.x | Normalization, pipeline orchestration, data validation |
@@ -188,10 +233,52 @@ old models; use explicit run/cohort selections for a current-provider comparison
 | **HTTP Client** | HTTPX | Sync and async external intelligence and Groq communication |
 | **Threat Intelligence**| VirusTotal, AbuseIPDB, URLhaus | Indicator enrichment for IP addresses, domains, and file hashes |
 | **Query Engine** | KQL-style hunting filter with SQLite and PostgreSQL dialects | Parameterized security hunting queries with JSON path extraction |
-| **Testing** | Pytest 9.2 (728 passing backend tests) | Unit, adversarial, security injection, and regression testing |
+| **Testing** | Pytest, Node test runner, Playwright | Unit, integration, security and browser checks |
 | **Frontend** | React 19, TypeScript 7, Vite 8, custom CSS | Dark-mode SOC analyst investigation console |
+| **Detection and intake** | `evtx`, pySigma, optional YARA-X, ATT&CK data | Event intake, bounded rule evaluation and technique annotation |
+| **Deployment** | Optional PostgreSQL, Alembic, Docker Compose | Role-separated storage, migrations and local service stack |
 
 ---
+
+## Evaluation mathematics
+
+For independently labelled binary assessments, let TP, TN, FP and FN denote
+true positives, true negatives, false positives and false negatives, and let
+`N = TP + TN + FP + FN`. These counts exclude unavailable outcomes, unknown
+truth and abstentions. The selected metric scope determines the counting unit.
+
+| Metric | Formula | Interpretation |
+| --- | --- | --- |
+| Accuracy | `(TP + TN) / N` | Correct binary predictions among scored predictions |
+| Precision | `TP / (TP + FP)` | Fraction of positive predictions that are correct |
+| Recall | `TP / (TP + FN)` | Fraction of labelled positives found |
+| Specificity | `TN / (TN + FP)` | Fraction of labelled negatives correctly classified |
+| F1 | `2 × precision × recall / (precision + recall)` | Harmonic mean of precision and recall |
+| False-positive rate | `FP / (FP + TN)` | Fraction of labelled negatives predicted positive |
+| False-negative rate | `FN / (FN + TP)` | Fraction of labelled positives predicted negative |
+| Severity agreement | exact matches / evaluated severities | Separate from binary disposition |
+| Labelled binary coverage | labelled binary predictions / available labelled outcomes | Discloses abstentions among labelled available outcomes |
+| Availability | available outcomes / (available + unavailable outcomes) | Availability of the selected stored evaluation stream, not live uptime |
+
+Zero denominators require care: the base tracker returns zero for some metrics
+and a validity flag or null for others; protocol and scope presentations can
+report undefined values. Consult the selected response and its denominators.
+
+For calibration, `cᵢ` is confidence in the **selected disposition** and `yᵢ`
+is 1 if that disposition was correct, otherwise 0. The implemented Brier score
+is `Σ(cᵢ − yᵢ)² / n`. ECE is `Σ(|Bₖ| / n) × |mean(c in Bₖ) − accuracy(Bₖ)|`
+over five equal-width confidence bins; the implementation rounds bin means and
+accuracies before aggregation. Abstentions are excluded from calibration.
+For a rate `p = successes/n`, the Wilson interval uses center
+`(p + z²/(2n))/(1 + z²/n)` and half-width
+`z√(p(1−p)/n + z²/(4n²))/(1 + z²/n)`, with `z ≈ 1.96` for 95% intervals.
+Intervals describe sampling uncertainty under their assumptions, not label quality.
+
+The synthetic Sigma fragility demo divides lost matches by successfully evaluated,
+changed mutations of matching baselines. It excludes no-ops and reports errors and
+unsupported cases. Run `python scripts/run_rule_fragility.py` offline; this is not
+a measurement of real-world adversary behavior. For definitions, scope and frozen
+cohorts see [architecture](ARCHITECTURE.md) and [evaluation implementation](src/engine/evaluation.py).
 
 ## 5. Quickstart Guide
 
@@ -199,8 +286,8 @@ old models; use explicit run/cohort selections for a current-provider comparison
 
 - Python 3.14, the version used for the verified pinned environment.
 - Node.js satisfying the installed Vite requirement: `^20.19.0 || >=22.12.0`, plus npm.
-- The documented development environment is Windows/PowerShell. Other operating
-  systems have not been verified by this project evidence.
+- The commands below target Windows/PowerShell. Linux CI checks have also been
+  exercised locally; see [TASKS.md](TASKS.md) for their scope.
 - Cloud inference avoids running a local model. Hardware performance has not been
   benchmarked; the project targets a modest workstation.
 
@@ -272,6 +359,18 @@ old models; use explicit run/cohort selections for a current-provider comparison
    the default `data/triagelens.db`; to select it, use `DATABASE_PATH=triagelens.db`
    consistently for both processes. A genuinely empty selected database still
    produces zero metrics. See the [path verification](docs/results/database_paths_20261108.md).
+
+   The template also documents `GROQ_REQUESTS_PER_MINUTE`,
+   `GROQ_TOKENS_PER_MINUTE`, `GROQ_ESTIMATED_TOKENS_PER_REQUEST`,
+   `GROQ_MAX_WAIT_SECONDS`, `DATABASE_BACKEND`, `YARA_SCAN_ROOTS`,
+   `ALLOWED_ORIGINS` and `VITE_API_BASE_URL`. See [.env.example](.env.example)
+   for defaults and optional PostgreSQL settings. Never commit real credentials.
+
+   **Troubleshooting:** Missing Groq credentials prevent live triage; provider
+   quotas and timeouts can yield unavailable results. An empty dashboard can
+   indicate an empty database or a different API database path. Check the API
+   health endpoint, the configured path and browser origin, then restart the API
+   after configuration changes. A missing enrichment response is not a clean finding.
 
 ---
 
@@ -875,7 +974,6 @@ triagelens/
   requirements.txt              # Pinned Python dependencies
   data/
     dummy_alerts.json            # Intake test fixture
-    dummy_alerts.csv             # Intake test fixture
     synthetic_soc_telemetry.json # Generator output used for demonstrations
     eval_benchmark_70.json       # Synthetic timeline evaluation dataset
   dashboard/
@@ -884,10 +982,16 @@ triagelens/
       components/               # MetricsOverview and TimelineFeed
       metrics/                  # Scope validation, formatting and request lifecycle
       pages/                    # DashboardHome, TimelineView and ThreatHunt
-    tests/                      # 79 verified frontend tests
+    tests/                      # Dashboard unit and integration tests
+    e2e/                        # Playwright browser smoke tests
     package.json
     package-lock.json
   docs/results/                 # Verification reports and labelled historical evidence
+  rules/                        # Curated Sigma and YARA rules and attribution
+  migrations/                   # PostgreSQL Alembic migrations
+  deploy/                       # Compose service startup and image configuration
+  compose.yaml                  # Optional local PostgreSQL/API/dashboard stack
+  .github/workflows/ci.yml      # CI tests, scans and SBOM generation
   scripts/
     check_connections.py        # Manual provider smoke probes
     diagnose_groq.py            # One synthetic full-triage diagnostic
@@ -903,7 +1007,7 @@ triagelens/
     engine/                     # Pipeline, Groq, cache, provenance and metric scopes
     models/                     # Validated data contracts
     utils/                      # Indicator extraction and credential/PII masking
-  tests/                        # 728 verified backend cases; network blocked by default
+  tests/                        # Backend tests; network blocked by default
 ```
 
 Local `.env`, virtual environments, dependencies, build output, databases and
@@ -913,5 +1017,11 @@ results; exclusion from Git is not a reason to delete it.
 ---
 
 ## 9. License
+
+Project development follows [AGENTS.md](AGENTS.md): keep changes scoped, run
+relevant offline tests, and record decisions when needed. The
+[roadmap](docs/ROADMAP.md) and [task list](TASKS.md) track planned work and
+verification. Curated third-party rules and ATT&CK data retain their respective
+attribution and license files under `rules/` and `data/attack/`.
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
