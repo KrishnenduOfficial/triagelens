@@ -797,6 +797,46 @@ class DatabaseManager:
             data["ground_truth_metadata"] = json.loads(data["ground_truth_metadata"]) if data["ground_truth_metadata"] else None
             return data
 
+    def list_alerts(self, *, skip: int, limit: int, filters: Dict[str, Any],
+                    sort: str, direction: str) -> Dict[str, Any]:
+        """List alerts with literal case-insensitive filters and stable ordering."""
+        from src.engine.fields import resolve_field
+
+        columns = {'timestamp': 'timestamp', 'dataset': 'source_dataset',
+                   'event_type': 'event_type', 'source_file': 'source_file'}
+        if sort not in columns or direction not in ('asc', 'desc'):
+            raise ValueError('Invalid alert ordering')
+        clauses, params = [], []
+        for key, column in (('dataset', 'source_dataset'), ('event_type', 'event_type')):
+            if filters.get(key):
+                clauses.append(f'instr(lower({column}), lower(?)) > 0')
+                params.append(filters[key])
+        for key, field in (('host', 'device.hostname'), ('user', 'user.name')):
+            if filters.get(key):
+                clauses.append('instr(lower(alert_field(original_record, ?)), lower(?)) > 0')
+                params.extend((field, filters[key]))
+        if filters.get('search'):
+            clauses.append('(instr(lower(id), lower(?)) > 0 OR instr(lower(source_dataset), lower(?)) > 0 OR instr(lower(event_type), lower(?)) > 0 OR instr(lower(source_file), lower(?)) > 0)')
+            params.extend([filters['search']] * 4)
+        for key, operator in (('start', '>='), ('end', '<=')):
+            if filters.get(key):
+                clauses.append(f'julianday(timestamp) {operator} julianday(?)')
+                params.append(filters[key])
+        where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
+        with self._lock:
+            conn = self.connect()
+            conn.create_function('alert_field', 2, lambda raw, name: resolve_field(json.loads(raw), name), deterministic=True)
+            total = conn.execute('SELECT COUNT(*) FROM alerts' + where, params).fetchone()[0]
+            order = f"julianday(timestamp)" if sort == 'timestamp' else columns[sort] + ' COLLATE NOCASE'
+            rows = conn.execute(f'SELECT * FROM alerts{where} ORDER BY {order} {direction.upper()}, id ASC LIMIT ? OFFSET ?', [*params, limit, skip]).fetchall()
+            items = []
+            for row in rows:
+                data = dict(row)
+                for key in ('original_record', 'extracted_indicators', 'ground_truth_metadata'):
+                    data[key] = json.loads(data[key]) if data[key] is not None else None
+                items.append(data)
+            return {'items': items, 'total': total, 'skip': skip, 'limit': limit}
+
     def count_alerts(self) -> int:
         """Returns the total number of alerts stored."""
         with self._lock:

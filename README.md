@@ -611,6 +611,7 @@ No Groq SDK or other dependency is needed; the engine uses existing HTTPX.
 | `GET` | `/api/metrics` | Retrieve stored-result metrics for History or explicit run/cohort scopes |
 | `GET` | `/api/timelines` | Retrieve paginated correlated threat timelines |
 | `GET` | `/api/timelines/{timeline_id}` | Retrieve detailed threat timeline with alerts and LLM verdict |
+| `GET` | `/api/alerts` | List alerts with capped pagination, filters and sorting |
 | `GET` | `/api/alerts/{alert_id}` | Retrieve normalized security alert by ID |
 | `GET` | `/api/enrichments/{indicator}` | Retrieve cached threat intelligence lookups for an indicator |
 | `POST` | `/api/hunt` | Execute a parameterized KQL-style hunting filter across telemetry |

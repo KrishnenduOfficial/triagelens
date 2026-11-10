@@ -80,6 +80,15 @@ v2 live acceptance and untouched-case evaluation remain pending.
 
 ## Roadmap progress
 
+- [x] T4.1 alert management: paginated alert API and
+  dashboard search, filters, sorting and plain-text detail. Host/user filters use
+  canonical mappings; time bounds are inclusive and timezone-aware. Substring
+  filters use SQLite case folding and scans; timestamps missing or invalid do not
+  match time filters. Offline verification: 9 new backend and 1 dashboard test;
+  1,310 backend tests and 80 dashboard tests passed, and the dashboard build
+  succeeded (one existing backend warning). No live calls. Interactive dashboard
+  QA remains pending.
+
 - [x] T0.1 token hygiene: ADR index, concise agent rules, Markdown encoding check, and scratch ignore rule. The operator reported 728 backend tests passed (one warning); 79 dashboard tests passed.
 - [x] T0.2 config leftovers: removed the generic URLhaus key alias, set the VirusTotal threshold to 3, retained wait mode off, and documented that the per-run lookup environment variable is currently unused.
 - [ ] T0.3 terminology: describe the hunting feature as a KQL-style hunting filter across docs, API, engine documentation, and dashboard; confirm unchanged behavior with the targeted tests (pending: Python cannot launch in this environment).

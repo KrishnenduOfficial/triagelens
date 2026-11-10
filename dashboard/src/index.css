@@ -1399,3 +1399,14 @@ body {
   animation: spin 0.8s linear infinite;
   display: inline-block;
 }
+
+/* Alert management */
+.alert-filters { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; align-items: end; }
+.alert-filters label { display: grid; gap: .35rem; flex: 1 1 180px; }
+.alert-filters input, .alert-controls select { padding: .45rem; max-width: 100%; }
+.alert-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1rem 0; }
+.alert-table-wrap { overflow-x: auto; }
+.alert-table-wrap table { width: 100%; border-collapse: collapse; }
+.alert-table-wrap th, .alert-table-wrap td { padding: .6rem; text-align: left; border-bottom: 1px solid #555; overflow-wrap: anywhere; }
+.alert-detail { margin-top: 1rem; padding: 1rem; }
+.alert-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }

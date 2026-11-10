@@ -181,6 +181,21 @@ export interface NormalizedAlert {
   created_at?: string;
 }
 
+export interface AlertQuery {
+  skip: number; limit: number; sort: string; direction: string;
+  dataset?: string; event_type?: string; host?: string; user?: string;
+  search?: string; start?: string; end?: string;
+}
+export interface AlertPage { items: NormalizedAlert[]; total: number; skip: number; limit: number }
+
+export async function fetchAlerts(query: AlertQuery): Promise<AlertPage> {
+  try {
+    return (await apiClient.get<AlertPage>('/api/alerts', { params: query })).data;
+  } catch (error) {
+    throw normalizeError(error, 'Failed to retrieve alerts.');
+  }
+}
+
 export interface TimelineDetail extends TimelineSummary {
   alerts: NormalizedAlert[];
   verdict: TriageVerdict | null;

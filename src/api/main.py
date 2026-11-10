@@ -6,6 +6,8 @@ with CORS middleware, strict input validation, and thread-safe persistence.
 
 import logging
 import os
+from datetime import datetime, timezone
+from typing import Literal
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
@@ -269,6 +271,29 @@ def create_app(
         response_data["verdict"] = verdict
         response_data["timeline"] = timeline
         return response_data
+
+    @app.get('/api/alerts', tags=['Alerts'])
+    def list_alerts(
+        skip: int = Query(0, ge=0, le=1000000), limit: int = Query(50, ge=1, le=100),
+        dataset: Optional[str] = Query(None, min_length=1, max_length=200),
+        event_type: Optional[str] = Query(None, min_length=1, max_length=200),
+        host: Optional[str] = Query(None, min_length=1, max_length=200),
+        user: Optional[str] = Query(None, min_length=1, max_length=200),
+        search: Optional[str] = Query(None, min_length=1, max_length=200),
+        start: Optional[datetime] = None, end: Optional[datetime] = None,
+        sort: Literal['timestamp', 'dataset', 'event_type', 'source_file'] = 'timestamp',
+        direction: Literal['asc', 'desc'] = 'desc',
+        db: DatabaseManager = Depends(get_db),
+    ) -> Dict[str, Any]:
+        """Filter by literal substrings; time bounds are inclusive and timezone-aware."""
+        if any(value is not None and value.utcoffset() is None for value in (start, end)):
+            raise HTTPException(status_code=422, detail='Time bounds must include a timezone')
+        if start is not None and end is not None and start > end:
+            raise HTTPException(status_code=422, detail='Start must not be after end')
+        filters = {'dataset': dataset, 'event_type': event_type, 'host': host, 'user': user, 'search': search,
+                   'start': start.astimezone(timezone.utc).isoformat() if start else None,
+                   'end': end.astimezone(timezone.utc).isoformat() if end else None}
+        return db.list_alerts(skip=skip, limit=limit, filters=filters, sort=sort, direction=direction)
 
     # 7. Alert Detail Endpoint
     @app.get(
